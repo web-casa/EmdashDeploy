@@ -247,7 +247,7 @@ Important:
 
 ## Real VPS Testing
 
-Use [`linode-test.sh`](./linode-test.sh) to run direct VPS tests against Linode.
+Use [`linode-test.sh`](./linode-test.sh) to run a single direct VPS test against Linode.
 
 1. Create a local `.env` file from the example:
 
@@ -265,6 +265,18 @@ linode_token=YOUR_TOKEN_HERE
 
 ```bash
 bash linode-test.sh
+```
+
+Run the predefined VPS matrix:
+
+```bash
+bash linode-test-matrix.sh
+```
+
+Run selected scenarios only:
+
+```bash
+bash linode-test-matrix.sh --scenario debian13-caddy-app,centos9-builder
 ```
 
 HTTPS test with `sslip.io`:
@@ -291,13 +303,21 @@ Default test regions prefer the US:
 LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east bash linode-test.sh
 ```
 
-For a larger test matrix, see [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
+Matrix outputs:
+
+- per-scenario JSON result files
+- per-scenario failure logs
+- one summary JSON
+- one summary Markdown report
+
+For the full scenario list and manual destructive checks, see [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
 
 ## Repository Layout
 
 - [`install-emdash.sh`](./install-emdash.sh): main installer
 - [`emdashctl`](./emdashctl): operations CLI
 - [`linode-test.sh`](./linode-test.sh): real VPS test helper
+- [`linode-test-matrix.sh`](./linode-test-matrix.sh): predefined VPS matrix runner
 - [`lib/common.sh`](./lib/common.sh): shared helpers
 - [`lib/config.sh`](./lib/config.sh): defaults and validation
 - [`lib/os.sh`](./lib/os.sh): OS/runtime/package setup

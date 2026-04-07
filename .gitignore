@@ -2,4 +2,5 @@
 .codex
 linode-test-*.json
 linode-test-*.log
+test-results/
 __pycache__/

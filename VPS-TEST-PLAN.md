@@ -39,6 +39,25 @@ linode_token=...
 export LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east
 ```
 
+5. 可选：直接使用预定义矩阵脚本跑自动化组合
+
+```bash
+bash linode-test-matrix.sh
+```
+
+只跑部分场景：
+
+```bash
+bash linode-test-matrix.sh --scenario debian13-caddy-app,centos9-builder
+```
+
+输出内容：
+
+- 每个场景一个结果 JSON
+- 每个失败场景一个 failure log
+- 一份汇总 JSON
+- 一份汇总 Markdown
+
 ## 自动化测试矩阵
 
 ### A 组：基础安装链路
