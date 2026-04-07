@@ -11,6 +11,10 @@ on:
       - '.github/workflows/publish-ghcr-builder.yml'
   workflow_dispatch:
 
+concurrency:
+  group: ghcr-builder-publish
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -44,9 +48,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=node24-bookworm
+            type=raw,value=node24-bookworm,enable=${{ github.ref_type == 'branch' }}
             type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable=${{ github.ref_type == 'branch' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

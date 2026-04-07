@@ -25,6 +25,10 @@ on:
           - portfolio
           - blank
 
+concurrency:
+  group: ghcr-app-publish
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -67,11 +71,11 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.prepare.outputs.profile }}
-            type=raw,value=latest,enable=${{ steps.prepare.outputs.profile == 'starter-sqlite-file-local' }}
+            type=raw,value=${{ steps.prepare.outputs.profile }},enable=${{ github.ref_type == 'branch' }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'branch' && steps.prepare.outputs.profile == 'starter-sqlite-file-local' }}
             type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
             type=raw,value=${{ steps.prepare.outputs.profile }}-${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable=${{ github.ref_type == 'branch' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
