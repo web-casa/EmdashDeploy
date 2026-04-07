@@ -24,6 +24,8 @@ LINODE_TEST_INSTALL_USE_CADDY="${LINODE_TEST_INSTALL_USE_CADDY:-0}"
 LINODE_TEST_INSTALL_ENABLE_HTTPS="${LINODE_TEST_INSTALL_ENABLE_HTTPS:-0}"
 LINODE_TEST_INSTALL_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-}"
 LINODE_TEST_INSTALL_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-}"
+LINODE_TEST_INSTALL_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-}"
+LINODE_TEST_INSTALL_APP_BASE_IMAGE="${LINODE_TEST_INSTALL_APP_BASE_IMAGE:-}"
 LINODE_TEST_RUN_BACKUP="${LINODE_TEST_RUN_BACKUP:-0}"
 LINODE_TEST_KEEP_SSH_KEY="${LINODE_TEST_KEEP_SSH_KEY:-0}"
 LINODE_TEST_DOMAIN_PROVIDER="${LINODE_TEST_DOMAIN_PROVIDER:-sslip.io}"
@@ -74,6 +76,8 @@ linode-test.sh
   LINODE_TEST_IMAGE=linode/ubuntu24.04
   LINODE_TEST_INSTALL_DB_DRIVER=postgres
   LINODE_TEST_INSTALL_SESSION_DRIVER=redis
+  LINODE_TEST_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local
+  LINODE_TEST_INSTALL_APP_BASE_IMAGE=ghcr.io/web-casa/emdash-builder:node24-bookworm
   LINODE_TEST_RUN_BACKUP=1
 EOF
 }
@@ -417,6 +421,12 @@ export EMDASH_INSTALL_SESSION_DRIVER="$3"
 export EMDASH_INSTALL_STORAGE_DRIVER="$4"
 export EMDASH_INSTALL_USE_CADDY="$5"
 export EMDASH_INSTALL_ENABLE_HTTPS="$6"
+if [[ -n "${12}" ]]; then
+	export EMDASH_INSTALL_APP_IMAGE="${12}"
+fi
+if [[ -n "${13}" ]]; then
+	export EMDASH_INSTALL_APP_BASE_IMAGE="${13}"
+fi
 if [[ -n "${10}" ]]; then
 	export EMDASH_INSTALL_DOMAIN="${10}"
 fi
@@ -438,7 +448,7 @@ if [[ "$9" == "1" ]]; then
 fi
 EOF
 	log "执行远端安装和 smoke 测试"
-	if ! ssh -tt -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}")"; then
+	if ! ssh -tt -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}")"; then
 		collect_remote_failure_context
 		return 1
 	fi

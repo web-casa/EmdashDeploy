@@ -167,6 +167,7 @@ This repository includes GitHub Actions workflows for publishing both the builde
 - Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
 - Published image: `ghcr.io/web-casa/emdash-builder:node24-bookworm`
 - Published default app image: `ghcr.io/web-casa/emdash-app:starter-sqlite-file-local`
+- Platform target: `linux/amd64,linux/arm64`
 
 The workflow runs when:
 
