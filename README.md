@@ -11,6 +11,13 @@ Interactive VPS installer and operations toolkit for EmDash with Docker/Podman, 
 
 Languages: **English** | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [한국어](./README.ko.md)
 
+Versioning for this project follows the `HiEmdash` line:
+
+- Git tag: `<emdash-version>-hi.<revision>`
+- Examples: `0.2.0-hi.1`, `0.2.0-hi.2`, `0.2.0-hi.3`
+- When upstream EmDash moves to a new base version, reset the revision:
+  `0.3.0-hi.1`
+
 ## Quick Start
 
 Clone the repository and run the installer interactively:
@@ -179,7 +186,15 @@ The app image workflow runs when:
 
 - `install-emdash.sh`, `lib/**`, or [`scripts/prepare-app-context.sh`](./scripts/prepare-app-context.sh) changes on `main`
 - `.github/workflows/publish-ghcr-app.yml` changes on `main`
+- you push a Git tag matching `*-hi.*`
 - you trigger it manually with `workflow_dispatch`
+
+Version-aware tags:
+
+- Pushing Git tag `0.2.0-hi.3` will also publish:
+  - `ghcr.io/web-casa/emdash-builder:0.2.0-hi.3`
+  - `ghcr.io/web-casa/emdash-app:0.2.0-hi.3`
+  - `ghcr.io/web-casa/emdash-app:starter-sqlite-file-local-0.2.0-hi.3`
 
 How to use the published builder image:
 

@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - '*-hi.*'
     paths:
       - 'install-emdash.sh'
       - 'lib/**'
@@ -67,6 +69,8 @@ jobs:
           tags: |
             type=raw,value=${{ steps.prepare.outputs.profile }}
             type=raw,value=latest,enable=${{ steps.prepare.outputs.profile == 'starter-sqlite-file-local' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=${{ steps.prepare.outputs.profile }}-${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
             type=sha,prefix=sha-
 
       - name: Build and push

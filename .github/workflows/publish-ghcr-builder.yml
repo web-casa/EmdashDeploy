@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - '*-hi.*'
     paths:
       - 'docker/base/Dockerfile'
       - '.github/workflows/publish-ghcr-builder.yml'
@@ -43,6 +45,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=node24-bookworm
+            type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
             type=sha,prefix=sha-
 
       - name: Build and push
