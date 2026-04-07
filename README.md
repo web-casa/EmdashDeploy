@@ -1,6 +1,7 @@
 # EmdashDeploy
 
 [![GHCR Builder](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-builder.yml/badge.svg)](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-builder.yml)
+[![GHCR App](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-app.yml/badge.svg)](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-app.yml)
 ![License](https://img.shields.io/github/license/web-casa/EmdashDeploy)
 ![OS](https://img.shields.io/badge/OS-Debian%2012%2F13%20%7C%20Ubuntu%2022%2F24%20%7C%20EL%208%2F9%2F10-blue)
 ![Runtime](https://img.shields.io/badge/Runtime-Docker%20%7C%20Podman-2496ED)
@@ -9,6 +10,29 @@
 Interactive VPS installer and operations toolkit for EmDash with Docker/Podman, optional Caddy HTTPS, backup, restore, and health checks.
 
 Languages: **English** | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [한국어](./README.ko.md)
+
+## Quick Start
+
+Clone the repository and run the installer interactively:
+
+```bash
+git clone https://github.com/web-casa/EmdashDeploy.git
+cd EmdashDeploy
+chmod +x install-emdash.sh emdashctl linode-test.sh
+sudo bash install-emdash.sh
+```
+
+Activate immediately after generating files:
+
+```bash
+sudo bash install-emdash.sh --activate
+```
+
+Generate files only:
+
+```bash
+sudo bash install-emdash.sh --write-only
+```
 
 ## What This Repository Does
 
@@ -52,29 +76,6 @@ Notes:
 - EL-like means Rocky Linux, AlmaLinux, RHEL-like variants, Oracle Linux, CentOS Stream, and similar systems handled by the installer.
 - SLES family is not supported.
 - Turso/libSQL is not supported.
-
-## Quick Start
-
-Clone the repository and run the installer interactively:
-
-```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash.sh emdashctl linode-test.sh
-sudo bash install-emdash.sh
-```
-
-Activate immediately after generating files:
-
-```bash
-sudo bash install-emdash.sh --activate
-```
-
-Generate files only:
-
-```bash
-sudo bash install-emdash.sh --write-only
-```
 
 ## Non-Interactive Examples
 
@@ -159,16 +160,24 @@ Firewall handling:
 
 ## GHCR Publishing
 
-This repository includes a GitHub Actions workflow for publishing the builder image to GitHub Container Registry:
+This repository includes GitHub Actions workflows for publishing both the builder image and a default app image to GitHub Container Registry:
 
 - Workflow: [`publish-ghcr-builder.yml`](./.github/workflows/publish-ghcr-builder.yml)
+- Workflow: [`publish-ghcr-app.yml`](./.github/workflows/publish-ghcr-app.yml)
 - Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
 - Published image: `ghcr.io/web-casa/emdash-builder:node24-bookworm`
+- Published default app image: `ghcr.io/web-casa/emdash-app:starter-sqlite-file-local`
 
 The workflow runs when:
 
 - `docker/base/Dockerfile` changes on `main`
 - `.github/workflows/publish-ghcr-builder.yml` changes on `main`
+- you trigger it manually with `workflow_dispatch`
+
+The app image workflow runs when:
+
+- `install-emdash.sh`, `lib/**`, or [`scripts/prepare-app-context.sh`](./scripts/prepare-app-context.sh) changes on `main`
+- `.github/workflows/publish-ghcr-app.yml` changes on `main`
 - you trigger it manually with `workflow_dispatch`
 
 How to use the published builder image:
@@ -181,7 +190,7 @@ sudo bash install-emdash.sh --activate
 How to use a prebuilt application image:
 
 ```bash
-EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/<image>:<tag> \
+EMDASH_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local \
 sudo bash install-emdash.sh --activate
 ```
 
@@ -195,7 +204,8 @@ Important:
 
 - If you want public unauthenticated pulls, set the GHCR package visibility to public.
 - If you use a private image, authenticate the VPS host to `ghcr.io` before installation.
-- The current EmDash site configuration is rendered into the generated app, so a prebuilt app image must match the selected deployment configuration.
+- The published default app image is intentionally limited to `starter + sqlite + file + local`, so it can be shared safely without baking external service secrets into the image.
+- For PostgreSQL, Redis, or S3-backed deployments, prefer the builder image flow unless you intentionally want to publish a config-specific private app image.
 
 ## Real VPS Testing
 
@@ -256,6 +266,7 @@ For a larger test matrix, see [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
 - [`lib/prompt.sh`](./lib/prompt.sh): interactive prompts
 - [`lib/network.sh`](./lib/network.sh): IP, DNS, and storage checks
 - [`lib/render.sh`](./lib/render.sh): compose/Caddy/app rendering
+- [`scripts/prepare-app-context.sh`](./scripts/prepare-app-context.sh): app image build context generator
 - [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md): test matrix
 
 ## Current Limits
