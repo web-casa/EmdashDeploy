@@ -1,0 +1,982 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+IFS=$'\n\t'
+
+ENV_FILE="${EMDASH_INSTALL_ENV_FILE:-/etc/emdash/compose.env}"
+
+log() {
+	printf '[INFO] %s\n' "$*"
+}
+
+warn() {
+	printf '[WARN] %s\n' "$*" >&2
+}
+
+fail() {
+	printf '[ERROR] %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	cat <<'EOF'
+emdashctl
+
+用法:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+}
+
+service_running() {
+	local service="$1"
+	run_compose exec -T "${service}" true >/dev/null 2>&1
+}
+
+http_ok() {
+	local url="$1"
+	curl -fsS --max-time 5 "${url}" >/dev/null 2>&1
+}
+
+setup_status_value() {
+	local url="${APP_PUBLIC_URL:-http://127.0.0.1:3000}/_emdash/api/setup/status"
+	local tmp
+	tmp="$(mktemp)"
+	if ! curl -fsS --max-time 5 "${url}" >"${tmp}" 2>/dev/null; then
+		rm -f "${tmp}"
+		printf 'unreachable\n'
+		return
+	fi
+	python3 - "${tmp}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+    payload = data.get("data", {})
+    if payload.get("needsSetup") is False:
+        print("complete")
+    else:
+        print(f"needs setup ({payload.get('step', 'unknown')})")
+except Exception:
+    print("unknown")
+PY
+	rm -f "${tmp}"
+}
+
+json_escape() {
+	python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"
+}
+
+url_quote() {
+	python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+}
+
+pg_quote_identifier() {
+	python3 -c 'import sys; print("\"" + sys.argv[1].replace("\"", "\"\"") + "\"")' "$1"
+}
+
+pg_quote_literal() {
+	python3 -c 'import sys; print("'"'"'" + sys.argv[1].replace("'"'"'", "'"'"''"'"'") + "'"'"'")' "$1"
+}
+
+DOCTOR_LINES=()
+
+doctor_add() {
+	local name="$1"
+	local status="$2"
+	local detail="${3:-}"
+	DOCTOR_LINES+=("${name}|${status}|${detail}")
+}
+
+doctor_print_text() {
+	local entry name status detail
+	for entry in "${DOCTOR_LINES[@]}"; do
+		IFS='|' read -r name status detail <<<"${entry}"
+		printf '%-18s %-5s %s\n' "${name}:" "${status}" "${detail}"
+	done
+}
+
+doctor_print_json() {
+	local tmp
+	tmp="$(mktemp)"
+	printf '%s\n' "${DOCTOR_LINES[@]}" >"${tmp}"
+	python3 - "${tmp}" <<'PY'
+import json
+import sys
+
+items = []
+for line in open(sys.argv[1]).read().splitlines():
+    if not line:
+        continue
+    name, status, detail = (line.split("|", 2) + ["", "", ""])[:3]
+    items.append({"name": name, "status": status, "detail": detail})
+print(json.dumps({"checks": items}, ensure_ascii=False, indent=2))
+PY
+	rm -f "${tmp}"
+}
+
+health_url() {
+	printf '%s/__emdash_health\n' "${APP_PUBLIC_URL:-http://127.0.0.1:3000}"
+}
+
+setup_status_url() {
+	printf '%s/_emdash/api/setup/status\n' "${APP_PUBLIC_URL:-http://127.0.0.1:3000}"
+}
+
+url_meta() {
+	python3 - "$1" "$2" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+url = urlparse(sys.argv[1])
+field = sys.argv[2]
+if field == "scheme":
+    print(url.scheme)
+elif field == "host":
+    print(url.hostname or "")
+elif field == "port":
+    if url.port:
+        print(url.port)
+    elif url.scheme == "https":
+        print(443)
+    elif url.scheme == "http":
+        print(80)
+    else:
+        print("")
+PY
+}
+
+app_url_scheme() {
+	url_meta "${APP_PUBLIC_URL:-}" scheme
+}
+
+app_url_host() {
+	url_meta "${APP_PUBLIC_URL:-}" host
+}
+
+app_url_port() {
+	url_meta "${APP_PUBLIC_URL:-}" port
+}
+
+tls_cert_detail() {
+	local host port tmp cert_block cert_info
+	host="$(app_url_host)"
+	port="$(app_url_port)"
+	[[ -n "${host}" && -n "${port}" ]] || return 1
+	tmp="$(mktemp)"
+	if ! timeout 15 openssl s_client -servername "${host}" -connect "${host}:${port}" </dev/null >"${tmp}" 2>/dev/null; then
+		rm -f "${tmp}"
+		return 1
+	fi
+	cert_block="$(awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ { print }' "${tmp}")"
+	rm -f "${tmp}"
+	[[ -n "${cert_block}" ]] || return 1
+	cert_info="$(printf '%s\n' "${cert_block}" | openssl x509 -noout -subject -issuer -enddate 2>/dev/null | paste -sd '; ' -)"
+	[[ -n "${cert_info}" ]] || return 1
+	printf '%s\n' "${cert_info}"
+}
+
+render_check_json() {
+	local tmp key_name="$1" success_name="$2" array_name="$3"
+	tmp="$(mktemp)"
+	eval "printf '%s\n' \"\${${array_name}[@]}\" > \"${tmp}\""
+	python3 - "${tmp}" "${key_name}" "${success_name}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+key_name = sys.argv[2]
+success_name = sys.argv[3]
+items = []
+success = True
+for line in open(path).read().splitlines():
+    if not line:
+        continue
+    name, status, detail = (line.split("|", 2) + ["", "", ""])[:3]
+    items.append({"name": name, "status": status, "detail": detail})
+    if status == "fail":
+        success = False
+print(json.dumps({key_name: items, success_name: success}, ensure_ascii=False, indent=2))
+PY
+	rm -f "${tmp}"
+}
+
+load_env() {
+	[[ -f "${ENV_FILE}" ]] || fail "未找到 ${ENV_FILE}"
+	while IFS= read -r line || [[ -n "${line}" ]]; do
+		[[ -z "${line}" ]] && continue
+		[[ "${line}" == \#* ]] && continue
+		[[ "${line}" == *=* ]] || continue
+		local key="${line%%=*}"
+		local value="${line#*=}"
+		if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+			value="${value:1:${#value}-2}"
+		elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+			value="${value:1:${#value}-2}"
+		fi
+		printf -v "${key}" '%s' "${value}"
+		export "${key}"
+	done <"${ENV_FILE}"
+	[[ -n "${CONTAINER_RUNTIME:-}" ]] || fail "compose.env 缺少 CONTAINER_RUNTIME"
+	[[ -n "${COMPOSE_FILE:-}" ]] || fail "compose.env 缺少 COMPOSE_FILE"
+}
+
+run_compose() {
+	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+		docker compose -f "${COMPOSE_FILE}" "$@"
+	elif [[ -n "${PODMAN_COMPOSE_PROVIDER_BIN:-}" ]]; then
+		env -u PODMAN_COMPOSE_PROVIDER_BIN "${PODMAN_COMPOSE_PROVIDER_BIN}" -f "${COMPOSE_FILE}" "$@"
+	else
+		podman compose -f "${COMPOSE_FILE}" "$@"
+	fi
+}
+
+update_generated_postgres_url() {
+	local new_password="$1"
+	local site_config="${ROOT_DIR}/app/site/astro.config.mjs"
+	[[ -f "${site_config}" ]] || fail "未找到 astro.config.mjs: ${site_config}"
+	python3 - "${site_config}" "${PG_DB_USER}" "${PG_DB_NAME}" "${new_password}" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+import urllib.parse
+
+path = Path(sys.argv[1])
+user = urllib.parse.quote(sys.argv[2], safe="")
+db_name = urllib.parse.quote(sys.argv[3], safe="")
+password = urllib.parse.quote(sys.argv[4], safe="")
+new_url = f"postgres://{user}:{password}@postgres:5432/{db_name}"
+
+text = path.read_text()
+updated, count = re.subn(
+    r'connectionString:\s*"[^"]*"',
+    f'connectionString: {json.dumps(new_url)}',
+    text,
+    count=1,
+)
+if count != 1:
+    raise SystemExit("failed to update postgres connectionString literal")
+path.write_text(updated)
+PY
+}
+
+backup_sqlite_database() {
+	local src="$1"
+	local dst="$2"
+	[[ -f "${src}" ]] || fail "SQLite 数据库不存在: ${src}"
+	python3 - "${src}" "${dst}" <<'PY'
+import os
+import sqlite3
+import sys
+
+src = sys.argv[1]
+dst = sys.argv[2]
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+source = sqlite3.connect(f"file:{src}?mode=ro", uri=True, timeout=30)
+target = sqlite3.connect(dst, timeout=30)
+try:
+    with target:
+        source.backup(target)
+finally:
+    target.close()
+    source.close()
+PY
+}
+
+validate_sqlite_backup_file() {
+	local src="$1"
+	[[ -f "${src}" ]] || fail "SQLite 备份文件不存在: ${src}"
+	python3 - "${src}" <<'PY'
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
+try:
+    row = conn.execute("PRAGMA integrity_check").fetchone()
+    if not row or row[0].lower() != "ok":
+        raise SystemExit(f"sqlite integrity check failed: {row[0] if row else 'unknown'}")
+finally:
+    conn.close()
+PY
+}
+
+find_restore_payload() {
+	local restore_dir="$1"
+	local pattern="$2"
+	find "${restore_dir}" -mindepth 2 -maxdepth 2 -type f -name "${pattern}" | head -n1
+}
+
+cmd_status() {
+	load_env
+	local json_mode="${1:-0}"
+	local app_health="failed"
+	local setup_state="unreachable"
+	local caddy_state="unavailable"
+	local app_running="false"
+	local postgres_running="false"
+	local redis_running="false"
+	local sqlite_exists="false"
+	local sessions_dir_exists="false"
+
+	if service_running app; then
+		app_running="true"
+	fi
+	if [[ "${DB_DRIVER}" == "postgres" ]] && service_running postgres; then
+		postgres_running="true"
+	fi
+	if [[ "${SESSION_DRIVER}" == "redis" ]] && service_running redis; then
+		redis_running="true"
+	fi
+	if [[ "${DB_DRIVER}" == "sqlite" && -f "${SQLITE_PATH:-}" ]]; then
+		sqlite_exists="true"
+	fi
+	if [[ "${SESSION_DRIVER}" == "file" && -d "${SESSIONS_DIR:-}" ]]; then
+		sessions_dir_exists="true"
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		if http_ok "$(health_url)"; then
+			app_health="ok"
+		fi
+		setup_state="$(setup_status_value)"
+	fi
+	if command -v caddy >/dev/null 2>&1; then
+		if systemctl is-active caddy >/dev/null 2>&1; then
+			caddy_state="active"
+		else
+			caddy_state="inactive"
+		fi
+	fi
+
+	if [[ "${json_mode}" == "1" ]]; then
+		cat <<EOF
+{
+  "runtime": $(json_escape "${CONTAINER_RUNTIME}"),
+  "compose_file": $(json_escape "${COMPOSE_FILE}"),
+  "app_url": $(json_escape "${APP_PUBLIC_URL:-unknown}"),
+  "app": {
+    "running": ${app_running},
+    "health": $(json_escape "${app_health}"),
+    "setup_status": $(json_escape "${setup_state}")
+  },
+  "database": {
+    "driver": $(json_escape "${DB_DRIVER}"),
+    "running": ${postgres_running},
+    "sqlite_path": $(json_escape "${SQLITE_PATH:-}"),
+    "sqlite_exists": ${sqlite_exists}
+  },
+  "session": {
+    "driver": $(json_escape "${SESSION_DRIVER}"),
+    "redis_running": ${redis_running},
+    "sessions_dir": $(json_escape "${SESSIONS_DIR:-}"),
+    "sessions_dir_exists": ${sessions_dir_exists}
+  },
+  "caddy": {
+    "enabled": $( [[ "${USE_CADDY:-0}" == "1" ]] && printf 'true' || printf 'false' ),
+    "state": $(json_escape "${caddy_state}")
+  }
+}
+EOF
+		return
+	fi
+
+	printf 'Runtime: %s\n' "${CONTAINER_RUNTIME}"
+	printf 'Compose: %s\n' "${COMPOSE_FILE}"
+	printf 'URL: %s\n' "${APP_PUBLIC_URL:-unknown}"
+	run_compose ps
+	printf 'App running: %s\n' "${app_running}"
+	printf 'App health: %s\n' "${app_health}"
+	printf 'Setup status: %s\n' "${setup_state}"
+	if [[ "${DB_DRIVER}" == "postgres" ]]; then
+		printf 'Postgres running: %s\n' "${postgres_running}"
+	fi
+	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
+		printf 'Redis running: %s\n' "${redis_running}"
+	fi
+	printf 'Caddy: %s\n' "${caddy_state}"
+}
+
+cmd_logs() {
+	load_env
+	local target="${1:-app}"
+	local follow="${2:-}"
+	if [[ "${target}" == "caddy" ]]; then
+		if [[ "${follow}" == "-f" ]]; then
+			journalctl -u caddy -f
+		else
+			journalctl -u caddy -n 200 --no-pager
+		fi
+		return
+	fi
+	if [[ "${follow}" == "-f" ]]; then
+		run_compose logs -f "${target}"
+	else
+		run_compose logs --tail 200 "${target}"
+	fi
+}
+
+cmd_restart() {
+	load_env
+	local target="${1:-all}"
+	if [[ "${target}" == "caddy" ]]; then
+		systemctl restart caddy
+		return
+	fi
+	if [[ "${target}" == "all" ]]; then
+		run_compose restart
+	else
+		run_compose restart "${target}"
+	fi
+}
+
+cmd_backup() {
+	load_env
+	local stamp backup_dir archive dump_file
+	stamp="$(date +%Y%m%d-%H%M%S)"
+	backup_dir="${ROOT_DIR}/backups/${stamp}"
+	mkdir -p "${backup_dir}"
+
+	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
+		backup_sqlite_database "${SQLITE_PATH}" "${backup_dir}/data.db"
+	else
+		dump_file="${backup_dir}/postgres.sql"
+		run_compose exec -T postgres pg_dump -U "${PG_DB_USER}" -d "${PG_DB_NAME}" >"${dump_file}"
+	fi
+
+	if [[ "${STORAGE_DRIVER}" == "local" && -d "${UPLOADS_DIR}" ]]; then
+		cp -a "${UPLOADS_DIR}" "${backup_dir}/uploads"
+	fi
+
+	archive="${ROOT_DIR}/backups/emdash-backup-${stamp}.tar.gz"
+	tar -C "${ROOT_DIR}/backups" -czf "${archive}" "${stamp}"
+	rm -rf "${backup_dir}"
+	log "备份完成: ${archive}"
+	if ! upload_backup "${archive}"; then
+		warn "远端上传失败，本地备份仍保留: ${archive}"
+	fi
+	prune_old_backups
+}
+
+upload_backup() {
+	local archive="$1"
+	case "${BACKUP_TARGET_TYPE:-local}" in
+	local)
+		log "仅保留本地备份"
+		;;
+	sftp)
+		upload_backup_sftp "${archive}"
+		;;
+	s3)
+		upload_backup_s3 "${archive}"
+		;;
+	esac
+}
+
+prune_old_backups() {
+	local keep="${BACKUP_KEEP_LOCAL:-7}"
+	[[ "${keep}" =~ ^[0-9]+$ ]] || return 0
+	mapfile -t old_archives < <(find "${ROOT_DIR}/backups" -maxdepth 1 -type f -name 'emdash-backup-*.tar.gz' | sort)
+	if [[ "${#old_archives[@]}" -le "${keep}" ]]; then
+		return 0
+	fi
+	local delete_count=$(( ${#old_archives[@]} - keep ))
+	local i=0
+	while [[ "${i}" -lt "${delete_count}" ]]; do
+		rm -f "${old_archives[$i]}"
+		i=$((i + 1))
+	done
+}
+
+upload_backup_sftp() {
+	local archive="$1"
+	local remote_dir="${BACKUP_SFTP_REMOTE_PATH%/}"
+	local remote="${remote_dir}/$(basename "${archive}")"
+	if [[ -n "${BACKUP_SFTP_PASSWORD:-}" ]]; then
+		command -v sshpass >/dev/null 2>&1 || fail "SFTP 密码模式需要 sshpass"
+		sshpass -p "${BACKUP_SFTP_PASSWORD}" ssh -p "${BACKUP_SFTP_PORT}" -o StrictHostKeyChecking=accept-new "${BACKUP_SFTP_USER}@${BACKUP_SFTP_HOST}" "mkdir -p $(printf '%q' "${remote_dir}")"
+		sshpass -p "${BACKUP_SFTP_PASSWORD}" sftp -P "${BACKUP_SFTP_PORT}" -o StrictHostKeyChecking=accept-new "${BACKUP_SFTP_USER}@${BACKUP_SFTP_HOST}" <<EOF
+put ${archive} ${remote}
+EOF
+	else
+		ssh -p "${BACKUP_SFTP_PORT}" -o StrictHostKeyChecking=accept-new "${BACKUP_SFTP_USER}@${BACKUP_SFTP_HOST}" "mkdir -p $(printf '%q' "${remote_dir}")"
+		sftp -P "${BACKUP_SFTP_PORT}" -o StrictHostKeyChecking=accept-new "${BACKUP_SFTP_USER}@${BACKUP_SFTP_HOST}" <<EOF
+put ${archive} ${remote}
+EOF
+	fi
+	log "已上传备份到 SFTP: ${remote}"
+}
+
+upload_backup_s3() {
+	local archive="$1"
+	local remote_key="${BACKUP_S3_PREFIX%/}/$(basename "${archive}")"
+	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+		docker run --rm \
+			-e AWS_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID}" \
+			-e AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY}" \
+			-v "${archive}:/tmp/backup.tar.gz:ro" \
+			amazon/aws-cli:2.22.21 \
+			s3 cp /tmp/backup.tar.gz "s3://${BACKUP_S3_BUCKET}/${remote_key}" \
+			--endpoint-url "${BACKUP_S3_ENDPOINT}" \
+			--region "${BACKUP_S3_REGION}"
+	else
+		podman run --rm \
+			-e AWS_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID}" \
+			-e AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY}" \
+			-v "${archive}:/tmp/backup.tar.gz:ro,Z" \
+			amazon/aws-cli:2.22.21 \
+			s3 cp /tmp/backup.tar.gz "s3://${BACKUP_S3_BUCKET}/${remote_key}" \
+			--endpoint-url "${BACKUP_S3_ENDPOINT}" \
+			--region "${BACKUP_S3_REGION}"
+	fi
+	log "已上传备份到 S3: s3://${BACKUP_S3_BUCKET}/${remote_key}"
+}
+
+cmd_restore() {
+	load_env
+	local archive="${1:-}"
+	local db_restore_file=""
+	local uploads_restore_dir=""
+	local temp_db_name=""
+	local target_db_ident=""
+	local temp_db_ident=""
+	local old_db_name=""
+	local old_db_ident=""
+	[[ -n "${archive}" ]] || fail "请提供备份文件。"
+	[[ -f "${archive}" ]] || fail "备份文件不存在: ${archive}"
+
+	local restore_dir
+	restore_dir="$(mktemp -d)"
+	tar -C "${restore_dir}" -xzf "${archive}"
+
+	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
+		db_restore_file="$(find_restore_payload "${restore_dir}" 'data.db')"
+		[[ -n "${db_restore_file}" ]] || fail "备份中未找到 SQLite 数据库文件"
+		validate_sqlite_backup_file "${db_restore_file}"
+		run_compose stop app
+		rm -f "${SQLITE_PATH}" "${SQLITE_PATH}-wal" "${SQLITE_PATH}-shm"
+		cp -a "${db_restore_file}" "${SQLITE_PATH}"
+	else
+		run_compose up -d postgres
+		db_restore_file="$(find_restore_payload "${restore_dir}" 'postgres.sql')"
+		[[ -n "${db_restore_file}" ]] || fail "备份中未找到 PostgreSQL 导出文件"
+		temp_db_name="emdash_restore_$(date +%s)"
+		old_db_name="emdash_old_$(date +%s)"
+		target_db_ident="$(pg_quote_identifier "${PG_DB_NAME}")"
+		temp_db_ident="$(pg_quote_identifier "${temp_db_name}")"
+		old_db_ident="$(pg_quote_identifier "${old_db_name}")"
+		run_compose exec -T postgres dropdb -U "${PG_DB_USER}" --if-exists --force "${temp_db_name}" >/dev/null 2>&1 || true
+		run_compose exec -T postgres dropdb -U "${PG_DB_USER}" --if-exists --force "${old_db_name}" >/dev/null 2>&1 || true
+		run_compose exec -T postgres createdb -U "${PG_DB_USER}" "${temp_db_name}"
+		cat "${db_restore_file}" | run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d "${temp_db_name}"
+		run_compose stop app
+		if run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "SELECT 1 FROM pg_database WHERE datname = $(pg_quote_literal "${PG_DB_NAME}")" | grep -q 1; then
+			run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "ALTER DATABASE ${target_db_ident} RENAME TO ${old_db_ident}"
+		fi
+		if ! run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "ALTER DATABASE ${temp_db_ident} RENAME TO ${target_db_ident}"; then
+			if run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "SELECT 1 FROM pg_database WHERE datname = $(pg_quote_literal "${old_db_name}")" | grep -q 1; then
+				run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "ALTER DATABASE ${old_db_ident} RENAME TO ${target_db_ident}" || true
+			fi
+			fail "PostgreSQL 恢复切换失败，已尝试回滚原数据库名称。"
+		fi
+		run_compose exec -T postgres dropdb -U "${PG_DB_USER}" --if-exists --force "${old_db_name}" >/dev/null 2>&1 || true
+	fi
+
+	uploads_restore_dir="$(find "${restore_dir}" -mindepth 2 -maxdepth 2 -type d -name uploads | head -n1)"
+	if [[ "${STORAGE_DRIVER}" == "local" && -n "${uploads_restore_dir}" && -d "${uploads_restore_dir}" ]]; then
+		rm -rf "${UPLOADS_DIR}"
+		cp -a "${uploads_restore_dir}" "${UPLOADS_DIR}"
+	fi
+
+	run_compose up -d app
+	rm -rf "${restore_dir}"
+	log "恢复完成"
+}
+
+cmd_upgrade() {
+	load_env
+	local target="${1:-}"
+	case "${target}" in
+	app)
+		if [[ -n "${APP_IMAGE:-}" ]]; then
+			if run_compose pull app; then
+				run_compose up -d app
+				return
+			fi
+			warn "预构建 app 镜像拉取失败，回退本地 build"
+		fi
+		run_compose up -d --build app
+		;;
+	redis)
+		run_compose pull redis || true
+		run_compose up -d redis
+		;;
+	caddy-config)
+		command -v caddy >/dev/null 2>&1 || fail "未安装 caddy"
+		caddy validate --config "${ROOT_DIR}/caddy/Caddyfile"
+		systemctl reload caddy
+		;;
+	*)
+		fail "支持的 upgrade 目标: app | redis | caddy-config"
+		;;
+	esac
+}
+
+cmd_reset_db_password() {
+	load_env
+	[[ "${DB_DRIVER}" == "postgres" ]] || fail "当前仅 PostgreSQL 支持 reset-db-password"
+	local new_password
+	local pg_user_encoded
+	local pg_db_name_encoded
+	local pg_password_encoded
+	local alter_role_sql
+	new_password="$(openssl rand -hex 16)"
+	pg_user_encoded="$(url_quote "${PG_DB_USER}")"
+	pg_db_name_encoded="$(url_quote "${PG_DB_NAME}")"
+	pg_password_encoded="$(url_quote "${new_password}")"
+	alter_role_sql="ALTER USER $(pg_quote_identifier "${PG_DB_USER}") WITH PASSWORD $(pg_quote_literal "${new_password}")"
+	run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "${alter_role_sql}"
+	python3 - "${ENV_FILE}" "${new_password}" "${pg_user_encoded}" "${pg_db_name_encoded}" "${pg_password_encoded}" <<'PY'
+from pathlib import Path
+import sys
+
+env_file = Path(sys.argv[1])
+password = sys.argv[2]
+user_encoded = sys.argv[3]
+db_name_encoded = sys.argv[4]
+password_encoded = sys.argv[5]
+
+lines = env_file.read_text().splitlines()
+out = []
+for line in lines:
+    if line.startswith("PG_DB_PASSWORD="):
+        out.append(f"PG_DB_PASSWORD={password}")
+    elif line.startswith("DATABASE_URL="):
+        out.append(f"DATABASE_URL=postgres://{user_encoded}:{password_encoded}@postgres:5432/{db_name_encoded}")
+    else:
+        out.append(line)
+env_file.write_text("\n".join(out) + "\n")
+PY
+	update_generated_postgres_url "${new_password}"
+	run_compose up -d --build app
+	printf 'New PostgreSQL password: %s\n' "${new_password}"
+	log "应用镜像已按新数据库密码重建并启动"
+}
+
+cmd_doctor() {
+	load_env
+	local json_mode="${1:-0}"
+	local cert_detail=""
+	DOCTOR_LINES=()
+
+	doctor_add "compose.env" "ok" "${ENV_FILE}"
+	if [[ -f "${COMPOSE_FILE}" ]]; then
+		doctor_add "compose file" "ok" "${COMPOSE_FILE}"
+	else
+		doctor_add "compose file" "fail" "${COMPOSE_FILE}"
+	fi
+	if [[ -d "${ROOT_DIR}" ]]; then
+		doctor_add "root dir" "ok" "${ROOT_DIR}"
+	else
+		doctor_add "root dir" "fail" "${ROOT_DIR}"
+	fi
+	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+		command -v docker >/dev/null 2>&1 && doctor_add "docker" "ok" "$(command -v docker)" || doctor_add "docker" "fail" "missing"
+	else
+		command -v podman >/dev/null 2>&1 && doctor_add "podman" "ok" "$(command -v podman)" || doctor_add "podman" "fail" "missing"
+	fi
+	if [[ -d "${UPLOADS_DIR:-}" ]]; then
+		doctor_add "uploads dir" "ok" "${UPLOADS_DIR}"
+	else
+		doctor_add "uploads dir" "fail" "${UPLOADS_DIR:-missing}"
+	fi
+	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
+		if [[ -d "$(dirname "${SQLITE_PATH}")" ]]; then
+			doctor_add "sqlite dir" "ok" "$(dirname "${SQLITE_PATH}")"
+		else
+			doctor_add "sqlite dir" "fail" "$(dirname "${SQLITE_PATH}")"
+		fi
+		if [[ -f "${SQLITE_PATH}" ]]; then
+			doctor_add "sqlite db" "ok" "${SQLITE_PATH}"
+		else
+			doctor_add "sqlite db" "warn" "${SQLITE_PATH} not created yet"
+		fi
+	else
+		if [[ -d "${POSTGRES_DIR:-}" ]]; then
+			doctor_add "postgres dir" "ok" "${POSTGRES_DIR}"
+		else
+			doctor_add "postgres dir" "fail" "${POSTGRES_DIR:-missing}"
+		fi
+		if run_compose exec -T postgres pg_isready -U "${PG_DB_USER}" -d "${PG_DB_NAME}" >/dev/null 2>&1; then
+			doctor_add "postgres connect" "ok" "${PG_DB_NAME}"
+		else
+			doctor_add "postgres connect" "fail" "${PG_DB_NAME}"
+		fi
+	fi
+	if [[ "${SESSION_DRIVER}" == "file" ]]; then
+		if [[ -d "${SESSIONS_DIR:-}" ]]; then
+			doctor_add "sessions dir" "ok" "${SESSIONS_DIR}"
+		else
+			doctor_add "sessions dir" "fail" "${SESSIONS_DIR:-missing}"
+		fi
+	else
+		if [[ -d "${REDIS_DIR:-}" ]]; then
+			doctor_add "redis dir" "ok" "${REDIS_DIR}"
+		else
+			doctor_add "redis dir" "fail" "${REDIS_DIR:-missing}"
+		fi
+		if run_compose exec -T redis redis-cli -a "${REDIS_PASSWORD}" ping | grep -q PONG; then
+			doctor_add "redis ping" "ok" "PONG"
+		else
+			doctor_add "redis ping" "fail" "no pong"
+		fi
+	fi
+	if [[ -n "${APP_PUBLIC_URL:-}" ]] && command -v curl >/dev/null 2>&1; then
+		http_ok "$(health_url)" && doctor_add "app health" "ok" "$(health_url)" || doctor_add "app health" "fail" "$(health_url)"
+		http_ok "$(setup_status_url)" && doctor_add "setup api" "ok" "$(setup_status_url)" || doctor_add "setup api" "fail" "$(setup_status_url)"
+	fi
+	if command -v caddy >/dev/null 2>&1 && [[ -f "${ROOT_DIR}/caddy/Caddyfile" ]]; then
+		caddy validate --config "${ROOT_DIR}/caddy/Caddyfile" >/dev/null 2>&1 && doctor_add "caddy config" "ok" "${ROOT_DIR}/caddy/Caddyfile" || doctor_add "caddy config" "fail" "${ROOT_DIR}/caddy/Caddyfile"
+		systemctl is-active caddy >/dev/null 2>&1 && doctor_add "caddy service" "ok" "active" || doctor_add "caddy service" "warn" "inactive"
+		if [[ "${USE_CADDY:-0}" == "1" && "$(app_url_scheme)" == "https" ]]; then
+			if command -v openssl >/dev/null 2>&1; then
+				if cert_detail="$(tls_cert_detail)"; then
+					doctor_add "tls cert" "ok" "${cert_detail}"
+				else
+					doctor_add "tls cert" "fail" "${APP_PUBLIC_URL:-unknown}"
+				fi
+			else
+				doctor_add "tls cert" "warn" "openssl missing"
+			fi
+		fi
+	fi
+	if [[ -f "/etc/cron.d/emdash-backup" ]]; then
+		doctor_add "backup schedule" "ok" "/etc/cron.d/emdash-backup"
+	else
+		doctor_add "backup schedule" "warn" "missing"
+	fi
+
+	if [[ "${json_mode}" == "1" ]]; then
+		render_check_json "checks" "healthy" "DOCTOR_LINES"
+	else
+		doctor_print_text
+	fi
+}
+
+SMOKE_LINES=()
+
+smoke_add() {
+	local name="$1"
+	local status="$2"
+	local detail="${3:-}"
+	SMOKE_LINES+=("${name}|${status}|${detail}")
+}
+
+smoke_print_text() {
+	local entry name status detail
+	for entry in "${SMOKE_LINES[@]}"; do
+		IFS='|' read -r name status detail <<<"${entry}"
+		printf '%-18s %-5s %s\n' "${name}:" "${status}" "${detail}"
+	done
+}
+
+cmd_smoke() {
+	load_env
+	local json_mode="${1:-0}"
+	local exit_code=0
+	local setup_state
+	SMOKE_LINES=()
+
+	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+		if command -v docker >/dev/null 2>&1; then
+			smoke_add "runtime" "ok" "docker"
+		else
+			smoke_add "runtime" "fail" "docker missing"
+			exit_code=1
+		fi
+	else
+		if command -v podman >/dev/null 2>&1; then
+			smoke_add "runtime" "ok" "podman"
+		else
+			smoke_add "runtime" "fail" "podman missing"
+			exit_code=1
+		fi
+	fi
+
+	if [[ -f "${COMPOSE_FILE}" ]]; then
+		smoke_add "compose file" "ok" "${COMPOSE_FILE}"
+	else
+		smoke_add "compose file" "fail" "${COMPOSE_FILE}"
+		exit_code=1
+	fi
+
+	if service_running app; then
+		smoke_add "app container" "ok" "running"
+	else
+		smoke_add "app container" "fail" "not running"
+		exit_code=1
+	fi
+
+	if [[ "${DB_DRIVER}" == "postgres" ]]; then
+		if service_running postgres; then
+			smoke_add "postgres" "ok" "running"
+		else
+			smoke_add "postgres" "fail" "not running"
+			exit_code=1
+		fi
+		if run_compose exec -T postgres pg_isready -U "${PG_DB_USER}" -d "${PG_DB_NAME}" >/dev/null 2>&1; then
+			smoke_add "postgres ready" "ok" "${PG_DB_NAME}"
+		else
+			smoke_add "postgres ready" "fail" "${PG_DB_NAME}"
+			exit_code=1
+		fi
+	else
+		if [[ -f "${SQLITE_PATH:-}" ]]; then
+			smoke_add "sqlite db" "ok" "${SQLITE_PATH}"
+		else
+			smoke_add "sqlite db" "fail" "${SQLITE_PATH:-missing}"
+			exit_code=1
+		fi
+	fi
+
+	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
+		if service_running redis; then
+			smoke_add "redis" "ok" "running"
+		else
+			smoke_add "redis" "fail" "not running"
+			exit_code=1
+		fi
+		if run_compose exec -T redis redis-cli -a "${REDIS_PASSWORD}" ping | grep -q PONG; then
+			smoke_add "redis ping" "ok" "PONG"
+		else
+			smoke_add "redis ping" "fail" "no pong"
+			exit_code=1
+		fi
+	else
+		if [[ -d "${SESSIONS_DIR:-}" ]]; then
+			smoke_add "sessions dir" "ok" "${SESSIONS_DIR}"
+		else
+			smoke_add "sessions dir" "fail" "${SESSIONS_DIR:-missing}"
+			exit_code=1
+		fi
+	fi
+
+	if http_ok "$(health_url)"; then
+		smoke_add "app health" "ok" "$(health_url)"
+	else
+		smoke_add "app health" "fail" "$(health_url)"
+		exit_code=1
+	fi
+
+	if http_ok "$(setup_status_url)"; then
+		setup_state="$(setup_status_value)"
+		if [[ "${setup_state}" == "unreachable" || "${setup_state}" == "unknown" ]]; then
+			smoke_add "setup api" "fail" "${setup_state}"
+			exit_code=1
+		else
+			smoke_add "setup api" "ok" "${setup_state}"
+		fi
+	else
+		smoke_add "setup api" "fail" "$(setup_status_url)"
+		exit_code=1
+	fi
+
+	if [[ "${USE_CADDY:-0}" == "1" ]]; then
+		if command -v caddy >/dev/null 2>&1; then
+			if caddy validate --config "${ROOT_DIR}/caddy/Caddyfile" >/dev/null 2>&1; then
+				smoke_add "caddy config" "ok" "${ROOT_DIR}/caddy/Caddyfile"
+			else
+				smoke_add "caddy config" "fail" "${ROOT_DIR}/caddy/Caddyfile"
+				exit_code=1
+			fi
+			if systemctl is-active caddy >/dev/null 2>&1; then
+				smoke_add "caddy service" "ok" "active"
+			else
+				smoke_add "caddy service" "fail" "inactive"
+				exit_code=1
+			fi
+		else
+			smoke_add "caddy" "fail" "binary missing"
+			exit_code=1
+		fi
+	fi
+
+	if [[ "${json_mode}" == "1" ]]; then
+		render_check_json "checks" "passed" "SMOKE_LINES"
+	else
+		smoke_print_text
+	fi
+
+	return "${exit_code}"
+}
+
+main() {
+	local cmd="${1:-}"
+	case "${cmd}" in
+	status)
+		shift || true
+		if [[ "${1:-}" == "--json" ]]; then
+			cmd_status 1
+		else
+			cmd_status 0
+		fi
+		;;
+	logs)
+		shift
+		cmd_logs "${1:-app}" "${2:-}"
+		;;
+	restart)
+		shift
+		cmd_restart "${1:-all}"
+		;;
+	backup)
+		cmd_backup
+		;;
+	restore)
+		shift
+		cmd_restore "${1:-}"
+		;;
+	upgrade)
+		shift
+		cmd_upgrade "${1:-}"
+		;;
+	reset-db-password)
+		cmd_reset_db_password
+		;;
+	doctor)
+		shift || true
+		if [[ "${1:-}" == "--json" ]]; then
+			cmd_doctor 1
+		else
+			cmd_doctor 0
+		fi
+		;;
+	smoke)
+		shift || true
+		if [[ "${1:-}" == "--json" ]]; then
+			cmd_smoke 1
+		else
+			cmd_smoke 0
+		fi
+		;;
+	-h | --help | help | "")
+		usage
+		;;
+	*)
+		fail "未知命令: ${cmd}"
+		;;
+	esac
+}
+
+main "$@"
