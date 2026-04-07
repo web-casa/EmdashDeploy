@@ -1,0 +1,84 @@
+name: Bug report
+description: Report an installer, runtime, backup, or operations bug
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please include enough detail to reproduce it.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: A short description of the issue
+    validations:
+      required: true
+  - type: dropdown
+    id: os_family
+    attributes:
+      label: OS family
+      options:
+        - Debian
+        - Ubuntu
+        - EL-like
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os_version
+    attributes:
+      label: OS version
+      placeholder: "Debian 13 / Ubuntu 24.04 / Rocky 9"
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - SQLite
+        - PostgreSQL
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Session
+      options:
+        - file
+        - redis
+    validations:
+      required: true
+  - type: dropdown
+    id: caddy
+    attributes:
+      label: Caddy enabled
+      options:
+        - "yes"
+        - "no"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run ...
+        2. Choose ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste output from emdashctl doctor/status/smoke or container logs
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else that helps explain the issue

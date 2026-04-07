@@ -1,6 +1,7 @@
 # EmdashDeploy
 
 [![GHCR Builder](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-builder.yml/badge.svg)](https://github.com/web-casa/EmdashDeploy/actions/workflows/publish-ghcr-builder.yml)
+![License](https://img.shields.io/github/license/web-casa/EmdashDeploy)
 ![OS](https://img.shields.io/badge/OS-Debian%2012%2F13%20%7C%20Ubuntu%2022%2F24%20%7C%20EL%208%2F9%2F10-blue)
 ![Runtime](https://img.shields.io/badge/Runtime-Docker%20%7C%20Podman-2496ED)
 ![Stack](https://img.shields.io/badge/Stack-EmDash%20%2B%20Caddy%20%2B%20PostgreSQL%20%2F%20SQLite-2ea44f)
