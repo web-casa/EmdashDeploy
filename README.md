@@ -176,6 +176,23 @@ This repository includes GitHub Actions workflows for publishing both the builde
 - Published default app image: `ghcr.io/web-casa/emdash-app:starter-sqlite-file-local`
 - Platform target: `linux/amd64,linux/arm64`
 
+Builder vs app:
+
+- `builder` is a reusable build environment image.
+- `app` is a prebuilt runtime image.
+
+Use `builder` when:
+
+- you want the VPS to build the site locally
+- you use PostgreSQL, Redis, or S3-compatible storage
+- you changed the template or want full flexibility
+
+Use `app` when:
+
+- you want the fastest deployment path
+- you want to skip local app builds on the VPS
+- you are using the default published profile: `starter + sqlite + file + local`
+
 The workflow runs when:
 
 - `docker/base/Dockerfile` changes on `main`
@@ -215,6 +232,11 @@ Behavior:
 - `APP_IMAGE` is pulled first
 - if the pull succeeds, the installer starts the stack directly
 - if the pull fails, the installer falls back to a local build
+
+Recommendation:
+
+- For general-purpose or customized deployments, prefer `APP_BASE_IMAGE`.
+- For the default SQLite/file/local profile, prefer `APP_IMAGE`.
 
 Important:
 
