@@ -211,6 +211,19 @@ print("Aa1!" + secrets.token_urlsafe(18))
 PY
 }
 
+generate_test_label() {
+	python3 - "$LINODE_TEST_LABEL_PREFIX" <<'PY'
+import secrets
+import sys
+from datetime import datetime, UTC
+
+prefix = sys.argv[1]
+stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+suffix = secrets.token_hex(2)
+print(f"{prefix}-{stamp}-{suffix}")
+PY
+}
+
 pick_regions() {
 	printf '%s\n' "${LINODE_TEST_REGION_CANDIDATES}" | tr ',' '\n' | sed '/^$/d'
 }
@@ -495,7 +508,7 @@ main() {
 	validate_profile
 	validate_image_and_type
 	create_temp_key
-	TEST_LABEL="${LINODE_TEST_LABEL_PREFIX}-$(date +%Y%m%d-%H%M%S)"
+	TEST_LABEL="$(generate_test_label)"
 	[[ -z "${LINODE_TEST_INSTALL_DOMAIN}" ]] && LINODE_TEST_DOMAIN_AUTO="1"
 	[[ -z "${LINODE_TEST_INSTALL_ADMIN_EMAIL}" ]] && LINODE_TEST_ADMIN_EMAIL_AUTO="1"
 
@@ -516,17 +529,17 @@ main() {
 			LINODE_TEST_INSTALL_ADMIN_EMAIL=""
 		fi
 		prepare_test_domain_inputs
-			if ! wait_for_ssh; then
-				warn "区域 ${region} SSH 未就绪，尝试下一个区域。"
-				destroy_current_instance
-				continue
-			fi
-			push_workspace
-			run_remote_test
-			write_result_file
-			log "Linode 临时测试完成"
-			attempt_success=1
-			break
+		if ! wait_for_ssh; then
+			warn "区域 ${region} SSH 未就绪，尝试下一个区域。"
+			destroy_current_instance
+			continue
+		fi
+		push_workspace
+		run_remote_test
+		write_result_file
+		log "Linode 临时测试完成"
+		attempt_success=1
+		break
 	done
 
 	[[ "${attempt_success}" == "1" ]] || fail "所有候选区域都未能完成测试。"
