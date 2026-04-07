@@ -102,11 +102,30 @@ sudo bash install-emdash.sh --non-interactive --activate
 
 ## GHCR 发布说明
 
-仓库内已经包含 GHCR builder 镜像发布工作流：
+仓库内已经包含 GHCR builder 镜像和默认 app 镜像的发布工作流：
 
 - Workflow: [`publish-ghcr-builder.yml`](./.github/workflows/publish-ghcr-builder.yml)
+- Workflow: [`publish-ghcr-app.yml`](./.github/workflows/publish-ghcr-app.yml)
 - Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
-- 镜像名：`ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
+- builder 镜像：`ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
+- 默认 app 镜像：`ghcr.io/<repository_owner>/emdash-app:starter-sqlite-file-local`
+
+builder 和 app 的区别：
+
+- `builder` 是可复用的构建环境镜像。
+- `app` 是已经构建完成的运行时镜像。
+
+适合使用 `builder` 的场景：
+
+- 你希望 VPS 在本地完成站点构建
+- 你使用 PostgreSQL、Redis 或 S3 兼容存储
+- 你改过模板，或者希望保留完整灵活性
+
+适合使用 `app` 的场景：
+
+- 你希望部署速度最快
+- 你不想在 VPS 上本地构建应用
+- 你使用默认发布配置：`starter + sqlite + file + local`
 
 触发条件：
 
@@ -124,14 +143,20 @@ sudo bash install-emdash.sh --activate
 使用预构建 app 镜像：
 
 ```bash
-EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/<image>:<tag> \
+EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
 sudo bash install-emdash.sh --activate
 ```
+
+推荐：
+
+- 通用或自定义部署，优先使用 `APP_BASE_IMAGE`
+- 默认 SQLite/file/local 配置，优先使用 `APP_IMAGE`
 
 注意：
 
 - 想匿名拉取时，需要把 GHCR package 设为 public
 - 私有镜像需要先在 VPS 上登录 `ghcr.io`
+- 默认发布的 app 镜像只覆盖 `starter + sqlite + file + local`
 
 ## 实机测试
 

@@ -48,11 +48,30 @@ sudo bash install-emdash.sh --activate
 
 ## GHCR
 
-이 저장소에는 GHCR builder 이미지를 발행하는 GitHub Actions workflow가 포함되어 있습니다.
+이 저장소에는 GHCR builder 이미지와 기본 app 이미지를 발행하는 GitHub Actions workflow가 포함되어 있습니다.
 
 - Workflow: [`publish-ghcr-builder.yml`](./.github/workflows/publish-ghcr-builder.yml)
+- Workflow: [`publish-ghcr-app.yml`](./.github/workflows/publish-ghcr-app.yml)
 - Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
-- 이미지: `ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
+- builder 이미지: `ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
+- 기본 app 이미지: `ghcr.io/<repository_owner>/emdash-app:starter-sqlite-file-local`
+
+builder 와 app 의 차이:
+
+- `builder` 는 재사용 가능한 빌드 환경 이미지입니다.
+- `app` 는 이미 빌드된 런타임 이미지입니다.
+
+`builder` 를 쓰기 좋은 경우:
+
+- VPS에서 사이트를 직접 빌드하고 싶을 때
+- PostgreSQL, Redis, S3 호환 스토리지를 사용할 때
+- 템플릿을 수정했거나 유연성을 우선할 때
+
+`app` 을 쓰기 좋은 경우:
+
+- 가장 빠른 배포 경로를 원할 때
+- VPS에서 로컬 앱 빌드를 생략하고 싶을 때
+- 기본 공개 프로필 `starter + sqlite + file + local` 을 사용할 때
 
 예시:
 
@@ -60,6 +79,18 @@ sudo bash install-emdash.sh --activate
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
 sudo bash install-emdash.sh --activate
 ```
+
+사전 빌드된 app 이미지 사용 예시:
+
+```bash
+EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
+sudo bash install-emdash.sh --activate
+```
+
+권장:
+
+- 일반적이거나 커스텀된 배포는 `APP_BASE_IMAGE` 를 우선하세요
+- 기본 SQLite/file/local 프로필은 `APP_IMAGE` 를 우선하세요
 
 ## HTTPS
 
