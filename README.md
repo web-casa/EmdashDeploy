@@ -44,6 +44,12 @@ Single-entry command style:
 - `install.sh --lang=<code>`
 - `emdashctl --lang=<code>`
 
+Compatibility note:
+
+- Legacy aliases such as `bootstrap.zh-TW.sh`, `install-emdash.zh-CN.sh`, and `emdashctl.ko.sh` are still kept as compatibility aliases.
+- They are no longer the documented default.
+- See [`COMPATIBILITY.md`](./COMPATIBILITY.md).
+
 If you prefer a local checkout:
 
 ```bash

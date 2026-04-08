@@ -4,6 +4,8 @@ Target: first post-release hardening cycle after `0.2.0-hi.1`
 
 ## Priority 1
 
+- Publish and document the single-entry `--lang` interface as the only primary interface
+- Keep legacy language aliases as compatibility-only symlinks and document the removal policy
 - Add a `Known Issues` section to the main README
 - Add release process documentation for tags, GHCR images, and release assets
 - Add a reusable release checklist script or document
