@@ -502,19 +502,98 @@ EOF
 }
 
 install_emdashctl_script() {
+	migrate_legacy_emdashctl_references
 	install -m 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
-	local alias
-	for alias in \
-		emdashctl.en.sh \
-		emdashctl.ja.sh \
-		emdashctl.ko.sh \
-		emdashctl.es.sh \
-		emdashctl.de.sh \
-		emdashctl.fr.sh \
-		emdashctl.zh-CN.sh \
-		emdashctl.zh-TW.sh \
-		emdashctl.pt.sh; do
-		ln -sfn /usr/local/bin/emdashctl "/usr/local/bin/${alias}"
+	remove_legacy_emdashctl_aliases
+}
+
+migrate_legacy_emdashctl_references() {
+	local tmp_report
+	tmp_report="$(mktemp)"
+	REPO_ROOT="${SCRIPT_DIR}" TMP_REPORT="${tmp_report}" python3 <<'PY'
+import os
+from pathlib import Path
+
+repo_root = Path(os.environ["REPO_ROOT"])
+report_path = Path(os.environ["TMP_REPORT"])
+
+replacements = {
+    "/usr/local/bin/emdashctl.en.sh": "/usr/local/bin/emdashctl --lang=en",
+    "/usr/local/bin/emdashctl.ja.sh": "/usr/local/bin/emdashctl --lang=ja",
+    "/usr/local/bin/emdashctl.ko.sh": "/usr/local/bin/emdashctl --lang=ko",
+    "/usr/local/bin/emdashctl.es.sh": "/usr/local/bin/emdashctl --lang=es",
+    "/usr/local/bin/emdashctl.de.sh": "/usr/local/bin/emdashctl --lang=de",
+    "/usr/local/bin/emdashctl.fr.sh": "/usr/local/bin/emdashctl --lang=fr",
+    "/usr/local/bin/emdashctl.zh-CN.sh": "/usr/local/bin/emdashctl --lang=zh-CN",
+    "/usr/local/bin/emdashctl.zh-TW.sh": "/usr/local/bin/emdashctl --lang=zh-TW",
+    "/usr/local/bin/emdashctl.pt.sh": "/usr/local/bin/emdashctl --lang=pt",
+    "emdashctl.en.sh": "emdashctl --lang=en",
+    "emdashctl.ja.sh": "emdashctl --lang=ja",
+    "emdashctl.ko.sh": "emdashctl --lang=ko",
+    "emdashctl.es.sh": "emdashctl --lang=es",
+    "emdashctl.de.sh": "emdashctl --lang=de",
+    "emdashctl.fr.sh": "emdashctl --lang=fr",
+    "emdashctl.zh-CN.sh": "emdashctl --lang=zh-CN",
+    "emdashctl.zh-TW.sh": "emdashctl --lang=zh-TW",
+    "emdashctl.pt.sh": "emdashctl --lang=pt",
+}
+
+targets = []
+for path in [Path("/etc/crontab"), Path("/etc/anacrontab")]:
+    if path.is_file():
+        targets.append(path)
+
+for glob_pattern in (
+    "/etc/cron.d/*",
+    "/etc/cron.daily/*",
+    "/etc/cron.hourly/*",
+    "/etc/cron.weekly/*",
+    "/etc/cron.monthly/*",
+    "/etc/systemd/system/*.service",
+    "/etc/systemd/system/*.timer",
+):
+    for candidate in Path("/").glob(glob_pattern.lstrip("/")):
+        if candidate.is_file():
+            targets.append(candidate)
+
+changed = []
+for path in sorted(set(targets)):
+    try:
+        original = path.read_text()
+    except (OSError, UnicodeDecodeError):
+        continue
+    updated = original
+    for old, new in replacements.items():
+        updated = updated.replace(old, new)
+    if updated != original:
+        path.write_text(updated)
+        changed.append(str(path))
+
+report_path.write_text("\n".join(changed))
+PY
+	if [[ -s "${tmp_report}" ]]; then
+		while IFS= read -r migrated_file; do
+			[[ -n "${migrated_file}" ]] || continue
+			log "迁移旧 emdashctl 多语言别名引用: ${migrated_file}"
+		done <"${tmp_report}"
+		systemctl daemon-reload >/dev/null 2>&1 || true
+	fi
+	rm -f "${tmp_report}"
+}
+
+remove_legacy_emdashctl_aliases() {
+	local alias_path
+	for alias_path in \
+		/usr/local/bin/emdashctl.en.sh \
+		/usr/local/bin/emdashctl.ja.sh \
+		/usr/local/bin/emdashctl.ko.sh \
+		/usr/local/bin/emdashctl.es.sh \
+		/usr/local/bin/emdashctl.de.sh \
+		/usr/local/bin/emdashctl.fr.sh \
+		/usr/local/bin/emdashctl.zh-CN.sh \
+		/usr/local/bin/emdashctl.zh-TW.sh \
+		/usr/local/bin/emdashctl.pt.sh; do
+		rm -f "${alias_path}"
 	done
 }
 

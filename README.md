@@ -46,8 +46,9 @@ Single-entry command style:
 
 Compatibility note:
 
-- Legacy aliases such as `bootstrap.zh-TW.sh`, `install-emdash.zh-CN.sh`, and `emdashctl.ko.sh` are still kept as compatibility aliases.
-- They are no longer the documented default.
+- Repository-level language alias files have been removed.
+- Installed systems now use only `emdashctl --lang=<code>`.
+- During install or upgrade, the installer rewrites recognized system-level `emdashctl.<lang>.sh` references in cron and systemd files to the unified `--lang` form and removes stale alias files from `/usr/local/bin`.
 - See [`COMPATIBILITY.md`](./COMPATIBILITY.md).
 
 If you prefer a local checkout:

@@ -18,42 +18,53 @@ sudo bash install.sh --lang=ja --activate
 emdashctl --lang=de status
 ```
 
-## Legacy Compatibility Aliases
+## Repository Interface Cleanup
 
-The following legacy entrypoints are still kept for compatibility:
+The repository no longer ships language-specific alias files such as:
 
 - `bootstrap.<lang>.sh`
 - `install-emdash.<lang>.sh`
 - `emdashctl.<lang>.sh`
 
-They are preserved for these reasons:
+The supported interface is now only:
 
-- existing raw GitHub URLs may still reference them
-- bookmarked operator commands may still use them
-- existing cron jobs, runbooks, or local scripts may still call them
+- `bootstrap.sh --lang=<code>`
+- `install.sh --lang=<code>`
+- `emdashctl --lang=<code>`
 
-In the repository, these aliases are lightweight symlinks that point to the unified entrypoints.
+This keeps the repository root small and avoids publishing multiple language-specific entrypoints that all do the same thing.
 
-On installed systems, `emdashctl.<lang>.sh` aliases are still created so existing automation does not break after upgrade or reinstall.
+## Compatibility Boundary
+
+The project no longer guarantees compatibility for old repository paths or raw GitHub URLs such as:
+
+- `.../bootstrap.zh-TW.sh`
+- `.../install-emdash.zh-CN.sh`
+- `.../emdashctl.ko.sh`
+
+Those old entrypoints are considered removed.
+
+## Installed-System Migration
+
+To reduce upgrade breakage, install and upgrade runs now perform a migration step:
+
+- recognized `emdashctl.<lang>.sh` references in system-level cron files are rewritten to `emdashctl --lang=<code>`
+- recognized `emdashctl.<lang>.sh` references in `/etc/systemd/system/*.service` and `*.timer` are rewritten to `emdashctl --lang=<code>`
+- stale `/usr/local/bin/emdashctl.<lang>.sh` aliases are removed
+
+This preserves the important runtime compatibility path without keeping extra wrapper files in the repository or on the target host.
 
 ## Removal Policy
 
-Legacy aliases are compatibility-only, not primary interface.
+Language-specific alias files are removed from the repository and are not recreated on target systems.
 
-They should not be removed in a patch release or a compatibility hardening release.
-
-If removal is ever needed, it should happen only after all of the following:
-
-1. the unified `--lang` interface has been the only documented default for at least one full release cycle
-2. release notes explicitly mark the aliases as deprecated
-3. the next release notes explicitly announce the removal window
-4. removal happens no earlier than a later compatibility-breaking release line
+The migration layer exists only to help installed automation converge to the unified command style.
 
 ## Repository Cleanliness Rule
 
-To keep the repository clean while preserving compatibility:
+To keep the repository clean:
 
 - documentation should show only the unified entrypoints
-- legacy aliases should stay tiny and maintenance-free
+- no language-specific alias files should be reintroduced
 - no new language-specific wrapper logic should be added
 - all real behavior should remain in `bootstrap.sh`, `install.sh`, `install-emdash.sh`, and `emdashctl`
