@@ -34,13 +34,13 @@ Non pris en charge :
 ## Démarrage rapide
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.fr.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=fr
 ```
 
 Générer uniquement les fichiers :
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.fr.sh | sudo bash -s -- --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=fr --write-only
 ```
 
 ## GHCR

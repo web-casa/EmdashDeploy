@@ -34,13 +34,13 @@ Docker/Podman, 선택적 Caddy HTTPS, 백업, 복구, 헬스 체크를 지원하
 ## 빠른 시작
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.ko.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ko
 ```
 
 설정 파일만 생성:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.ko.sh | sudo bash -s -- --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ko --write-only
 ```
 
 ## GHCR

@@ -20,25 +20,37 @@ Versioning for this project follows the `HiEmdash` line:
 
 ## Quick Start
 
-Run the English bootstrap installer directly:
+Run the bootstrap installer directly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en
 ```
 
 Generate files only:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash -s -- --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en --write-only
 ```
 
 Non-interactive install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash -s -- --non-interactive
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en --non-interactive
 ```
 
-Available bootstrap wrappers:
+Preferred bootstrap usage:
+
+- `bootstrap.sh --lang=en`
+- `bootstrap.sh --lang=ja`
+- `bootstrap.sh --lang=ko`
+- `bootstrap.sh --lang=es`
+- `bootstrap.sh --lang=de`
+- `bootstrap.sh --lang=fr`
+- `bootstrap.sh --lang=zh-CN`
+- `bootstrap.sh --lang=zh-TW`
+- `bootstrap.sh --lang=pt`
+
+Compatible bootstrap wrappers:
 
 - `bootstrap.en.sh`
 - `bootstrap.ja.sh`

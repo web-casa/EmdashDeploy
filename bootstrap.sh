@@ -30,22 +30,42 @@ archive_url() {
 main() {
 	local archive=""
 	local repo_dir=""
-	local -a args=("$@")
+	local -a raw_args=("$@")
+	local -a args=()
 	local has_mode_flag="0"
 	local show_help="0"
 	local arg=""
+	local idx=0
 
 	trap cleanup EXIT
 
-	for arg in "${args[@]}"; do
+	while [[ "${idx}" -lt "${#raw_args[@]}" ]]; do
+		arg="${raw_args[${idx}]}"
 		case "${arg}" in
 		--activate | --write-only)
 			has_mode_flag="1"
+			args+=("${arg}")
 			;;
 		-h | --help)
 			show_help="1"
+			args+=("${arg}")
+			;;
+		--lang=*)
+			INSTALL_LANG="${arg#--lang=}"
+			;;
+		--lang)
+			idx=$((idx + 1))
+			[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
+				printf '[ERROR] Missing value for --lang\n' >&2
+				exit 1
+			}
+			INSTALL_LANG="${raw_args[${idx}]}"
+			;;
+		*)
+			args+=("${arg}")
 			;;
 		esac
+		idx=$((idx + 1))
 	done
 
 	if [[ "${has_mode_flag}" != "1" && "${show_help}" != "1" ]]; then

@@ -7,19 +7,19 @@ Instalador interativo do EmDash para VPS e conjunto de ferramentas operacionais,
 ## Início rápido
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=pt
 ```
 
 Gerar apenas os arquivos:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash -s -- --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=pt --write-only
 ```
 
 Instalação não interativa:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash -s -- --non-interactive
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=pt --non-interactive
 ```
 
 Modo não interativo, SQLite:

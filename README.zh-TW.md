@@ -7,19 +7,19 @@ EmDash 的互動式 VPS 安裝器與維運工具集，支援 Docker/Podman、可
 ## 快速開始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-TW.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-TW
 ```
 
 只產生設定：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-TW.sh | sudo bash -s -- --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-TW --write-only
 ```
 
 非互動安裝：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-TW.sh | sudo bash -s -- --non-interactive
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-TW --non-interactive
 ```
 
 非互動模式，SQLite：
