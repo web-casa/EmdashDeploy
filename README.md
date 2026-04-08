@@ -48,7 +48,8 @@ Compatibility note:
 
 - Repository-level language alias files have been removed.
 - Installed systems now use only `emdashctl --lang=<code>`.
-- During install or upgrade, the installer rewrites recognized system-level `emdashctl.<lang>.sh` references in cron and systemd files to the unified `--lang` form and removes stale alias files from `/usr/local/bin`.
+- During install or upgrade, the installer rewrites recognized system-level cron entries and systemd `Exec*` lines that still call `emdashctl.<lang>.sh`, then removes stale alias files from `/usr/local/bin`.
+- Arbitrary user scripts or bookmarked raw GitHub URLs are not migrated automatically.
 - See [`COMPATIBILITY.md`](./COMPATIBILITY.md).
 
 If you prefer a local checkout:

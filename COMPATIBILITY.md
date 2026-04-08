@@ -48,11 +48,13 @@ Those old entrypoints are considered removed.
 
 To reduce upgrade breakage, install and upgrade runs now perform a migration step:
 
-- recognized `emdashctl.<lang>.sh` references in system-level cron files are rewritten to `emdashctl --lang=<code>`
-- recognized `emdashctl.<lang>.sh` references in `/etc/systemd/system/*.service` and `*.timer` are rewritten to `emdashctl --lang=<code>`
+- recognized command invocations in system-level cron entries are rewritten to `emdashctl --lang=<code>`
+- recognized `Exec*=` lines in `/etc/systemd/system/*.service` and `*.timer` are rewritten to `emdashctl --lang=<code>`
 - stale `/usr/local/bin/emdashctl.<lang>.sh` aliases are removed
 
 This preserves the important runtime compatibility path without keeping extra wrapper files in the repository or on the target host.
+
+It does not rewrite arbitrary user scripts, user crontabs, bookmarked shell history, or old raw GitHub URLs.
 
 ## Removal Policy
 

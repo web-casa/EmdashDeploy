@@ -510,63 +510,101 @@ install_emdashctl_script() {
 migrate_legacy_emdashctl_references() {
 	local tmp_report
 	tmp_report="$(mktemp)"
-	REPO_ROOT="${SCRIPT_DIR}" TMP_REPORT="${tmp_report}" python3 <<'PY'
+	TMP_REPORT="${tmp_report}" python3 <<'PY'
 import os
+import re
 from pathlib import Path
 
-repo_root = Path(os.environ["REPO_ROOT"])
 report_path = Path(os.environ["TMP_REPORT"])
 
-replacements = {
-    "/usr/local/bin/emdashctl.en.sh": "/usr/local/bin/emdashctl --lang=en",
-    "/usr/local/bin/emdashctl.ja.sh": "/usr/local/bin/emdashctl --lang=ja",
-    "/usr/local/bin/emdashctl.ko.sh": "/usr/local/bin/emdashctl --lang=ko",
-    "/usr/local/bin/emdashctl.es.sh": "/usr/local/bin/emdashctl --lang=es",
-    "/usr/local/bin/emdashctl.de.sh": "/usr/local/bin/emdashctl --lang=de",
-    "/usr/local/bin/emdashctl.fr.sh": "/usr/local/bin/emdashctl --lang=fr",
-    "/usr/local/bin/emdashctl.zh-CN.sh": "/usr/local/bin/emdashctl --lang=zh-CN",
-    "/usr/local/bin/emdashctl.zh-TW.sh": "/usr/local/bin/emdashctl --lang=zh-TW",
-    "/usr/local/bin/emdashctl.pt.sh": "/usr/local/bin/emdashctl --lang=pt",
-    "emdashctl.en.sh": "emdashctl --lang=en",
-    "emdashctl.ja.sh": "emdashctl --lang=ja",
-    "emdashctl.ko.sh": "emdashctl --lang=ko",
-    "emdashctl.es.sh": "emdashctl --lang=es",
-    "emdashctl.de.sh": "emdashctl --lang=de",
-    "emdashctl.fr.sh": "emdashctl --lang=fr",
-    "emdashctl.zh-CN.sh": "emdashctl --lang=zh-CN",
-    "emdashctl.zh-TW.sh": "emdashctl --lang=zh-TW",
-    "emdashctl.pt.sh": "emdashctl --lang=pt",
+langs = ("en", "ja", "ko", "es", "de", "fr", "zh-CN", "zh-TW", "pt")
+lang_alt = "|".join(re.escape(lang) for lang in langs)
+absolute_pattern = re.compile(rf"/usr/local/bin/emdashctl\.({lang_alt})\.sh(?![\w.-])")
+bare_pattern = re.compile(rf"(?<![\w./-])emdashctl\.({lang_alt})\.sh(?![\w.-])")
+systemd_keys = {
+    "ExecStart",
+    "ExecStartPre",
+    "ExecStartPost",
+    "ExecReload",
+    "ExecStop",
+    "ExecStopPost",
 }
 
-targets = []
+def replace_absolute(text: str) -> str:
+    return absolute_pattern.sub(lambda m: f"/usr/local/bin/emdashctl --lang={m.group(1)}", text)
+
+def replace_bare(text: str) -> str:
+    return bare_pattern.sub(lambda m: f"emdashctl --lang={m.group(1)}", text)
+
+def migrate_cron_like(path: Path) -> bool:
+    try:
+        lines = path.read_text().splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        return False
+    changed = False
+    updated_lines = []
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            updated_lines.append(line)
+            continue
+        updated = replace_bare(replace_absolute(line))
+        if updated != line:
+            changed = True
+        updated_lines.append(updated)
+    if changed:
+        path.write_text("".join(updated_lines))
+    return changed
+
+def migrate_systemd_unit(path: Path) -> bool:
+    try:
+        lines = path.read_text().splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        return False
+    changed = False
+    updated_lines = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("#") or "=" not in stripped:
+            updated_lines.append(line)
+            continue
+        key, value = stripped.split("=", 1)
+        if key not in systemd_keys:
+            updated_lines.append(line)
+            continue
+        indent = line[: len(line) - len(line.lstrip())]
+        new_value = replace_bare(replace_absolute(value))
+        new_line = f"{indent}{key}={new_value}"
+        if new_line != line:
+            changed = True
+        updated_lines.append(new_line)
+    if changed:
+        path.write_text("".join(updated_lines))
+    return changed
+
+cron_targets = []
 for path in [Path("/etc/crontab"), Path("/etc/anacrontab")]:
     if path.is_file():
-        targets.append(path)
+        cron_targets.append(path)
 
-for glob_pattern in (
-    "/etc/cron.d/*",
-    "/etc/cron.daily/*",
-    "/etc/cron.hourly/*",
-    "/etc/cron.weekly/*",
-    "/etc/cron.monthly/*",
-    "/etc/systemd/system/*.service",
-    "/etc/systemd/system/*.timer",
-):
+for glob_pattern in ("/etc/cron.d/*",):
     for candidate in Path("/").glob(glob_pattern.lstrip("/")):
         if candidate.is_file():
-            targets.append(candidate)
+            cron_targets.append(candidate)
+
+systemd_targets = []
+for glob_pattern in ("/etc/systemd/system/*.service", "/etc/systemd/system/*.timer"):
+    for candidate in Path("/").glob(glob_pattern.lstrip("/")):
+        if candidate.is_file():
+            systemd_targets.append(candidate)
 
 changed = []
-for path in sorted(set(targets)):
-    try:
-        original = path.read_text()
-    except (OSError, UnicodeDecodeError):
-        continue
-    updated = original
-    for old, new in replacements.items():
-        updated = updated.replace(old, new)
-    if updated != original:
-        path.write_text(updated)
+for path in sorted(set(cron_targets)):
+    if migrate_cron_like(path):
+        changed.append(str(path))
+
+for path in sorted(set(systemd_targets)):
+    if migrate_systemd_unit(path):
         changed.append(str(path))
 
 report_path.write_text("\n".join(changed))
