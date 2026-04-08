@@ -490,6 +490,15 @@ echo
 echo \"===== emdashctl doctor --json =====\"
 /usr/local/bin/emdashctl doctor --json
 echo
+echo \"===== emdashctl status --json =====\"
+/usr/local/bin/emdashctl status --json
+echo
+echo \"===== local setup api =====\"
+curl -i --max-time 15 http://127.0.0.1:3000/_emdash/api/setup/status
+echo
+echo \"===== journalctl -u emdash-app =====\"
+journalctl -u emdash-app -n 200 --no-pager
+echo
 echo \"===== journalctl -u caddy =====\"
 journalctl -u caddy -n 200 --no-pager
 '" >"${LINODE_TEST_FAILURE_LOG}" 2>&1 || true

@@ -190,19 +190,22 @@ configure_postgres_local() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || return 0
 
 	log "配置本机 PostgreSQL 数据库"
-	runuser -u postgres -- psql postgres \
-		--set=db_user="${PG_DB_USER}" \
-		--set=db_password="${PG_DB_PASSWORD}" <<'EOF'
-DO \$\$
-BEGIN
-   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'db_user') THEN
-      EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', :'db_user', :'db_password');
-   ELSE
-      EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'db_user', :'db_password');
-   END IF;
-END
-\$\$;
-EOF
+	PG_DB_USER_VALUE="${PG_DB_USER}" PG_DB_PASSWORD_VALUE="${PG_DB_PASSWORD}" python3 <<'PY' | runuser -u postgres -- psql postgres
+import os
+
+def sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+user = os.environ["PG_DB_USER_VALUE"]
+password = os.environ["PG_DB_PASSWORD_VALUE"]
+
+print(f"SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', {sql_literal(user)}, {sql_literal(password)})")
+print(f"WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = {sql_literal(user)});")
+print("\\gexec")
+print(f"SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', {sql_literal(user)}, {sql_literal(password)})")
+print(f"WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = {sql_literal(user)});")
+print("\\gexec")
+PY
 	if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${PG_DB_NAME}'" | grep -qx 1; then
 		runuser -u postgres -- createdb -O "${PG_DB_USER}" "${PG_DB_NAME}"
 	fi
@@ -350,11 +353,11 @@ activate_caddy_service() {
 	open_required_firewall_ports
 	install -d -m 0755 /etc/caddy
 	install -d -m 0755 /var/lib/caddy /var/log/caddy
-	install -d -m 0755 -o caddy -g caddy "${LOG_DIR}"
-	touch "${LOG_DIR}/caddy-access.log"
-	chown caddy:caddy "${LOG_DIR}/caddy-access.log"
+	install -d -m 0755 "${CADDY_DIR}"
+	touch /var/log/caddy/emdash-access.log
+	chown caddy:caddy /var/log/caddy/emdash-access.log
 	if command_exists restorecon; then
-		restorecon -RF /var/lib/caddy /var/log/caddy "${LOG_DIR}" >/dev/null 2>&1 || true
+		restorecon -RF /etc/caddy "${CADDY_DIR}" "${CADDYFILE_PATH}" /var/lib/caddy /var/log/caddy >/dev/null 2>&1 || true
 	fi
 	if [[ -e /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]]; then
 		cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.emdash.bak.$(date +%Y%m%d-%H%M%S)"

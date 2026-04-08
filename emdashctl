@@ -250,7 +250,11 @@ render_site_astro_config() {
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
 		db_import='import { postgres } from "emdash/db";'
 		db_block='database: postgres({
-				connectionString: process.env.DATABASE_URL,
+				host: process.env.POSTGRES_HOST,
+				port: Number(process.env.POSTGRES_PORT || "5432"),
+				database: process.env.PG_DB_NAME,
+				user: process.env.PG_DB_USER,
+				password: process.env.PG_DB_PASSWORD,
 			}),'
 	else
 		db_import='import { sqlite } from "emdash/db";'
@@ -289,11 +293,16 @@ EOF
 
 render_site_app_scripts() {
 	local node_heap="${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}"
-	cat >"${APP_BUILD_SCRIPT}" <<EOF
+cat >"${APP_BUILD_SCRIPT}" <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
 export NODE_OPTIONS="--max-old-space-size=${node_heap}"
+if [[ -f "${APP_ENV_FILE}" ]]; then
+	set -a
+	. "${APP_ENV_FILE}"
+	set +a
+fi
 cd "${SITE_DIR}"
 corepack enable || true
 corepack prepare pnpm@10.28.0 --activate

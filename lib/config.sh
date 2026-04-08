@@ -98,7 +98,7 @@ derive_paths() {
 	LOG_DIR="${ROOT_DIR}/logs"
 	BACKUP_DIR="${ROOT_DIR}/backups"
 	TMP_DIR="${ROOT_DIR}/tmp"
-	CADDY_DIR="${ROOT_DIR}/caddy"
+	CADDY_DIR="${CONFIG_DIR}/caddy"
 	CADDYFILE_PATH="${CADDY_DIR}/Caddyfile"
 	TEMPLATE_SOURCE_DIR="${APP_DIR}/template-source"
 	SQLITE_DIR="${DATA_DIR}/sqlite"

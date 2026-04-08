@@ -125,7 +125,11 @@ render_astro_config() {
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
 		db_import='import { postgres } from "emdash/db";'
 		db_block='database: postgres({
-				connectionString: process.env.DATABASE_URL,
+				host: process.env.POSTGRES_HOST,
+				port: Number(process.env.POSTGRES_PORT || "5432"),
+				database: process.env.PG_DB_NAME,
+				user: process.env.PG_DB_USER,
+				password: process.env.PG_DB_PASSWORD,
 			}),'
 	else
 		db_import='import { sqlite } from "emdash/db";'
@@ -168,6 +172,11 @@ render_app_scripts() {
 set -Eeuo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
 export NODE_OPTIONS="--max-old-space-size=${APP_NODE_MAX_OLD_SPACE_SIZE}"
+if [[ -f "${APP_ENV_FILE}" ]]; then
+	set -a
+	. "${APP_ENV_FILE}"
+	set +a
+fi
 cd "${SITE_DIR}"
 corepack enable || true
 corepack prepare pnpm@10.28.0 --activate
@@ -291,7 +300,10 @@ render_app_env() {
 		append_env_line BACKUP_S3_SECRET_ACCESS_KEY "${BACKUP_S3_SECRET_ACCESS_KEY}"
 		append_env_line BACKUP_S3_PREFIX "${BACKUP_S3_PREFIX}"
 	} >"${APP_ENV_FILE}"
-	chmod 0600 "${APP_ENV_FILE}"
+	chmod 0640 "${APP_ENV_FILE}"
+	if getent group "${APP_RUN_GROUP}" >/dev/null 2>&1; then
+		chown root:"${APP_RUN_GROUP}" "${APP_ENV_FILE}"
+	fi
 }
 
 render_install_yaml() {
@@ -368,6 +380,7 @@ render_caddy_file() {
 
 	local site_header=""
 	local global_block=""
+	local caddy_access_log="/var/log/caddy/emdash-access.log"
 	if [[ "${ENABLE_HTTPS}" == "1" ]]; then
 		site_header="${DOMAIN}"
 	else
@@ -389,7 +402,7 @@ ${site_header} {
 	encode zstd gzip
 
 	log {
-		output file ${LOG_DIR}/caddy-access.log {
+		output file ${caddy_access_log} {
 			roll_size ${LOG_CADDY_ROTATE_SIZE_MB}MiB
 			roll_keep ${LOG_CADDY_ROTATE_KEEP}
 			roll_keep_for ${LOG_CADDY_ROTATE_KEEP_DAYS}d
@@ -399,6 +412,7 @@ ${site_header} {
 	reverse_proxy 127.0.0.1:${APP_PORT}
 }
 EOF
+	chmod 0644 "${CADDYFILE_PATH}"
 }
 
 render_systemd_service() {
@@ -407,7 +421,7 @@ render_systemd_service() {
 Description=EmDash App
 After=network-online.target
 Wants=network-online.target
-$( [[ "${DB_DRIVER}" == "postgres" ]] && printf 'After=%s\n' "${POSTGRES_SERVICE}" )
+$( [[ "${DB_DRIVER}" == "postgres" ]] && printf 'After=%s.service\n' "${POSTGRES_SERVICE}" )
 $( [[ "${SESSION_DRIVER}" == "redis" ]] && printf 'After=%s\n' "${REDIS_SERVICE}" )
 
 [Service]
