@@ -51,6 +51,7 @@ LINODE_INSTANCE_IP=""
 LINODE_INSTANCE_REGION=""
 SSH_KEY_FILE=""
 SSH_KEY_DIR=""
+SSH_KNOWN_HOSTS_FILE=""
 TEST_LABEL=""
 LINODE_ACCOUNT_EMAIL=""
 LINODE_TEST_DOMAIN_AUTO="0"
@@ -249,6 +250,8 @@ cleanup() {
 create_temp_key() {
 	SSH_KEY_DIR="$(mktemp -d "${HOME}/.ssh/emdash-linode-test-XXXXXX.d")"
 	SSH_KEY_FILE="${SSH_KEY_DIR}/id_ed25519"
+	SSH_KNOWN_HOSTS_FILE="${SSH_KEY_DIR}/known_hosts"
+	: >"${SSH_KNOWN_HOSTS_FILE}"
 	ssh-keygen -q -t ed25519 -N '' -f "${SSH_KEY_FILE}" >/dev/null
 }
 
@@ -390,6 +393,8 @@ wait_for_ssh() {
 	while true; do
 		if ssh -i "${SSH_KEY_FILE}" \
 			-o StrictHostKeyChecking=accept-new \
+			-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+			-o GlobalKnownHostsFile=/dev/null \
 			-o ConnectTimeout=5 \
 			"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" \
 			'echo ok' >/dev/null 2>&1; then
@@ -406,8 +411,15 @@ wait_for_ssh() {
 }
 
 push_workspace() {
+	local bundle_file remote_bundle
+	bundle_file="$(mktemp "${TMPDIR:-/tmp}/emdash-linode-workspace-XXXXXX.tar.gz")"
+	remote_bundle="${LINODE_TEST_REMOTE_DIR}/workspace.tar.gz"
 	log "推送当前安装器到远端 ${LINODE_INSTANCE_IP}"
-	ssh -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
+	ssh -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
 set -e
 if ! command -v tar >/dev/null 2>&1; then
 	if command -v dnf >/dev/null 2>&1; then
@@ -428,12 +440,27 @@ mkdir -p \"${LINODE_TEST_REMOTE_DIR}\"
 	tar -C "${SCRIPT_DIR}" \
 		--exclude='.env' \
 		--exclude='linode-test-result.json' \
-		-czf - . | ssh -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "tar -xzf - -C '${LINODE_TEST_REMOTE_DIR}'"
+		-czf "${bundle_file}" .
+	scp -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${bundle_file}" "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}:${remote_bundle}"
+	ssh -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "tar -xzf '${remote_bundle}' -C '${LINODE_TEST_REMOTE_DIR}' && rm -f '${remote_bundle}'"
+	rm -f "${bundle_file}"
 }
 
 collect_remote_failure_context() {
 	log "收集远端失败诊断信息"
-	ssh -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
+	ssh -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
 set +e
 if [[ -f /etc/emdash/compose.env ]]; then
 	set -a
@@ -582,7 +609,11 @@ if [[ "$9" == "1" ]]; then
 fi
 EOF
 	log "执行远端安装和 smoke 测试"
-	if ! ssh -tt -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
+	if ! ssh -tt -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
 		collect_remote_failure_context
 		return 1
 	fi
