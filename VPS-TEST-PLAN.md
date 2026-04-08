@@ -1,72 +1,65 @@
 # VPS Test Plan
 
-这份文档用于执行 EmDash 安装器的直接 VPS 实测，目标是把当前高风险路径逐项跑通，而不是只做语法检查。
+This document defines the native-deployment VPS regression plan for `main`.
 
-## 目标
+The goal is to verify the current host-based installer and operator workflow on real machines, not just run shell syntax checks.
 
-- 验证 `install-emdash.sh` 的真实安装链路
-- 验证 `emdashctl` 的高风险运维命令
-- 验证 `Docker` 和 `Podman` 两条运行时分支
-- 验证 `SQLite`、`PostgreSQL`、`Redis`、`Caddy + HTTPS`、`S3 preflight`、`S3 backup`
-- 验证最近修过的问题没有回归
+## Goals
 
-## 测试原则
+- verify the real `install-emdash.sh` native install path
+- verify `emdashctl` high-risk operational commands
+- verify Debian 13, Ubuntu 24.04, EL9, and EL10
+- verify `SQLite`, `PostgreSQL`, `Redis`, `Caddy + HTTPS`, `S3 storage`, and `S3 backup`
+- verify that recently fixed native-only regressions stay closed
 
-- 先跑自动化矩阵，再做需要人工介入的命令级验证
-- 每个高风险能力至少在一台真实 VPS 上跑一次
-- 对破坏性命令，优先在保留实例上验证
-- 每轮测试都保留：
+## Principles
+
+- start with automated Linode smoke coverage
+- keep destructive command tests on retained instances
+- keep these artifacts for every round:
   - `emdashctl status --json`
   - `emdashctl doctor --json`
   - `emdashctl smoke --json`
-  - 失败时的容器日志和 `journalctl -u caddy`
+  - failure logs
+  - `journalctl -u emdash-app`
+  - `journalctl -u caddy` when Caddy is enabled
 
-## 前置准备
+## Prerequisites
 
-1. 本地准备 `.env`
+1. Prepare `.env`
 
 ```bash
 linode_token=...
 ```
 
-2. 如需测试 S3 预检或备份上传，准备一组 S3-compatible 凭据
+2. For S3 storage or backup tests, prepare S3-compatible credentials in `.env`
 
-3. 默认 region 使用美西优先：
+3. Default region strategy:
 
 ```bash
 export LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east
 ```
 
-4. 可选：直接使用预定义矩阵脚本跑自动化组合
+## Automated Smoke Coverage
+
+### A1. Debian 13 + SQLite + file + local
 
 ```bash
-bash linode-test-matrix.sh
+LINODE_TEST_IMAGE=linode/debian13 \
+LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
+LINODE_TEST_INSTALL_SESSION_DRIVER=file \
+LINODE_TEST_INSTALL_STORAGE_DRIVER=local \
+LINODE_TEST_INSTALL_USE_CADDY=0 \
+bash linode-test.sh
 ```
 
-默认镜像策略：
+Acceptance:
 
-- `sqlite + file + local` 标准组合默认优先使用 `ghcr.io/web-casa/emdash-app:0.2.0-hi.1`
-- 其他组合默认优先使用 `ghcr.io/web-casa/emdash-builder:0.2.0-hi.1`
-- 如需覆盖，可自行设置 `LINODE_TEST_INSTALL_APP_IMAGE` 或 `LINODE_TEST_INSTALL_APP_BASE_IMAGE`
+- native install completes
+- `emdashctl smoke --json` passes
+- public URL points to the server IP, not loopback
 
-只跑部分场景：
-
-```bash
-bash linode-test-matrix.sh --scenario debian13-caddy-app,centos9-builder
-```
-
-输出内容：
-
-- 每个场景一个结果 JSON
-- 每个失败场景一个 failure log
-- 一份汇总 JSON
-- 一份汇总 Markdown
-
-## 自动化测试矩阵
-
-### A 组：基础安装链路
-
-#### A1. Ubuntu 24 + SQLite + file session + local storage
+### A2. Ubuntu 24.04 + SQLite + file + local
 
 ```bash
 LINODE_TEST_IMAGE=linode/ubuntu24.04 \
@@ -77,31 +70,48 @@ LINODE_TEST_INSTALL_USE_CADDY=0 \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- 安装完成
-- `emdashctl smoke --json` 通过
-- `APP_PUBLIC_URL` 指向公网 IP，而不是 `127.0.0.1`
+- native install completes
+- `emdashctl smoke --json` passes
 
-#### A2. CentOS Stream 9 + SQLite + file session + local storage
+### A3. EL9 + SQLite + Redis + local
 
 ```bash
 LINODE_TEST_IMAGE=linode/centos-stream9 \
 LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
-LINODE_TEST_INSTALL_SESSION_DRIVER=file \
+LINODE_TEST_INSTALL_SESSION_DRIVER=redis \
+LINODE_TEST_INSTALL_REDIS_PASSWORD='Redis-Test-123:@Value' \
 LINODE_TEST_INSTALL_STORAGE_DRIVER=local \
 LINODE_TEST_INSTALL_USE_CADDY=0 \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- Podman 路线安装完成
-- `emdashctl smoke --json` 通过
+- native install completes
+- Redis service is healthy
+- `emdashctl doctor --json` reports `redis` as `ok`
 
-### B 组：数据库与 Session 组合
+### A4. EL10 + SQLite + Redis + local
 
-#### B1. Ubuntu 24 + PostgreSQL + file session
+```bash
+LINODE_TEST_IMAGE=linode/almalinux10 \
+LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
+LINODE_TEST_INSTALL_SESSION_DRIVER=redis \
+LINODE_TEST_INSTALL_REDIS_PASSWORD='Redis-Test-123:@Value' \
+LINODE_TEST_INSTALL_STORAGE_DRIVER=local \
+LINODE_TEST_INSTALL_USE_CADDY=0 \
+bash linode-test.sh
+```
+
+Acceptance:
+
+- native install completes
+- `valkey` or `redis` service path works correctly
+- `emdashctl smoke --json` passes
+
+### B1. Ubuntu 24.04 + PostgreSQL + file
 
 ```bash
 LINODE_TEST_IMAGE=linode/ubuntu24.04 \
@@ -111,13 +121,33 @@ LINODE_TEST_INSTALL_PG_PASSWORD='Pg-Test-123_Complex@Value' \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- 安装完成
-- 复杂密码连接串正常
-- `/_emdash/api/setup/status` 正常返回
+- PostgreSQL 18 install completes
+- setup API is reachable
+- `emdashctl doctor --json` reports PostgreSQL connectivity as healthy
 
-#### B2. CentOS Stream 9 + PostgreSQL + Redis
+### B2. Ubuntu 24.04 + PostgreSQL + Redis + Caddy
+
+```bash
+LINODE_TEST_IMAGE=linode/ubuntu24.04 \
+LINODE_TEST_INSTALL_DB_DRIVER=postgres \
+LINODE_TEST_INSTALL_SESSION_DRIVER=redis \
+LINODE_TEST_INSTALL_PG_PASSWORD='Pg-Test-123_Complex@Value' \
+LINODE_TEST_INSTALL_REDIS_PASSWORD='Redis-Test-123:@Value' \
+LINODE_TEST_INSTALL_USE_CADDY=1 \
+LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
+LINODE_TEST_DOMAIN_PROVIDER=sslip.io \
+bash linode-test.sh
+```
+
+Acceptance:
+
+- PostgreSQL and Redis both work
+- `https://<domain>/healthz` is healthy
+- `emdashctl smoke --json` passes
+
+### B3. EL9 + PostgreSQL + Redis + Caddy
 
 ```bash
 LINODE_TEST_IMAGE=linode/centos-stream9 \
@@ -125,18 +155,54 @@ LINODE_TEST_INSTALL_DB_DRIVER=postgres \
 LINODE_TEST_INSTALL_SESSION_DRIVER=redis \
 LINODE_TEST_INSTALL_PG_PASSWORD='Pg-Test-123_Complex@Value' \
 LINODE_TEST_INSTALL_REDIS_PASSWORD='Redis-Test-123:@Value' \
+LINODE_TEST_INSTALL_USE_CADDY=1 \
+LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
+LINODE_TEST_DOMAIN_PROVIDER=nip.io \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- Podman 路线正常
-- PostgreSQL 与 Redis 同时工作
-- `emdashctl doctor --json` 中 `postgres connect` 与 `redis ping` 都为 `ok`
+- native EL path completes
+- `firewalld` opening works
+- `tls cert` is `ok`
 
-### C 组：Caddy + HTTPS
+### B4. EL10 + PostgreSQL + Redis + Caddy
 
-#### C1. Ubuntu 24 + Caddy + HTTPS + sslip.io
+```bash
+LINODE_TEST_IMAGE=linode/almalinux10 \
+LINODE_TEST_INSTALL_DB_DRIVER=postgres \
+LINODE_TEST_INSTALL_SESSION_DRIVER=redis \
+LINODE_TEST_INSTALL_PG_PASSWORD='Pg-Test-123_Complex@Value' \
+LINODE_TEST_INSTALL_REDIS_PASSWORD='Redis-Test-123:@Value' \
+LINODE_TEST_INSTALL_USE_CADDY=1 \
+LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
+LINODE_TEST_DOMAIN_PROVIDER=nip.io \
+bash linode-test.sh
+```
+
+Acceptance:
+
+- native EL10 path completes
+- Redis/Valkey service detection works
+- `emdashctl smoke --json` passes
+
+### C1. Debian 13 + Caddy + HTTPS
+
+```bash
+LINODE_TEST_IMAGE=linode/debian13 \
+LINODE_TEST_INSTALL_USE_CADDY=1 \
+LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
+LINODE_TEST_DOMAIN_PROVIDER=sslip.io \
+bash linode-test.sh
+```
+
+Acceptance:
+
+- `https://<domain>/healthz` is healthy
+- `emdashctl doctor --json` reports `tls cert` as `ok`
+
+### C2. Ubuntu 24.04 + Caddy + HTTPS
 
 ```bash
 LINODE_TEST_IMAGE=linode/ubuntu24.04 \
@@ -146,40 +212,83 @@ LINODE_TEST_DOMAIN_PROVIDER=sslip.io \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- `https://<domain>/healthz` 正常
-- `emdashctl doctor --json` 中 `tls cert` 为 `ok`
-- `caddy service` 为 `ok`
+- Caddy HTTPS path completes
+- `status`, `doctor`, and `smoke` all pass
 
-#### C2. CentOS Stream 9 + Caddy + HTTPS + nip.io
+### D1. Debian 13 + S3-compatible media storage
 
 ```bash
-LINODE_TEST_IMAGE=linode/centos-stream9 \
-LINODE_TEST_INSTALL_USE_CADDY=1 \
-LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
-LINODE_TEST_DOMAIN_PROVIDER=nip.io \
+LINODE_TEST_IMAGE=linode/debian13 \
+LINODE_TEST_INSTALL_STORAGE_DRIVER=s3 \
+LINODE_TEST_INSTALL_S3_PROVIDER=custom \
+LINODE_TEST_INSTALL_S3_ENDPOINT="$S3_ENDPOINT" \
+LINODE_TEST_INSTALL_S3_REGION="$S3_REGION" \
+LINODE_TEST_INSTALL_S3_BUCKET="$S3_BUCKET" \
+LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+LINODE_TEST_INSTALL_S3_PUBLIC_URL="$S3_PUBLIC_URL" \
 bash linode-test.sh
 ```
 
-验收：
+Acceptance:
 
-- EL 防火墙自动放行有效
-- `tls cert` 为 `ok`
-- `smoke` 通过
+- storage preflight passes
+- app starts successfully with S3 storage configured
+- `emdashctl doctor --json` passes
 
-## 保留实例上的人工验证
+### D2. Ubuntu 24.04 + S3 backup
 
-下面几项不适合直接塞进一次性 smoke，建议使用 `--keep` 保留实例后在远端手工验证。
+```bash
+LINODE_TEST_IMAGE=linode/ubuntu24.04 \
+LINODE_TEST_RUN_BACKUP=1 \
+LINODE_TEST_INSTALL_BACKUP_TARGET=s3 \
+LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT="$S3_ENDPOINT" \
+LINODE_TEST_INSTALL_BACKUP_S3_REGION="$S3_REGION" \
+LINODE_TEST_INSTALL_BACKUP_S3_BUCKET="$S3_BUCKET" \
+LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+LINODE_TEST_INSTALL_BACKUP_S3_PREFIX=backups \
+bash linode-test.sh
+```
 
-### D1. `reset-db-password`
+Acceptance:
 
-目的：
+- `emdashctl backup` completes
+- remote object upload completes
+- `head_object` verification succeeds
 
-- 验证 PostgreSQL 密码重置
-- 验证重建后的 app 能继续连库
+## Retained-Instance Operator Tests
 
-创建保留实例：
+Use retained instances for commands that are destructive or require multi-step verification.
+
+### E1. SQLite restore
+
+```bash
+LINODE_TEST_KEEP=1 \
+LINODE_TEST_IMAGE=linode/debian13 \
+LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
+LINODE_TEST_INSTALL_SESSION_DRIVER=file \
+bash linode-test.sh
+```
+
+Remote commands:
+
+```bash
+emdashctl backup
+latest="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
+emdashctl restore "$latest"
+emdashctl smoke --json
+```
+
+Acceptance:
+
+- restore completes
+- app becomes healthy again
+- no stale `-wal/-shm` issue is visible
+
+### E2. PostgreSQL restore
 
 ```bash
 LINODE_TEST_KEEP=1 \
@@ -190,153 +299,94 @@ LINODE_TEST_INSTALL_PG_PASSWORD='Pg-Test-123_Complex@Value' \
 bash linode-test.sh
 ```
 
-远端执行：
+Remote commands:
 
 ```bash
-emdashctl reset-db-password
+emdashctl backup
+latest="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
+emdashctl restore "$latest"
+emdashctl smoke --json
+```
+
+Acceptance:
+
+- temporary database import works
+- rename/switch completes
+- app is healthy after restore
+
+### E3. `upgrade app`
+
+Use any retained native instance with a working site tree.
+
+Remote commands:
+
+```bash
+emdashctl upgrade app
 emdashctl status --json
 emdashctl doctor --json
 emdashctl smoke --json
 ```
 
-验收：
+Acceptance:
 
-- `reset-db-password` 成功
-- app 重建后仍健康
-- setup API 仍可访问
+- template source refresh works
+- `pnpm install` and `pnpm build` succeed
+- app restarts healthy
 
-### D2. PostgreSQL restore
+### E4. `reset-db-password`
 
-目的：
+Use a retained PostgreSQL instance.
 
-- 验证“临时库导入 -> 正式库切换 -> 旧库清理”流程
-
-远端执行：
+Remote commands:
 
 ```bash
-emdashctl backup
-ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1
-emdashctl restore /data/emdash/backups/<backup-file>.tar.gz
+emdashctl reset-db-password
 emdashctl smoke --json
 ```
 
-验收：
+Acceptance:
 
-- restore 成功
-- app 恢复后正常
-- `postgres connect` 正常
+- PostgreSQL role password is rotated
+- environment is updated
+- app reconnects and becomes healthy
 
-### D3. SQLite restore
+### E5. Reboot and autostart
 
-目的：
+Use any retained instance.
 
-- 验证 `integrity_check`
-- 验证恢复前清理 `-wal/-shm`
-
-创建保留实例：
+Remote commands:
 
 ```bash
-LINODE_TEST_KEEP=1 \
-LINODE_TEST_IMAGE=linode/ubuntu24.04 \
-LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
-LINODE_TEST_INSTALL_SESSION_DRIVER=file \
-bash linode-test.sh
+reboot
 ```
 
-远端执行：
+After SSH returns:
 
 ```bash
-emdashctl backup
-ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1
-emdashctl restore /data/emdash/backups/<backup-file>.tar.gz
+systemctl is-active emdash-app
 emdashctl smoke --json
 ```
 
-验收：
+Acceptance:
 
-- restore 成功
-- app 正常
-- SQLite 文件存在且无旧 WAL 污染症状
+- `emdash-app.service` starts automatically
+- PostgreSQL, Redis, and Caddy dependencies recover correctly when enabled
 
-### D4. S3-compatible storage preflight
+## Failure Collection
 
-目的：
+For every failed run, capture:
 
-- 验证对象存储上传预检
-- 验证 EL + Podman + SELinux `:Z` 挂载
+- `emdashctl status --json`
+- `emdashctl doctor --json`
+- `journalctl -u emdash-app -n 200 --no-pager`
+- `journalctl -u caddy -n 200 --no-pager` when applicable
+- `systemctl status postgresql* redis* valkey* caddy emdash-app --no-pager`
 
-建议测试机型：
+## Current Release-Prep Focus
 
-- `Ubuntu 24`
-- `CentOS Stream 9`
+Before cutting the next native release, confirm:
 
-示例：
-
-```bash
-LINODE_TEST_IMAGE=linode/centos-stream9 \
-LINODE_TEST_INSTALL_STORAGE_DRIVER=s3 \
-EMDASH_INSTALL_STORAGE_DRIVER=s3 \
-bash linode-test.sh
-```
-
-说明：
-
-- 当前 `linode-test.sh` 没有把 S3 测试参数完全透传；这项建议先手工在保留实例上执行安装器验证
-- 重点看 `test_s3_storage` 是否通过
-
-## 推荐执行顺序
-
-1. A1
-2. A2
-3. B1
-4. B2
-5. C1
-6. C2
-7. D1
-8. D2
-9. D3
-10. D4
-
-这样可以先确认“安装主链路”，再做破坏性运维命令验证。
-
-## 统一验收标准
-
-每个用例至少满足：
-
-- 安装命令返回 0
-- `emdashctl status --json` 返回 0
-- `emdashctl doctor --json` 返回 0
-- `emdashctl smoke --json` 返回 0
-- `/_emdash/api/setup/status` 可访问
-
-如果启用了 Caddy + HTTPS，还必须满足：
-
-- `tls cert` 为 `ok`
-- `https://<domain>/healthz` 正常
-
-## 失败留证
-
-自动化失败时保留：
-
-- `linode-test-failure.log`
-- 结果 JSON
-- 远端：
-  - `docker/podman compose ps`
-  - `docker/podman compose logs app`
-  - `emdashctl doctor --json`
-  - `journalctl -u caddy`
-
-人工验证失败时补充：
-
-```bash
-emdashctl logs app
-emdashctl logs postgres
-emdashctl logs redis
-journalctl -u caddy -n 200 --no-pager
-```
-
-## 当前最值得优先实测的 3 项
-
-- `B1`: 复杂 PostgreSQL 密码的连接串正确性
-- `D2`: PostgreSQL restore 切换流程
-- `D4`: S3-compatible backup 上传
+- Debian 13, Ubuntu 24.04, EL9, and EL10 all pass native smoke installs
+- HTTPS is green on Debian, Ubuntu, and EL
+- S3 storage and S3 backup both pass against the configured endpoint
+- `upgrade app`, `restore`, and reboot/autostart are verified on real VPSes

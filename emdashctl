@@ -601,6 +601,12 @@ restore_command() {
 	[[ -f "${archive}" ]] || fail "Backup file not found: ${archive}"
 	tmpdir="$(mktemp -d)"
 	tar -C "${tmpdir}" -xzf "${archive}"
+	if [[ "${DB_DRIVER}" == "postgres" ]]; then
+		# PostgreSQL restore is executed as the postgres OS user, so the extracted
+		# dump must be readable outside the root-only mktemp directory.
+		chmod 0755 "${tmpdir}" "${tmpdir}/data" 2>/dev/null || true
+		chmod 0644 "${tmpdir}/data/postgres.sql" 2>/dev/null || true
+	fi
 	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
 
 	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
@@ -665,22 +671,27 @@ upgrade_command() {
 
 reset_db_password_command() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
-	local new_password pg_user_encoded pg_password_encoded pg_db_name_encoded
+	local new_password pg_user_encoded pg_password_encoded pg_db_name_encoded alter_sql
 	new_password="$(openssl rand -hex 16)"
-	runuser -u postgres -- psql postgres \
-		--set=db_user="${PG_DB_USER}" \
-		--set=db_password="${new_password}" <<'EOF' >/dev/null
-DO $$
-BEGIN
-   EXECUTE format('ALTER ROLE %I WITH PASSWORD %L', :'db_user', :'db_password');
-END
-$$;
-EOF
+	alter_sql="$(python3 - "${PG_DB_USER}" "${new_password}" <<'PY'
+import sys
+
+user = sys.argv[1].replace('"', '""')
+password = sys.argv[2].replace("'", "''")
+print(f'ALTER ROLE "{user}" WITH PASSWORD \'{password}\';')
+PY
+)"
+	runuser -u postgres -- psql postgres -c "${alter_sql}" >/dev/null
 	update_env_value "PG_DB_PASSWORD" "${new_password}" "${APP_ENV_FILE}"
 	pg_user_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_USER}")"
 	pg_password_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${new_password}")"
 	pg_db_name_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_NAME}")"
 	update_env_value "DATABASE_URL" "postgres://${pg_user_encoded}:${pg_password_encoded}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db_name_encoded}" "${APP_ENV_FILE}"
+	# astro.config.mjs is evaluated at build time, so PostgreSQL connection changes
+	# must be rebuilt into the server bundle before restart.
+	render_site_astro_config
+	chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/astro.config.mjs"
+	runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
 	systemctl restart "${APP_SYSTEMD_SERVICE}"
 	wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after password reset"
 	printf '%s\n' "${new_password}"
