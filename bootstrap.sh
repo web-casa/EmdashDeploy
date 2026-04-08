@@ -34,6 +34,7 @@ main() {
 	local -a args=()
 	local has_mode_flag="0"
 	local show_help="0"
+	local non_interactive="0"
 	local arg=""
 	local idx=0
 
@@ -44,6 +45,10 @@ main() {
 		case "${arg}" in
 		--activate | --write-only)
 			has_mode_flag="1"
+			args+=("${arg}")
+			;;
+		--non-interactive)
+			non_interactive="1"
 			args+=("${arg}")
 			;;
 		-h | --help)
@@ -87,7 +92,18 @@ main() {
 	chmod +x bootstrap*.sh install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh 2>/dev/null || true
 
 	export EMDASH_INSTALL_LANG="${INSTALL_LANG}"
-	bash "./install-emdash.sh" "${args[@]}"
+	if [[ "${show_help}" == "1" || "${non_interactive}" == "1" ]]; then
+		bash "./install-emdash.sh" "${args[@]}"
+		return
+	fi
+
+	if [[ -r /dev/tty ]]; then
+		bash "./install-emdash.sh" "${args[@]}" </dev/tty
+		return
+	fi
+
+	printf '[ERROR] Interactive bootstrap requires a terminal. Use --non-interactive or download the repository locally.\n' >&2
+	exit 1
 }
 
 main "$@"
