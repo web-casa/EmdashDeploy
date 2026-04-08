@@ -577,6 +577,18 @@ $(ti summary_control_commands)
   emdashctl status
   emdashctl logs app
   emdashctl restart app
+EOF
+
+	if [[ "${ACTIVATE_STACK:-0}" != "1" ]]; then
+		cat <<EOF
+
+$(ti summary_start_services)
+  cd ${COMPOSE_DIR}
+  $(compose_cmd) up -d
+EOF
+	fi
+
+	cat <<EOF
 
 $(ti summary_access_urls)
   $(ti summary_site): ${APP_PUBLIC_URL}
