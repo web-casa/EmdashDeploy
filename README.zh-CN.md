@@ -46,22 +46,19 @@ EmDash 的交互式 VPS 安装器与运维工具集，支持 Docker/Podman、可
 ## 快速开始
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.zh-CN.sh
-```
-
-立即激活：
-
-```bash
-sudo bash install-emdash.zh-CN.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-CN.sh | sudo bash
 ```
 
 只生成配置：
 
 ```bash
-sudo bash install-emdash.zh-CN.sh --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-CN.sh | sudo bash -s -- --write-only
+```
+
+非交互安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.zh-CN.sh | sudo bash -s -- --non-interactive
 ```
 
 ## 非交互示例

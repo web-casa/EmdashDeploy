@@ -34,16 +34,13 @@ Non pris en charge :
 ## Démarrage rapide
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.fr.sh
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.fr.sh | sudo bash
 ```
 
-Activation immédiate :
+Générer uniquement les fichiers :
 
 ```bash
-sudo bash install-emdash.fr.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.fr.sh | sudo bash -s -- --write-only
 ```
 
 ## GHCR

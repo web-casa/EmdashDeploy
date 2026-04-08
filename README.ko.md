@@ -34,16 +34,13 @@ Docker/Podman, 선택적 Caddy HTTPS, 백업, 복구, 헬스 체크를 지원하
 ## 빠른 시작
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.ko.sh
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.ko.sh | sudo bash
 ```
 
-즉시 활성화:
+설정 파일만 생성:
 
 ```bash
-sudo bash install-emdash.ko.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.ko.sh | sudo bash -s -- --write-only
 ```
 
 ## GHCR

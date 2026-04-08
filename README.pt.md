@@ -7,22 +7,19 @@ Instalador interativo do EmDash para VPS e conjunto de ferramentas operacionais,
 ## Início rápido
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.pt.sh
-```
-
-Ativar imediatamente:
-
-```bash
-sudo bash install-emdash.pt.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash
 ```
 
 Gerar apenas os arquivos:
 
 ```bash
-sudo bash install-emdash.pt.sh --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash -s -- --write-only
+```
+
+Instalação não interativa:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.pt.sh | sudo bash -s -- --non-interactive
 ```
 
 Modo não interativo, SQLite:

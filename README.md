@@ -20,28 +20,37 @@ Versioning for this project follows the `HiEmdash` line:
 
 ## Quick Start
 
-Clone the repository and run the English installer interactively:
+Run the English bootstrap installer directly:
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.en.sh
-```
-
-Activate immediately after generating files:
-
-```bash
-sudo bash install-emdash.en.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash
 ```
 
 Generate files only:
 
 ```bash
-sudo bash install-emdash.en.sh --write-only
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash -s -- --write-only
 ```
 
-Available language wrappers:
+Non-interactive install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.en.sh | sudo bash -s -- --non-interactive
+```
+
+Available bootstrap wrappers:
+
+- `bootstrap.en.sh`
+- `bootstrap.ja.sh`
+- `bootstrap.ko.sh`
+- `bootstrap.es.sh`
+- `bootstrap.de.sh`
+- `bootstrap.fr.sh`
+- `bootstrap.zh-CN.sh`
+- `bootstrap.zh-TW.sh`
+- `bootstrap.pt.sh`
+
+Available local installer wrappers:
 
 - `install-emdash.en.sh`
 - `install-emdash.ja.sh`
@@ -64,6 +73,15 @@ CLI wrappers:
 - `emdashctl.zh-CN.sh`
 - `emdashctl.zh-TW.sh`
 - `emdashctl.pt.sh`
+
+If you prefer a local checkout:
+
+```bash
+git clone https://github.com/web-casa/EmdashDeploy.git
+cd EmdashDeploy
+chmod +x bootstrap*.sh install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
+sudo bash install-emdash.en.sh --activate
+```
 
 ## What This Repository Does
 

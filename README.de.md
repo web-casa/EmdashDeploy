@@ -34,16 +34,13 @@ Nicht unterstützt:
 ## Schnellstart
 
 ```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.de.sh
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.de.sh | sudo bash
 ```
 
-Direkt aktivieren:
+Nur Dateien erzeugen:
 
 ```bash
-sudo bash install-emdash.de.sh --activate
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.de.sh | sudo bash -s -- --write-only
 ```
 
 ## GHCR
