@@ -43,8 +43,9 @@ clone_template_repo() {
 patch_template_package_json() {
 	local redis_snippet='{"ioredis":"^5.7.0"}'
 	local pg_snippet='{"pg":"^8.16.3"}'
+	local s3_snippet='{"@aws-sdk/client-s3":"^3.879.0","@aws-sdk/s3-request-presigner":"^3.879.0"}'
 	local common_runtime_snippet='{"kysely":"^0.27.6"}'
-	PROJECT_NAME="${PROJECT_NAME}" SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" REDIS_SNIPPET="${redis_snippet}" PG_SNIPPET="${pg_snippet}" COMMON_RUNTIME_SNIPPET="${common_runtime_snippet}" python3 <<'PY'
+	PROJECT_NAME="${PROJECT_NAME}" SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" REDIS_SNIPPET="${redis_snippet}" PG_SNIPPET="${pg_snippet}" S3_SNIPPET="${s3_snippet}" COMMON_RUNTIME_SNIPPET="${common_runtime_snippet}" python3 <<'PY'
 import json
 import os
 from pathlib import Path
@@ -65,6 +66,8 @@ if os.environ["DB_DRIVER"] == "postgres":
     deps.update(json.loads(os.environ["PG_SNIPPET"]))
 if os.environ["SESSION_DRIVER"] == "redis":
     deps.update(json.loads(os.environ["REDIS_SNIPPET"]))
+if os.environ["STORAGE_DRIVER"] == "s3":
+    deps.update(json.loads(os.environ["S3_SNIPPET"]))
 
 pkg_path.write_text(json.dumps(pkg, indent=2) + "\n")
 PY
@@ -219,7 +222,7 @@ EOF
 
 render_health_endpoint() {
 	ensure_dir "${SITE_DIR}/src/pages"
-	cat >"${SITE_DIR}/src/pages/__emdash_health.ts" <<'EOF'
+	cat >"${SITE_DIR}/src/pages/healthz.ts" <<'EOF'
 export const GET = () => {
 	return new Response("OK", { status: 200 });
 };
@@ -311,7 +314,7 @@ ${app_build_block}
       - ${SQLITE_DIR}:/app/data/sqlite${mount_suffix}
       - ${SESSIONS_DIR}:/app/sessions${mount_suffix}
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/__emdash_health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
       timeout: 5s
       retries: 10
@@ -380,11 +383,6 @@ BACKUP_ENABLED=${BACKUP_ENABLED}
 BACKUP_SCHEDULE="${BACKUP_SCHEDULE}"
 BACKUP_KEEP_LOCAL=${BACKUP_KEEP_LOCAL}
 BACKUP_TARGET_TYPE=${BACKUP_TARGET_TYPE}
-BACKUP_SFTP_HOST=${BACKUP_SFTP_HOST}
-BACKUP_SFTP_PORT=${BACKUP_SFTP_PORT}
-BACKUP_SFTP_USER=${BACKUP_SFTP_USER}
-BACKUP_SFTP_PASSWORD=${BACKUP_SFTP_PASSWORD}
-BACKUP_SFTP_REMOTE_PATH=${BACKUP_SFTP_REMOTE_PATH}
 BACKUP_S3_ENDPOINT=${BACKUP_S3_ENDPOINT}
 BACKUP_S3_REGION=${BACKUP_S3_REGION}
 BACKUP_S3_BUCKET=${BACKUP_S3_BUCKET}
@@ -439,9 +437,12 @@ backup:
   keep_local: ${BACKUP_KEEP_LOCAL}
   target:
     type: ${BACKUP_TARGET_TYPE}
-    sftp_host: ${BACKUP_SFTP_HOST}
-    sftp_remote_path: ${BACKUP_SFTP_REMOTE_PATH}
+    s3_endpoint: ${BACKUP_S3_ENDPOINT}
+    s3_region: ${BACKUP_S3_REGION}
     s3_bucket: ${BACKUP_S3_BUCKET}
+    s3_prefix: ${BACKUP_S3_PREFIX}
+    s3_access_key_id: ${BACKUP_S3_ACCESS_KEY_ID}
+    s3_secret_access_key_set: $( [[ -n "${BACKUP_S3_SECRET_ACCESS_KEY}" ]] && printf 'true' || printf 'false' )
 optimization:
   enabled: ${OPTIMIZATION_ENABLED}
 logging:
@@ -515,7 +516,7 @@ EmDash 已安装。
   ${APP_PUBLIC_URL}/_emdash/admin
 
 健康检查:
-  ${APP_PUBLIC_URL}/__emdash_health
+  ${APP_PUBLIC_URL}/healthz
 
 首次访问说明:
   1. 打开后台地址

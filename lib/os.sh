@@ -78,9 +78,6 @@ install_base_packages() {
 			tar \
 			jq \
 			cron
-		if [[ "${BACKUP_TARGET_TYPE:-local}" == "sftp" && -n "${BACKUP_SFTP_PASSWORD:-}" ]]; then
-			apt-get install -y sshpass
-		fi
 		systemctl enable --now cron >/dev/null 2>&1 || true
 		return
 	fi
@@ -99,9 +96,6 @@ install_base_packages() {
 			jq \
 			iproute \
 			cronie
-		if [[ "${BACKUP_TARGET_TYPE:-local}" == "sftp" && -n "${BACKUP_SFTP_PASSWORD:-}" ]]; then
-			dnf -y install sshpass || true
-		fi
 	else
 		yum -y install \
 			ca-certificates \
@@ -245,9 +239,19 @@ activate_caddy_service() {
 
 	install -d -m 0755 /etc/caddy
 	if id caddy >/dev/null 2>&1; then
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.config
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.config/caddy
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local/share
+		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local/share/caddy
+		install -d -o caddy -g caddy -m 0755 /var/log/caddy
 		install -d -o caddy -g caddy -m 0755 "${LOG_DIR}"
 		touch "${LOG_DIR}/caddy-access.log"
 		chown caddy:caddy "${LOG_DIR}/caddy-access.log"
+		if command_exists restorecon; then
+			restorecon -Rv /var/lib/caddy /var/log/caddy "${LOG_DIR}" >/dev/null 2>&1 || true
+		fi
 	fi
 	if [[ -e /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]]; then
 		cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.emdash.bak.$(date +%Y%m%d-%H%M%S)"

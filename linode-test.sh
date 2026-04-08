@@ -26,7 +26,21 @@ LINODE_TEST_INSTALL_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-}"
 LINODE_TEST_INSTALL_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-}"
 LINODE_TEST_INSTALL_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-}"
 LINODE_TEST_INSTALL_APP_BASE_IMAGE="${LINODE_TEST_INSTALL_APP_BASE_IMAGE:-}"
+LINODE_TEST_INSTALL_S3_PROVIDER="${LINODE_TEST_INSTALL_S3_PROVIDER:-}"
+LINODE_TEST_INSTALL_S3_ENDPOINT="${LINODE_TEST_INSTALL_S3_ENDPOINT:-}"
+LINODE_TEST_INSTALL_S3_REGION="${LINODE_TEST_INSTALL_S3_REGION:-}"
+LINODE_TEST_INSTALL_S3_BUCKET="${LINODE_TEST_INSTALL_S3_BUCKET:-}"
+LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID="${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID:-}"
+LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY="${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY:-}"
+LINODE_TEST_INSTALL_S3_PUBLIC_URL="${LINODE_TEST_INSTALL_S3_PUBLIC_URL:-}"
 LINODE_TEST_RUN_BACKUP="${LINODE_TEST_RUN_BACKUP:-0}"
+LINODE_TEST_INSTALL_BACKUP_TARGET="${LINODE_TEST_INSTALL_BACKUP_TARGET:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT="${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_REGION="${LINODE_TEST_INSTALL_BACKUP_S3_REGION:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_BUCKET="${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY:-}"
+LINODE_TEST_INSTALL_BACKUP_S3_PREFIX="${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX:-}"
 LINODE_TEST_KEEP_SSH_KEY="${LINODE_TEST_KEEP_SSH_KEY:-0}"
 LINODE_TEST_DOMAIN_PROVIDER="${LINODE_TEST_DOMAIN_PROVIDER:-sslip.io}"
 LINODE_TEST_INSTALL_DOMAIN="${LINODE_TEST_INSTALL_DOMAIN:-}"
@@ -78,7 +92,10 @@ linode-test.sh
   LINODE_TEST_INSTALL_SESSION_DRIVER=redis
   LINODE_TEST_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local
   LINODE_TEST_INSTALL_APP_BASE_IMAGE=ghcr.io/web-casa/emdash-builder:node24-bookworm
+  LINODE_TEST_INSTALL_S3_ENDPOINT=https://s3.example.com
+  LINODE_TEST_INSTALL_S3_BUCKET=my-media-bucket
   LINODE_TEST_RUN_BACKUP=1
+  LINODE_TEST_INSTALL_BACKUP_TARGET=s3
 EOF
 }
 
@@ -99,6 +116,20 @@ load_token() {
 	# shellcheck disable=SC1090
 	set -a && source "${ENV_FILE}" && set +a
 	[[ -n "${linode_token:-}" ]] || fail ".env 中缺少 linode_token"
+	[[ -n "${LINODE_TEST_INSTALL_S3_PROVIDER}" ]] || LINODE_TEST_INSTALL_S3_PROVIDER="${S3_PROVIDER:-custom}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_ENDPOINT}" ]] || LINODE_TEST_INSTALL_S3_ENDPOINT="${S3_ENDPOINT:-}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_REGION}" ]] || LINODE_TEST_INSTALL_S3_REGION="${S3_REGION:-auto}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_BUCKET}" ]] || LINODE_TEST_INSTALL_S3_BUCKET="${S3_BUCKET:-}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}" ]] || LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}" ]] || LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}" ]] || LINODE_TEST_INSTALL_S3_PUBLIC_URL="${S3_PUBLIC_URL:-}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_TARGET}" ]] || LINODE_TEST_INSTALL_BACKUP_TARGET="${BACKUP_TARGET_TYPE:-}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-${S3_ENDPOINT:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_REGION="${BACKUP_S3_REGION:-${S3_REGION:-auto}}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-${S3_BUCKET:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-}}"
+	[[ -n "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}" ]] || LINODE_TEST_INSTALL_BACKUP_S3_PREFIX="${BACKUP_S3_PREFIX:-backups}"
 }
 
 api_call() {
@@ -452,16 +483,89 @@ fi
 if [[ -n "$8" ]]; then
 	export EMDASH_INSTALL_REDIS_PASSWORD="$8"
 fi
+if [[ -n "${14}" ]]; then
+	export EMDASH_INSTALL_BACKUP_TARGET="${14}"
+fi
+if [[ -n "${15}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_ENDPOINT="${15}"
+fi
+if [[ -n "${16}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_REGION="${16}"
+fi
+if [[ -n "${17}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_BUCKET="${17}"
+fi
+if [[ -n "${18}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${18}"
+fi
+if [[ -n "${19}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${19}"
+fi
+if [[ -n "${20}" ]]; then
+	export EMDASH_INSTALL_BACKUP_S3_PREFIX="${20}"
+fi
+if [[ -n "${21}" ]]; then
+	export EMDASH_INSTALL_S3_PROVIDER="${21}"
+fi
+if [[ -n "${22}" ]]; then
+	export EMDASH_INSTALL_S3_ENDPOINT="${22}"
+fi
+if [[ -n "${23}" ]]; then
+	export EMDASH_INSTALL_S3_REGION="${23}"
+fi
+if [[ -n "${24}" ]]; then
+	export EMDASH_INSTALL_S3_BUCKET="${24}"
+fi
+if [[ -n "${25}" ]]; then
+	export EMDASH_INSTALL_S3_ACCESS_KEY_ID="${25}"
+fi
+if [[ -n "${26}" ]]; then
+	export EMDASH_INSTALL_S3_SECRET_ACCESS_KEY="${26}"
+fi
+if [[ -n "${27}" ]]; then
+	export EMDASH_INSTALL_S3_PUBLIC_URL="${27}"
+fi
 bash install-emdash.sh --non-interactive --activate
 /usr/local/bin/emdashctl status --json
 /usr/local/bin/emdashctl doctor --json
 /usr/local/bin/emdashctl smoke --json
 if [[ "$9" == "1" ]]; then
 	/usr/local/bin/emdashctl backup
+	if [[ "${14}" == "s3" ]]; then
+		latest_backup="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
+		backup_key="${20%/}/$(basename "${latest_backup}")"
+		if [[ -f /etc/emdash/compose.env ]]; then
+			set -a
+			. /etc/emdash/compose.env
+			set +a
+		fi
+		runtime="${CONTAINER_RUNTIME:-docker}"
+		if [[ "${runtime}" == "docker" ]]; then
+			docker run --rm \
+				-e AWS_ACCESS_KEY_ID="${18}" \
+				-e AWS_SECRET_ACCESS_KEY="${19}" \
+				amazon/aws-cli:2.22.21 \
+				s3api head-object \
+				--bucket "${17}" \
+				--key "${backup_key}" \
+				--endpoint-url "${15}" \
+				--region "${16}"
+		else
+			podman run --rm \
+				-e AWS_ACCESS_KEY_ID="${18}" \
+				-e AWS_SECRET_ACCESS_KEY="${19}" \
+				amazon/aws-cli:2.22.21 \
+				s3api head-object \
+				--bucket "${17}" \
+				--key "${backup_key}" \
+				--endpoint-url "${15}" \
+				--region "${16}"
+		fi
+	fi
 fi
 EOF
 	log "执行远端安装和 smoke 测试"
-	if ! ssh -tt -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}")"; then
+	if ! ssh -tt -i "${SSH_KEY_FILE}" -o StrictHostKeyChecking=accept-new "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
 		collect_remote_failure_context
 		return 1
 	fi

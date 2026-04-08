@@ -54,12 +54,13 @@ debian13-caddy-app
 centos9-builder
 debian13-postgres-file
 centos9-postgres-redis
+debian13-s3-backup
 EOF
 }
 
 scenario_exists() {
 	case "$1" in
-	debian13-caddy-app | centos9-builder | debian13-postgres-file | centos9-postgres-redis)
+	debian13-caddy-app | centos9-builder | debian13-postgres-file | centos9-postgres-redis | debian13-s3-backup)
 		return 0
 		;;
 	esac
@@ -68,20 +69,21 @@ scenario_exists() {
 
 setup_scenario() {
 	local scenario="$1"
-	unset MATRIX_IMAGE MATRIX_DB MATRIX_SESSION MATRIX_STORAGE MATRIX_USE_CADDY MATRIX_ENABLE_HTTPS
-	unset MATRIX_DOMAIN_PROVIDER MATRIX_APP_IMAGE MATRIX_APP_BASE_IMAGE MATRIX_PG_PASSWORD MATRIX_REDIS_PASSWORD
+unset MATRIX_IMAGE MATRIX_DB MATRIX_SESSION MATRIX_STORAGE MATRIX_USE_CADDY MATRIX_ENABLE_HTTPS
+unset MATRIX_DOMAIN_PROVIDER MATRIX_APP_IMAGE MATRIX_APP_BASE_IMAGE MATRIX_PG_PASSWORD MATRIX_REDIS_PASSWORD
+	unset MATRIX_RUN_BACKUP MATRIX_BACKUP_TARGET MATRIX_BACKUP_S3_ENDPOINT MATRIX_BACKUP_S3_REGION MATRIX_BACKUP_S3_BUCKET MATRIX_BACKUP_S3_ACCESS_KEY_ID MATRIX_BACKUP_S3_SECRET_ACCESS_KEY MATRIX_BACKUP_S3_PREFIX
 
 	case "${scenario}" in
-	debian13-caddy-app)
+		debian13-caddy-app)
 		MATRIX_IMAGE="linode/debian13"
 		MATRIX_DB="sqlite"
 		MATRIX_SESSION="file"
 		MATRIX_STORAGE="local"
 		MATRIX_USE_CADDY="1"
 		MATRIX_ENABLE_HTTPS="1"
-		MATRIX_DOMAIN_PROVIDER="sslip.io"
-		MATRIX_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-ghcr.io/web-casa/emdash-app:0.2.0-hi.1}"
-		;;
+			MATRIX_DOMAIN_PROVIDER="sslip.io"
+			MATRIX_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-ghcr.io/web-casa/emdash-app:0.2.0-hi.1}"
+			;;
 	centos9-builder)
 		MATRIX_IMAGE="linode/centos-stream9"
 		MATRIX_DB="sqlite"
@@ -100,16 +102,32 @@ setup_scenario() {
 		MATRIX_ENABLE_HTTPS="0"
 		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
 		;;
-	centos9-postgres-redis)
+		centos9-postgres-redis)
 		MATRIX_IMAGE="linode/centos-stream9"
 		MATRIX_DB="postgres"
 		MATRIX_SESSION="redis"
 		MATRIX_STORAGE="local"
 		MATRIX_USE_CADDY="0"
 		MATRIX_ENABLE_HTTPS="0"
-		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
-		MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
-		;;
+			MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
+			MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
+			;;
+		debian13-s3-backup)
+			MATRIX_IMAGE="linode/debian13"
+			MATRIX_DB="sqlite"
+			MATRIX_SESSION="file"
+			MATRIX_STORAGE="local"
+			MATRIX_USE_CADDY="0"
+			MATRIX_ENABLE_HTTPS="0"
+			MATRIX_RUN_BACKUP="1"
+			MATRIX_BACKUP_TARGET="${LINODE_TEST_INSTALL_BACKUP_TARGET:-s3}"
+			MATRIX_BACKUP_S3_ENDPOINT="${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT:-}"
+			MATRIX_BACKUP_S3_REGION="${LINODE_TEST_INSTALL_BACKUP_S3_REGION:-auto}"
+			MATRIX_BACKUP_S3_BUCKET="${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET:-}"
+			MATRIX_BACKUP_S3_ACCESS_KEY_ID="${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID:-}"
+			MATRIX_BACKUP_S3_SECRET_ACCESS_KEY="${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY:-}"
+			MATRIX_BACKUP_S3_PREFIX="${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX:-backups}"
+			;;
 	*)
 		fail "Unknown scenario: ${scenario}"
 		;;
@@ -197,6 +215,14 @@ run_scenario() {
 		LINODE_TEST_INSTALL_APP_BASE_IMAGE="${MATRIX_APP_BASE_IMAGE:-}" \
 		LINODE_TEST_INSTALL_PG_PASSWORD="${MATRIX_PG_PASSWORD:-}" \
 		LINODE_TEST_INSTALL_REDIS_PASSWORD="${MATRIX_REDIS_PASSWORD:-}" \
+		LINODE_TEST_RUN_BACKUP="${MATRIX_RUN_BACKUP:-0}" \
+		LINODE_TEST_INSTALL_BACKUP_TARGET="${MATRIX_BACKUP_TARGET:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT="${MATRIX_BACKUP_S3_ENDPOINT:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_REGION="${MATRIX_BACKUP_S3_REGION:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_BUCKET="${MATRIX_BACKUP_S3_BUCKET:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${MATRIX_BACKUP_S3_ACCESS_KEY_ID:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${MATRIX_BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+		LINODE_TEST_INSTALL_BACKUP_S3_PREFIX="${MATRIX_BACKUP_S3_PREFIX:-}" \
 		LINODE_TEST_KEEP="${keep_flag}" \
 		bash "${SCRIPT_DIR}/linode-test.sh"; then
 		exit_code=0
@@ -214,6 +240,7 @@ run_scenario() {
 		--arg storage "${MATRIX_STORAGE}" \
 		--arg use_caddy "${MATRIX_USE_CADDY}" \
 		--arg enable_https "${MATRIX_ENABLE_HTTPS}" \
+		--arg backup_target "${MATRIX_BACKUP_TARGET:-}" \
 		--arg app_image "${MATRIX_APP_IMAGE:-}" \
 		--arg app_base_image "${MATRIX_APP_BASE_IMAGE:-}" \
 		--arg started_at "${started_at}" \
@@ -229,6 +256,7 @@ run_scenario() {
 			storage_driver: $storage,
 			use_caddy: ($use_caddy == "1"),
 			enable_https: ($enable_https == "1"),
+			backup_target: $backup_target,
 			app_image: $app_image,
 			app_base_image: $app_base_image,
 			started_at: $started_at,

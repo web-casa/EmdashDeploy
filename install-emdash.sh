@@ -117,14 +117,8 @@ collect_configuration() {
 	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
 		prompt_value BACKUP_SCHEDULE "备份 cron" "${BACKUP_SCHEDULE}"
 		prompt_value BACKUP_KEEP_LOCAL "本地保留份数" "${BACKUP_KEEP_LOCAL}"
-		prompt_choice BACKUP_TARGET_TYPE "备份远端目标" "local sftp s3" "${BACKUP_TARGET_TYPE}"
-		if [[ "${BACKUP_TARGET_TYPE}" == "sftp" ]]; then
-			prompt_value BACKUP_SFTP_HOST "SFTP 主机" "${BACKUP_SFTP_HOST}"
-			prompt_value BACKUP_SFTP_PORT "SFTP 端口" "${BACKUP_SFTP_PORT}"
-			prompt_value BACKUP_SFTP_USER "SFTP 用户" "${BACKUP_SFTP_USER}"
-			prompt_secret BACKUP_SFTP_PASSWORD "SFTP 密码(可留空，留空则走密钥认证)" "${BACKUP_SFTP_PASSWORD}"
-			prompt_value BACKUP_SFTP_REMOTE_PATH "SFTP 远端目录" "${BACKUP_SFTP_REMOTE_PATH}"
-		elif [[ "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
+		prompt_choice BACKUP_TARGET_TYPE "备份远端目标" "local s3" "${BACKUP_TARGET_TYPE}"
+		if [[ "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
 			prompt_value BACKUP_S3_ENDPOINT "备份 S3 Endpoint" "${BACKUP_S3_ENDPOINT}"
 			prompt_value BACKUP_S3_REGION "备份 S3 Region" "${BACKUP_S3_REGION}"
 			prompt_value BACKUP_S3_BUCKET "备份 S3 Bucket" "${BACKUP_S3_BUCKET}"
@@ -140,13 +134,13 @@ collect_configuration() {
 wait_for_stack_ready() {
 	local local_probe_host="${APP_BIND_HOST}"
 	local app_health_url=""
-	local public_health_url="${APP_PUBLIC_URL}/__emdash_health"
+	local public_health_url="${APP_PUBLIC_URL}/healthz"
 	local setup_status_url="${APP_PUBLIC_URL}/_emdash/api/setup/status"
 
 	if [[ "${local_probe_host}" == "0.0.0.0" ]]; then
 		local_probe_host="127.0.0.1"
 	fi
-	app_health_url="http://${local_probe_host}:${APP_PORT}/__emdash_health"
+	app_health_url="http://${local_probe_host}:${APP_PORT}/healthz"
 
 	log "等待 EmDash 应用健康检查通过"
 	if ! wait_for_http_ok "${app_health_url}" 120 2; then

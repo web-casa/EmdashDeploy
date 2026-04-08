@@ -7,7 +7,7 @@
 - 验证 `install-emdash.sh` 的真实安装链路
 - 验证 `emdashctl` 的高风险运维命令
 - 验证 `Docker` 和 `Podman` 两条运行时分支
-- 验证 `SQLite`、`PostgreSQL`、`Redis`、`Caddy + HTTPS`、`S3 preflight`、`SFTP backup`
+- 验证 `SQLite`、`PostgreSQL`、`Redis`、`Caddy + HTTPS`、`S3 preflight`、`S3 backup`
 - 验证最近修过的问题没有回归
 
 ## 测试原则
@@ -29,17 +29,15 @@
 linode_token=...
 ```
 
-2. 如需测试 SFTP 备份，准备一台可写入的 SFTP 目标
+2. 如需测试 S3 预检或备份上传，准备一组 S3-compatible 凭据
 
-3. 如需测试 S3 预检或备份上传，准备一组 S3-compatible 凭据
-
-4. 默认 region 使用美西优先：
+3. 默认 region 使用美西优先：
 
 ```bash
 export LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east
 ```
 
-5. 可选：直接使用预定义矩阵脚本跑自动化组合
+4. 可选：直接使用预定义矩阵脚本跑自动化组合
 
 ```bash
 bash linode-test-matrix.sh
@@ -144,7 +142,7 @@ bash linode-test.sh
 
 验收：
 
-- `https://<domain>/__emdash_health` 正常
+- `https://<domain>/healthz` 正常
 - `emdashctl doctor --json` 中 `tls cert` 为 `ok`
 - `caddy service` 为 `ok`
 
@@ -254,44 +252,7 @@ emdashctl smoke --json
 - app 正常
 - SQLite 文件存在且无旧 WAL 污染症状
 
-### D4. SFTP backup
-
-目的：
-
-- 验证首次上传时自动创建远端目录
-
-创建保留实例：
-
-```bash
-LINODE_TEST_KEEP=1 \
-LINODE_TEST_IMAGE=linode/ubuntu24.04 \
-LINODE_TEST_INSTALL_DB_DRIVER=sqlite \
-LINODE_TEST_INSTALL_SESSION_DRIVER=file \
-bash linode-test.sh
-```
-
-远端先改 `/etc/emdash/compose.env` 或重装时带入：
-
-- `BACKUP_TARGET_TYPE=sftp`
-- `BACKUP_SFTP_HOST`
-- `BACKUP_SFTP_PORT`
-- `BACKUP_SFTP_USER`
-- `BACKUP_SFTP_PASSWORD` 或密钥认证
-- `BACKUP_SFTP_REMOTE_PATH`
-
-然后执行：
-
-```bash
-emdashctl backup
-```
-
-验收：
-
-- 远端目录自动创建
-- 首次上传成功
-- 本地备份仍保留
-
-### D5. S3-compatible storage preflight
+### D4. S3-compatible storage preflight
 
 目的：
 
@@ -329,7 +290,6 @@ bash linode-test.sh
 8. D2
 9. D3
 10. D4
-11. D5
 
 这样可以先确认“安装主链路”，再做破坏性运维命令验证。
 
@@ -346,7 +306,7 @@ bash linode-test.sh
 如果启用了 Caddy + HTTPS，还必须满足：
 
 - `tls cert` 为 `ok`
-- `https://<domain>/__emdash_health` 正常
+- `https://<domain>/healthz` 正常
 
 ## 失败留证
 
@@ -373,4 +333,4 @@ journalctl -u caddy -n 200 --no-pager
 
 - `B1`: 复杂 PostgreSQL 密码的连接串正确性
 - `D2`: PostgreSQL restore 切换流程
-- `D4`: SFTP 首次上传自动建目录
+- `D4`: S3-compatible backup 上传
