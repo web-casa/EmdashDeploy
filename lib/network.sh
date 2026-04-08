@@ -162,33 +162,21 @@ test_s3_storage() {
 
 	local test_key="emdash-installer-test-$(date +%s).txt"
 	local tmp_file
-	local mount_suffix=":ro"
 	tmp_file="$(mktemp)"
 	printf 'emdash-storage-check\n' >"${tmp_file}"
 
-	if [[ "${CONTAINER_RUNTIME}" == "podman" ]]; then
-		mount_suffix=":ro,Z"
-	fi
-
 	log "执行对象存储上传测试"
 
-	"${CONTAINER_RUNTIME}" run --rm \
-		-e AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
-		-e AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
-		-v "${tmp_file}:/tmp/check.txt${mount_suffix}" \
-		amazon/aws-cli:2.22.21 \
-		s3api put-object \
-		--endpoint-url "${S3_ENDPOINT}" \
+	AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
+	AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
+	aws --endpoint-url "${S3_ENDPOINT}" s3api put-object \
 		--bucket "${S3_BUCKET}" \
 		--key "${test_key}" \
-		--body /tmp/check.txt >/dev/null
+		--body "${tmp_file}" >/dev/null
 
-	"${CONTAINER_RUNTIME}" run --rm \
-		-e AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
-		-e AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
-		amazon/aws-cli:2.22.21 \
-		s3api delete-object \
-		--endpoint-url "${S3_ENDPOINT}" \
+	AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
+	AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
+	aws --endpoint-url "${S3_ENDPOINT}" s3api delete-object \
 		--bucket "${S3_BUCKET}" \
 		--key "${test_key}" >/dev/null
 

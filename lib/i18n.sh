@@ -211,9 +211,9 @@ ti() {
 	write_only_skip) case "${lang}" in en) printf 'write-only mode skips runtime installation, object storage preflight, and Caddy installation.' ;; ja) printf 'write-only モードではランタイムのインストール、オブジェクトストレージ事前確認、Caddy インストールをスキップします。' ;; ko) printf 'write-only 모드에서는 런타임 설치, 객체 스토리지 사전 점검, Caddy 설치를 건너뜁니다.' ;; es) printf 'El modo write-only omite la instalación del runtime, la comprobación previa del almacenamiento de objetos y la instalación de Caddy.' ;; de) printf 'Im Modus write-only werden Runtime-Installation, Objektspeicher-Prüfung und Caddy-Installation übersprungen.' ;; fr) printf 'Le mode write-only ignore l’installation du runtime, la vérification du stockage objet et l’installation de Caddy.' ;; zh-CN) printf 'write-only 模式下将跳过运行时安装、对象存储上传测试和 Caddy 安装。' ;; zh-TW) printf 'write-only 模式下將跳過執行環境安裝、物件儲存預檢與 Caddy 安裝。' ;; pt) printf 'O modo write-only ignora a instalação do runtime, a verificação do armazenamento de objetos e a instalação do Caddy.' ;; esac ;;
 	detect_public_ip) case "${lang}" in en) printf 'Detecting public IP addresses' ;; ja) printf 'パブリック IP を検出しています' ;; ko) printf '공인 IP를 감지하는 중입니다' ;; es) printf 'Detectando IP pública' ;; de) printf 'Öffentliche IP wird ermittelt' ;; fr) printf 'Détection des IP publiques' ;; zh-CN) printf '检测公网 IP' ;; zh-TW) printf '偵測公網 IP' ;; pt) printf 'Detectando IP público' ;; esac ;;
 	activate_health_warn) case "${lang}" in en) printf 'Post-start health checks were not fully successful. Use emdashctl doctor for details.' ;; ja) printf '起動後のヘルスチェックが完全には通りませんでした。詳細は emdashctl doctor を使用してください。' ;; ko) printf '시작 후 상태 확인이 완전히 통과하지 못했습니다. 자세한 내용은 emdashctl doctor를 사용하세요.' ;; es) printf 'Las comprobaciones de salud posteriores al arranque no se completaron correctamente. Usa emdashctl doctor para más detalles.' ;; de) printf 'Die Health-Checks nach dem Start waren nicht vollständig erfolgreich. Verwende emdashctl doctor für Details.' ;; fr) printf 'Les vérifications de santé après démarrage ne se sont pas toutes déroulées correctement. Utilisez emdashctl doctor pour plus de détails.' ;; zh-CN) printf '启动后健康检查未完全通过，请使用 emdashctl doctor 进一步排查。' ;; zh-TW) printf '啟動後健康檢查未完全通過，請使用 emdashctl doctor 進一步排查。' ;; pt) printf 'As verificações de saúde após a inicialização não foram totalmente concluídas. Use emdashctl doctor para mais detalhes.' ;; esac ;;
-	summary_generated_started) case "${lang}" in en) printf 'Configuration generated and compose stack started.' ;; ja) printf '設定を生成し、compose スタックを起動しました。' ;; ko) printf '구성이 생성되었고 compose 스택이 시작되었습니다.' ;; es) printf 'La configuración se generó y el stack de compose se inició.' ;; de) printf 'Konfiguration erstellt und Compose-Stack gestartet.' ;; fr) printf 'Configuration générée et stack compose démarré.' ;; zh-CN) printf '已生成配置并启动 compose。' ;; zh-TW) printf '已產生設定並啟動 compose。' ;; pt) printf 'Configuração gerada e stack compose iniciado.' ;; esac ;;
+	summary_generated_started) case "${lang}" in en) printf 'Configuration generated and native services started.' ;; ja) printf '設定を生成し、ネイティブサービスを起動しました。' ;; ko) printf '구성이 생성되었고 네이티브 서비스가 시작되었습니다.' ;; es) printf 'La configuración se generó y los servicios nativos se iniciaron.' ;; de) printf 'Konfiguration erstellt und native Dienste gestartet.' ;; fr) printf 'Configuration générée et services natifs démarrés.' ;; zh-CN) printf '已生成配置并启动本机服务。' ;; zh-TW) printf '已產生設定並啟動原生服務。' ;; pt) printf 'Configuração gerada e serviços nativos iniciados.' ;; esac ;;
 	summary_generated_only) case "${lang}" in en) printf 'Configuration generated. Services have not been started yet.' ;; ja) printf '設定を生成しました。サービスはまだ起動していません。' ;; ko) printf '구성이 생성되었습니다. 서비스는 아직 시작되지 않았습니다.' ;; es) printf 'Configuración generada. Los servicios aún no se han iniciado.' ;; de) printf 'Konfiguration erstellt. Die Dienste wurden noch nicht gestartet.' ;; fr) printf 'Configuration générée. Les services n’ont pas encore été démarrés.' ;; zh-CN) printf '已生成配置，服务尚未启动。' ;; zh-TW) printf '已產生設定，服務尚未啟動。' ;; pt) printf 'Configuração gerada. Os serviços ainda não foram iniciados.' ;; esac ;;
-	summary_generated_write_only) case "${lang}" in en) printf 'Configuration generated. Compose stack not started.' ;; ja) printf '設定を生成しました。compose スタックは起動していません。' ;; ko) printf '구성이 생성되었습니다. compose 스택은 시작하지 않았습니다.' ;; es) printf 'Configuración generada. El stack de compose no se inició.' ;; de) printf 'Konfiguration erstellt. Compose-Stack wurde nicht gestartet.' ;; fr) printf 'Configuration générée. Le stack compose n’a pas été démarré.' ;; zh-CN) printf '已生成配置，未启动 compose。' ;; zh-TW) printf '已產生設定，尚未啟動 compose。' ;; pt) printf 'Configuração gerada. O stack compose não foi iniciado.' ;; esac ;;
+	summary_generated_write_only) case "${lang}" in en) printf 'Configuration generated. Native services were not started.' ;; ja) printf '設定を生成しました。ネイティブサービスは起動していません。' ;; ko) printf '구성이 생성되었습니다. 네이티브 서비스는 시작하지 않았습니다.' ;; es) printf 'Configuración generada. Los servicios nativos no se iniciaron.' ;; de) printf 'Konfiguration erstellt. Native Dienste wurden nicht gestartet.' ;; fr) printf 'Configuration générée. Les services natifs n’ont pas été démarrés.' ;; zh-CN) printf '已生成配置，未启动本机服务。' ;; zh-TW) printf '已產生設定，尚未啟動原生服務。' ;; pt) printf 'Configuração gerada. Os serviços nativos não foram iniciados.' ;; esac ;;
 	summary_start_services) case "${lang}" in en) printf 'To start services:' ;; ja) printf 'サービスを起動するには:' ;; ko) printf '서비스를 시작하려면:' ;; es) printf 'Para iniciar los servicios:' ;; de) printf 'Zum Starten der Dienste:' ;; fr) printf 'Pour démarrer les services :' ;; zh-CN) printf '如需启动服务:' ;; zh-TW) printf '如需啟動服務:' ;; pt) printf 'Para iniciar os serviços:' ;; esac ;;
 	summary_config_files) case "${lang}" in en) printf 'Config files:' ;; ja) printf '設定ファイル:' ;; ko) printf '구성 파일:' ;; es) printf 'Archivos de configuración:' ;; de) printf 'Konfigurationsdateien:' ;; fr) printf 'Fichiers de configuration :' ;; zh-CN) printf '配置文件:' ;; zh-TW) printf '設定檔:' ;; pt) printf 'Arquivos de configuração:' ;; esac ;;
 	summary_project_paths) case "${lang}" in en) printf 'Project paths:' ;; ja) printf 'プロジェクトパス:' ;; ko) printf '프로젝트 경로:' ;; es) printf 'Rutas del proyecto:' ;; de) printf 'Projektpfade:' ;; fr) printf 'Chemins du projet :' ;; zh-CN) printf '项目目录:' ;; zh-TW) printf '專案路徑:' ;; pt) printf 'Caminhos do projeto:' ;; esac ;;
@@ -248,8 +248,8 @@ Usage:
 
 Options:
   --non-interactive  Use only environment variables and defaults
-  --write-only       Generate config and project files only, do not start compose
-  --activate         Generate files and immediately build / up
+  --write-only       Generate config and project files only, do not start native services
+  --activate         Generate files, build the app, and start native services
   -h, --help         Show help
 
 Common environment variables:
@@ -262,8 +262,6 @@ Common environment variables:
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -277,8 +275,8 @@ EmDash installer
 
 オプション:
   --non-interactive  環境変数と既定値のみを使用し、質問しません
-  --write-only       設定とプロジェクトファイルのみ生成し、compose は起動しません
-  --activate         生成後すぐに build / up を実行します
+  --write-only       設定とプロジェクトファイルのみ生成し、ネイティブサービスは起動しません
+  --activate         生成後すぐに build とネイティブサービス起動を実行します
   -h, --help         ヘルプを表示
 
 主な環境変数:
@@ -291,8 +289,6 @@ EmDash installer
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -306,8 +302,8 @@ EmDash installer
 
 옵션:
   --non-interactive  환경 변수와 기본값만 사용하고 질문하지 않습니다
-  --write-only       설정과 프로젝트 파일만 생성하고 compose는 시작하지 않습니다
-  --activate         생성 후 즉시 build / up 을 실행합니다
+  --write-only       설정과 프로젝트 파일만 생성하고 네이티브 서비스는 시작하지 않습니다
+  --activate         생성 후 즉시 build 와 네이티브 서비스 시작을 실행합니다
   -h, --help         도움말 표시
 
 주요 환경 변수:
@@ -320,8 +316,6 @@ EmDash installer
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -335,8 +329,8 @@ Uso:
 
 Opciones:
   --non-interactive  Usa solo variables de entorno y valores predeterminados
-  --write-only       Genera solo la configuración y los archivos del proyecto, sin iniciar compose
-  --activate         Genera y ejecuta build / up inmediatamente
+  --write-only       Genera solo la configuración y los archivos del proyecto, sin iniciar servicios nativos
+  --activate         Genera, compila y arranca los servicios nativos
   -h, --help         Muestra la ayuda
 
 Variables de entorno comunes:
@@ -349,8 +343,6 @@ Variables de entorno comunes:
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -364,8 +356,8 @@ Verwendung:
 
 Optionen:
   --non-interactive  Nur Umgebungsvariablen und Standardwerte verwenden
-  --write-only       Nur Konfiguration und Projektdateien erzeugen, compose nicht starten
-  --activate         Dateien erzeugen und sofort build / up ausführen
+  --write-only       Nur Konfiguration und Projektdateien erzeugen, native Dienste nicht starten
+  --activate         Dateien erzeugen, App bauen und native Dienste starten
   -h, --help         Hilfe anzeigen
 
 Häufige Umgebungsvariablen:
@@ -378,8 +370,6 @@ Häufige Umgebungsvariablen:
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -393,8 +383,8 @@ Utilisation :
 
 Options :
   --non-interactive  Utiliser uniquement les variables d’environnement et les valeurs par défaut
-  --write-only       Générer seulement la configuration et les fichiers du projet, sans démarrer compose
-  --activate         Générer puis lancer immédiatement build / up
+  --write-only       Générer seulement la configuration et les fichiers du projet, sans démarrer les services natifs
+  --activate         Générer, construire puis démarrer les services natifs
   -h, --help         Afficher l’aide
 
 Variables d’environnement courantes :
@@ -407,8 +397,6 @@ Variables d’environnement courantes :
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -422,8 +410,8 @@ EmDash 安装器
 
 参数:
   --non-interactive  仅使用环境变量和默认值，不提问
-  --write-only       只生成配置和项目文件，不启动 compose
-  --activate         生成后立即 build / up
+  --write-only       只生成配置和项目文件，不启动本机服务
+  --activate         生成后立即构建并启动本机服务
   -h, --help         显示帮助
 
 常用环境变量:
@@ -436,8 +424,6 @@ EmDash 安装器
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -451,8 +437,8 @@ EmDash 安裝器
 
 參數:
   --non-interactive  僅使用環境變數與預設值，不提問
-  --write-only       只產生設定與專案檔案，不啟動 compose
-  --activate         產生後立即 build / up
+  --write-only       只產生設定與專案檔案，不啟動原生服務
+  --activate         產生後立即建置並啟動原生服務
   -h, --help         顯示說明
 
 常用環境變數:
@@ -465,8 +451,6 @@ EmDash 安裝器
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF
@@ -480,8 +464,8 @@ Uso:
 
 Opções:
   --non-interactive  Usa apenas variáveis de ambiente e valores padrão
-  --write-only       Gera apenas a configuração e os arquivos do projeto, sem iniciar o compose
-  --activate         Gera e executa build / up imediatamente
+  --write-only       Gera apenas a configuração e os arquivos do projeto, sem iniciar os serviços nativos
+  --activate         Gera, compila e inicia os serviços nativos
   -h, --help         Mostra a ajuda
 
 Variáveis de ambiente comuns:
@@ -494,8 +478,6 @@ Variáveis de ambiente comuns:
   EMDASH_INSTALL_STORAGE_DRIVER
   EMDASH_INSTALL_USE_CADDY
   EMDASH_INSTALL_ENABLE_HTTPS
-  EMDASH_INSTALL_APP_IMAGE
-  EMDASH_INSTALL_APP_BASE_IMAGE
   EMDASH_INSTALL_PG_PASSWORD
   EMDASH_INSTALL_REDIS_PASSWORD
 EOF

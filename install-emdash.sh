@@ -252,7 +252,6 @@ main() {
 	init_defaults
 	apply_env_overrides
 	detect_os_family
-	choose_container_runtime
 	collect_configuration
 	derive_paths
 	validate_config
@@ -277,20 +276,24 @@ main() {
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "s3" && "${WRITE_ONLY}" != "1" ]]; then
+		install_aws_cli
 		test_s3_storage
+	fi
+
+	if [[ "${BACKUP_ENABLED}" == "1" && "${BACKUP_TARGET_TYPE}" == "s3" && "${WRITE_ONLY}" != "1" ]]; then
+		install_aws_cli
 	fi
 
 	prepare_layout
 	clone_template_repo
 	patch_template_package_json
 	render_astro_config
-	render_app_dockerfile
-	render_app_entrypoint
+	render_app_scripts
 	render_health_endpoint
-	render_compose_file
-	render_compose_env
+	render_app_env
 	render_install_yaml
 	render_caddy_file
+	render_systemd_service
 	render_first_run_note
 	install_emdashctl_script
 	if [[ "${WRITE_ONLY}" != "1" ]]; then
@@ -308,9 +311,7 @@ main() {
 	if [[ "${ACTIVATE_STACK}" == "1" ]]; then
 		ensure_runtime_present
 		ensure_build_memory_headroom
-		if [[ "${USE_CADDY}" != "1" ]]; then
-			open_required_firewall_ports
-		fi
+		open_required_firewall_ports
 		start_stack
 		if [[ "${USE_CADDY}" == "1" ]]; then
 			activate_caddy_service

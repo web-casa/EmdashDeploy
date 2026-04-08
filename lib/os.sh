@@ -10,38 +10,39 @@ detect_os_family() {
 	OS_LABEL="${PRETTY_NAME:-${OS_ID}}"
 	OS_MAJOR="${OS_VERSION_ID%%.*}"
 	OS_CODENAME="${VERSION_CODENAME:-}"
+	POSTGRES_SERVICE="postgresql"
+	REDIS_SERVICE="redis"
 
 	case "${OS_ID}" in
 	debian)
 		case "${OS_MAJOR}" in
-		12)
-			CONTAINER_RUNTIME="docker"
-			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="bookworm"
-			;;
 		13)
-			CONTAINER_RUNTIME="docker"
 			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="trixie"
+			REDIS_SERVICE="redis-server"
 			;;
-		*) fail "仅支持 Debian 12/13，当前为 ${OS_LABEL}" ;;
+		*) fail "仅支持 Debian 13，当前为 ${OS_LABEL}" ;;
 		esac
 		;;
 	ubuntu)
 		case "${OS_MAJOR}" in
-		22)
-			CONTAINER_RUNTIME="docker"
-			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="jammy"
-			;;
 		24)
-			CONTAINER_RUNTIME="docker"
 			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="noble"
+			REDIS_SERVICE="redis-server"
 			;;
-		*) fail "仅支持 Ubuntu 22/24，当前为 ${OS_LABEL}" ;;
+		*) fail "仅支持 Ubuntu 24.04，当前为 ${OS_LABEL}" ;;
 		esac
 		;;
 	rocky | almalinux | rhel | ol | centos | centos_stream)
 		case "${OS_MAJOR}" in
-		8 | 9 | 10) CONTAINER_RUNTIME="podman" ;;
-		*) fail "仅支持 EL 8/9/10，当前为 ${OS_LABEL}" ;;
+		9 | 10)
+			POSTGRES_SERVICE="postgresql-${PG_VERSION}"
+			if [[ "${OS_MAJOR}" == "10" ]]; then
+				REDIS_SERVICE="valkey"
+			else
+				REDIS_SERVICE="redis"
+			fi
+			;;
+		*) fail "仅支持 EL 9/10，当前为 ${OS_LABEL}" ;;
 		esac
 		;;
 	*)
@@ -51,11 +52,7 @@ detect_os_family() {
 }
 
 choose_container_runtime() {
-	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
-		COMPOSE_BINARY="docker compose"
-	else
-		COMPOSE_BINARY="podman compose"
-	fi
+	:
 }
 
 apt_update() {
@@ -64,7 +61,7 @@ apt_update() {
 
 install_base_packages() {
 	log "安装基础依赖"
-	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		export DEBIAN_FRONTEND=noninteractive
 		apt_update
 		apt-get install -y \
@@ -73,169 +70,198 @@ install_base_packages() {
 			git \
 			gnupg \
 			python3 \
+			python3-pip \
 			dnsutils \
 			openssh-client \
 			tar \
 			jq \
-			cron
+			cron \
+			build-essential
 		systemctl enable --now cron >/dev/null 2>&1 || true
 		return
 	fi
 
-	if command_exists dnf; then
-		dnf -y install \
-			ca-certificates \
-			curl \
-			git \
-			gnupg2 \
-			python3 \
-			python3-pip \
-			bind-utils \
-			openssh-clients \
-			tar \
-			jq \
-			iproute \
-			cronie
-	else
-		yum -y install \
-			ca-certificates \
-			curl \
-			git \
-			gnupg2 \
-			python3 \
-			python3-pip \
-			bind-utils \
-			openssh-clients \
-			tar \
-			jq \
-			iproute \
-			cronie
-	fi
+	dnf -y install \
+		ca-certificates \
+		curl \
+		git \
+		gnupg2 \
+		python3 \
+		python3-pip \
+		bind-utils \
+		openssh-clients \
+		tar \
+		jq \
+		iproute \
+		cronie \
+		gcc \
+		gcc-c++ \
+		make
 	systemctl enable --now crond >/dev/null 2>&1 || systemctl enable --now cronie >/dev/null 2>&1 || true
 }
 
-install_docker_engine() {
-	if command_exists docker && docker compose version >/dev/null 2>&1; then
-		log "Docker 和 docker compose 已安装"
-		systemctl enable --now docker >/dev/null 2>&1 || true
+install_aws_cli() {
+	command_exists aws && return 0
+
+	log "安装 AWS CLI"
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+		if apt-get install -y awscli >/dev/null 2>&1; then
+			return 0
+		fi
+
+		local arch="x86_64"
+		case "$(uname -m)" in
+		x86_64 | amd64) arch="x86_64" ;;
+		aarch64 | arm64) arch="aarch64" ;;
+		*) fail "当前架构不支持自动安装 AWS CLI: $(uname -m)" ;;
+		esac
+
+		apt-get install -y unzip
+		local tmpdir
+		tmpdir="$(mktemp -d)"
+		curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}.zip" -o "${tmpdir}/awscliv2.zip"
+		unzip -q "${tmpdir}/awscliv2.zip" -d "${tmpdir}"
+		"${tmpdir}/aws/install" --update
+		rm -rf "${tmpdir}"
 		return
 	fi
 
-	log "安装 Docker Engine"
-	apt-get remove -y docker.io docker-doc docker-compose podman-docker containerd runc || true
-	apt-get install -y ca-certificates curl
-	install -m 0755 -d /etc/apt/keyrings
-	curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" -o /etc/apt/keyrings/docker.asc
-	chmod a+r /etc/apt/keyrings/docker.asc
-	cat >/etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/${OS_ID}
-Suites: ${OS_CODENAME}
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-	apt_update
-	apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-	systemctl enable --now docker
+	if dnf -y install awscli2 >/dev/null 2>&1; then
+		return 0
+	fi
+	dnf -y install awscli
 }
 
-install_podman_stack() {
-	local provider_candidate=""
+install_nodesource_node() {
+	local node_major=""
+	if command_exists node; then
+		node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+	fi
+	if [[ "${node_major}" == "24" ]] && command_exists pnpm; then
+		log "Node.js 24 和 pnpm 已安装"
+		return
+	fi
 
-	ensure_podman_compose_shims() {
-		local provider_path="$1"
-		[[ -n "${provider_path}" && -x "${provider_path}" ]] || return 0
-		if [[ "${provider_path}" == "/usr/local/bin/podman-compose" ]]; then
-			[[ -x /usr/bin/podman-compose ]] || ln -sf "${provider_path}" /usr/bin/podman-compose
-			[[ -x /usr/bin/docker-compose ]] || ln -sf "${provider_path}" /usr/bin/docker-compose
-		fi
-	}
-
-	if command_exists podman; then
-		log "Podman 已安装"
+	log "安装 Node.js 24 (NodeSource)"
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+		curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+		apt-get install -y nodejs
 	else
-		log "安装 Podman"
-		if command_exists dnf; then
-			dnf -y install podman slirp4netns fuse-overlayfs
-			dnf -y install podman-plugins || true
-		else
-			yum -y install podman slirp4netns fuse-overlayfs
-			yum -y install podman-plugins || true
+		curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -
+		dnf -y install nodejs
+	fi
+	corepack enable || true
+	corepack prepare pnpm@10.28.0 --activate
+}
+
+install_postgres_server() {
+	[[ "${DB_DRIVER}" == "postgres" ]] || return 0
+
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+		if ! dpkg -s "postgresql-${PG_VERSION}" >/dev/null 2>&1; then
+			log "安装 PostgreSQL ${PG_VERSION} (PGDG)"
+			install -d -m 0755 /etc/apt/keyrings
+			curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+			cat >/etc/apt/sources.list.d/pgdg.list <<EOF
+deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main
+EOF
+			apt_update
+			apt-get install -y "postgresql-${PG_VERSION}" "postgresql-client-${PG_VERSION}"
 		fi
+		POSTGRES_SERVICE="postgresql"
+	else
+		if ! rpm -q "postgresql${PG_VERSION}-server" >/dev/null 2>&1; then
+			log "安装 PostgreSQL ${PG_VERSION} (PGDG)"
+			dnf -qy module disable postgresql || true
+			dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+			dnf -y install "postgresql${PG_VERSION}-server" "postgresql${PG_VERSION}"
+		fi
+		if [[ ! -f "/var/lib/pgsql/${PG_VERSION}/data/PG_VERSION" ]]; then
+			"/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup" initdb
+		fi
+		POSTGRES_SERVICE="postgresql-${PG_VERSION}"
 	fi
 
-	command_exists podman || fail "Podman 安装失败。"
+	systemctl enable --now "${POSTGRES_SERVICE}"
+	configure_postgres_local
+}
 
-	if podman compose version >/dev/null 2>&1; then
-		PODMAN_COMPOSE_PROVIDER_BIN=""
-		return
+configure_postgres_local() {
+	[[ "${DB_DRIVER}" == "postgres" ]] || return 0
+
+	log "配置本机 PostgreSQL 数据库"
+	runuser -u postgres -- psql postgres \
+		--set=db_user="${PG_DB_USER}" \
+		--set=db_password="${PG_DB_PASSWORD}" <<'EOF'
+DO \$\$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'db_user') THEN
+      EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', :'db_user', :'db_password');
+   ELSE
+      EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'db_user', :'db_password');
+   END IF;
+END
+\$\$;
+EOF
+	if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${PG_DB_NAME}'" | grep -qx 1; then
+		runuser -u postgres -- createdb -O "${PG_DB_USER}" "${PG_DB_NAME}"
+	fi
+}
+
+install_redis_server() {
+	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
+
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+		dpkg -s redis-server >/dev/null 2>&1 || apt-get install -y redis-server
+		REDIS_SERVICE="redis-server"
+	elif [[ "${OS_MAJOR}" == "10" ]]; then
+		rpm -q valkey >/dev/null 2>&1 || dnf -y install valkey
+		REDIS_SERVICE="valkey"
+	else
+		rpm -q redis >/dev/null 2>&1 || dnf -y install redis
+		REDIS_SERVICE="redis"
 	fi
 
-	if command_exists podman-compose; then
-		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
-		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-		return
-	fi
+	configure_redis_local
+	systemctl enable --now "${REDIS_SERVICE}"
+}
 
-	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
-		if [[ -x "${provider_candidate}" ]]; then
-			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
-			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-			return
+configure_redis_local() {
+	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
+
+	local redis_conf=""
+	for candidate in /etc/redis/redis.conf /etc/redis.conf /etc/valkey/valkey.conf /etc/valkey.conf; do
+		if [[ -f "${candidate}" ]]; then
+			redis_conf="${candidate}"
+			break
 		fi
 	done
+	[[ -f "${redis_conf}" ]] || fail "未找到 Redis 配置文件: ${redis_conf}"
 
-	log "安装 podman compose provider"
-	if command_exists dnf; then
-		dnf -y install podman-compose || true
-	elif command_exists yum; then
-		yum -y install podman-compose || true
-	fi
+	REDIS_CONF_PATH="${redis_conf}" REDIS_CONF_PASSWORD="${REDIS_PASSWORD}" python3 <<'PY'
+from pathlib import Path
+import os
 
-	if command_exists podman-compose; then
-		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
-		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-		return
-	fi
+path = Path(os.environ["REDIS_CONF_PATH"])
+password = os.environ["REDIS_CONF_PASSWORD"]
+lines = path.read_text().splitlines()
 
-	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
-		if [[ -x "${provider_candidate}" ]]; then
-			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
-			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-			return
-		fi
-	done
+def rewrite(key, value):
+    prefix = f"{key} "
+    commented = f"#{key} "
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(prefix) or stripped.startswith(commented):
+            lines[idx] = f"{key} {value}"
+            return
+    lines.append(f"{key} {value}")
 
-	if [[ "${OS_MAJOR:-0}" == "8" ]]; then
-		if command_exists dnf; then
-			dnf -y install python39 python39-pip || true
-		elif command_exists yum; then
-			yum -y install python39 python39-pip || true
-		fi
-	fi
-
-	if command_exists python3.9; then
-		python3.9 -m pip install podman-compose
-	elif command_exists pip3; then
-		pip3 install podman-compose
-	fi
-
-	if command_exists podman-compose; then
-		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
-		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-		return
-	fi
-
-	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
-		if [[ -x "${provider_candidate}" ]]; then
-			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
-			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
-			return
-		fi
-	done
-
-	fail "未能安装可用的 podman compose provider。"
+rewrite("bind", "127.0.0.1 ::1")
+rewrite("protected-mode", "yes")
+rewrite("requirepass", password)
+rewrite("appendonly", "yes")
+path.write_text("\n".join(lines) + "\n")
+PY
 }
 
 install_caddy_package() {
@@ -247,112 +273,27 @@ install_caddy_package() {
 	fi
 
 	log "安装 Caddy"
-	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
 		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-		chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-		chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+		chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
 		apt_update
 		apt-get install -y caddy
 		return
 	fi
 
-	if command_exists dnf; then
-		dnf -y install dnf-plugins-core
-		dnf copr enable -y @caddy/caddy
-		dnf -y install caddy
-	else
-		yum -y install dnf-plugins-core
-		dnf copr enable -y @caddy/caddy
-		dnf -y install caddy
-	fi
+	dnf -y install dnf-plugins-core
+	dnf copr enable -y @caddy/caddy
+	dnf -y install caddy
 }
 
-activate_caddy_service() {
-	[[ "${USE_CADDY}" == "1" ]] || return 0
-	command_exists caddy || fail "未安装 caddy，无法启用服务。"
-	[[ -f "${CADDYFILE_PATH}" ]] || fail "未找到 Caddyfile: ${CADDYFILE_PATH}"
-	open_required_firewall_ports
-
-	install -d -m 0755 /etc/caddy
-	if id caddy >/dev/null 2>&1; then
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.config
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.config/caddy
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local/share
-		install -d -o caddy -g caddy -m 0755 /var/lib/caddy/.local/share/caddy
-		install -d -o caddy -g caddy -m 0755 /var/log/caddy
-		install -d -o caddy -g caddy -m 0755 "${LOG_DIR}"
-		touch "${LOG_DIR}/caddy-access.log"
-		chown caddy:caddy "${LOG_DIR}/caddy-access.log"
-		if command_exists restorecon; then
-			restorecon -Rv /var/lib/caddy /var/log/caddy "${LOG_DIR}" >/dev/null 2>&1 || true
-		fi
+create_app_user() {
+	if id "${APP_RUN_USER}" >/dev/null 2>&1; then
+		return
 	fi
-	if [[ -e /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]]; then
-		cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.emdash.bak.$(date +%Y%m%d-%H%M%S)"
-	fi
-
-	ln -sfn "${CADDYFILE_PATH}" /etc/caddy/Caddyfile
-	caddy validate --config /etc/caddy/Caddyfile
-	systemctl enable caddy
-	systemctl restart caddy
-}
-
-open_required_firewall_ports() {
-	local ports=()
-	local port
-
-	if [[ "${USE_CADDY}" == "1" ]]; then
-		ports=(80 443)
-	elif [[ "${APP_BIND_HOST:-127.0.0.1}" != "127.0.0.1" ]]; then
-		ports=("${APP_PORT}")
-	else
-		return 0
-	fi
-
-	if command_exists firewall-cmd && systemctl is-active firewalld >/dev/null 2>&1; then
-		for port in "${ports[@]}"; do
-			firewall-cmd --quiet --permanent --add-port="${port}/tcp" || true
-		done
-		firewall-cmd --reload >/dev/null 2>&1 || true
-	fi
-
-	if command_exists ufw; then
-		if ufw status 2>/dev/null | grep -q "Status: active"; then
-			for port in "${ports[@]}"; do
-				ufw allow "${port}/tcp" >/dev/null 2>&1 || true
-			done
-		fi
-	fi
-}
-
-install_backup_schedule() {
-	[[ "${BACKUP_ENABLED}" == "1" ]] || return 0
-	local emdashctl_bin="/usr/local/bin/emdashctl"
-	if [[ ! -x "${emdashctl_bin}" && -n "${SCRIPT_DIR:-}" && -x "${SCRIPT_DIR}/emdashctl" ]]; then
-		emdashctl_bin="${SCRIPT_DIR}/emdashctl"
-	fi
-	[[ -x "${emdashctl_bin}" ]] || fail "未找到 emdashctl，无法安装备份计划。"
-
-	local cron_file="/etc/cron.d/emdash-backup"
-	cat >"${cron_file}" <<EOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${BACKUP_SCHEDULE} root ${emdashctl_bin} backup >> ${LOG_DIR}/backup.log 2>&1
-EOF
-	chmod 0644 "${cron_file}"
-}
-
-install_runtime_stack() {
-	install_base_packages
-	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
-		install_docker_engine
-	else
-		install_podman_stack
-	fi
+	log "创建应用用户 ${APP_RUN_USER}"
+	useradd --system --home-dir "${ROOT_DIR}" --create-home --shell /bin/bash "${APP_RUN_USER}"
 }
 
 ensure_build_memory_headroom() {
@@ -370,15 +311,10 @@ ensure_build_memory_headroom() {
 		mem_kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
 		swap_kb="$(awk '/^SwapTotal:/ { print $2 }' /proc/meminfo)"
 	fi
-
-	mem_kb="${mem_kb:-0}"
-	swap_kb="${swap_kb:-0}"
 	total_mb=$(( (mem_kb + swap_kb) / 1024 ))
-
 	if (( total_mb >= target_mb )); then
 		return 0
 	fi
-
 	if swapon --noheadings --show=NAME 2>/dev/null | grep -qx "${swap_file}"; then
 		return 0
 	fi
@@ -392,41 +328,98 @@ ensure_build_memory_headroom() {
 	fi
 
 	warn "检测到可用内存和 swap 总量较低（约 ${total_mb} MiB），为本地构建临时补充 ${create_mb} MiB swap。"
-
 	if command_exists fallocate; then
 		fallocate -l "${create_mb}M" "${swap_file}" 2>/dev/null || true
 	fi
 	if [[ ! -f "${swap_file}" || ! -s "${swap_file}" ]]; then
 		dd if=/dev/zero of="${swap_file}" bs=1M count="${create_mb}" status=none
 	fi
-
 	chmod 0600 "${swap_file}"
 	mkswap "${swap_file}" >/dev/null
 	swapon "${swap_file}"
-
 	if [[ -w /etc/fstab ]] && ! grep -Fq "${swap_file} none swap sw 0 0" /etc/fstab; then
 		printf '%s\n' "${swap_file} none swap sw 0 0" >>/etc/fstab
 	fi
 }
 
-ensure_runtime_present() {
-	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
-		command_exists docker || fail "未检测到 docker。请先安装 Docker。"
-		docker compose version >/dev/null 2>&1 || fail "未检测到 docker compose。"
+activate_caddy_service() {
+	[[ "${USE_CADDY}" == "1" ]] || return 0
+	command_exists caddy || fail "未安装 caddy，无法启用服务。"
+	[[ -f "${CADDYFILE_PATH}" ]] || fail "未找到 Caddyfile: ${CADDYFILE_PATH}"
+
+	open_required_firewall_ports
+	install -d -m 0755 /etc/caddy
+	install -d -m 0755 /var/lib/caddy /var/log/caddy
+	install -d -m 0755 -o caddy -g caddy "${LOG_DIR}"
+	touch "${LOG_DIR}/caddy-access.log"
+	chown caddy:caddy "${LOG_DIR}/caddy-access.log"
+	if command_exists restorecon; then
+		restorecon -RF /var/lib/caddy /var/log/caddy "${LOG_DIR}" >/dev/null 2>&1 || true
+	fi
+	if [[ -e /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]]; then
+		cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.emdash.bak.$(date +%Y%m%d-%H%M%S)"
+	fi
+	ln -sfn "${CADDYFILE_PATH}" /etc/caddy/Caddyfile
+	caddy validate --config /etc/caddy/Caddyfile
+	systemctl enable --now caddy
+}
+
+open_required_firewall_ports() {
+	local ports=()
+	local port
+
+	if [[ "${USE_CADDY}" == "1" ]]; then
+		ports=(80 443)
 	else
-		command_exists podman || fail "未检测到 podman。请先安装 Podman。"
-		if podman compose version >/dev/null 2>&1; then
-			:
-		elif command_exists podman-compose; then
-			PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
-		elif [[ -n "${PODMAN_COMPOSE_PROVIDER_BIN:-}" && -x "${PODMAN_COMPOSE_PROVIDER_BIN}" ]]; then
-			:
-		else
-			fail "未检测到 podman compose provider。"
-		fi
+		ports=("${APP_PORT}")
 	fi
 
-	if [[ "${USE_CADDY}" == "1" ]] && [[ ! -x /usr/local/bin/caddy ]] && ! command_exists caddy; then
+	if command_exists firewall-cmd && systemctl is-active firewalld >/dev/null 2>&1; then
+		for port in "${ports[@]}"; do
+			firewall-cmd --quiet --permanent --add-port="${port}/tcp" || true
+		done
+		firewall-cmd --reload >/dev/null 2>&1 || true
+	fi
+
+	if command_exists ufw && ufw status 2>/dev/null | grep -q "Status: active"; then
+		for port in "${ports[@]}"; do
+			ufw allow "${port}/tcp" >/dev/null 2>&1 || true
+		done
+	fi
+}
+
+install_backup_schedule() {
+	[[ "${BACKUP_ENABLED}" == "1" ]] || return 0
+	local cron_file="/etc/cron.d/emdash-backup"
+	cat >"${cron_file}" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl backup >> ${LOG_DIR}/backup.log 2>&1
+EOF
+	chmod 0644 "${cron_file}"
+}
+
+install_runtime_stack() {
+	install_base_packages
+	install_nodesource_node
+	create_app_user
+	install_postgres_server
+	install_redis_server
+	if [[ "${USE_CADDY}" == "1" ]]; then
+		install_caddy_package
+	fi
+}
+
+ensure_runtime_present() {
+	command_exists node || fail "未检测到 node。"
+	command_exists pnpm || fail "未检测到 pnpm。"
+	if [[ "${DB_DRIVER}" == "postgres" ]]; then
+		systemctl is-enabled "${POSTGRES_SERVICE}" >/dev/null 2>&1 || true
+	fi
+	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
+		systemctl is-enabled "${REDIS_SERVICE}" >/dev/null 2>&1 || true
+	fi
+	if [[ "${USE_CADDY}" == "1" ]] && ! command_exists caddy; then
 		fail "未检测到 caddy。"
 	fi
 }
