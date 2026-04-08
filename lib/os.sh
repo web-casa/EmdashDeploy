@@ -141,6 +141,7 @@ EOF
 }
 
 install_podman_stack() {
+	local provider_candidate=""
 	if command_exists podman; then
 		log "Podman 已安装"
 	else
@@ -166,6 +167,13 @@ install_podman_stack() {
 		return
 	fi
 
+	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
+		if [[ -x "${provider_candidate}" ]]; then
+			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			return
+		fi
+	done
+
 	log "安装 podman compose provider"
 	if command_exists dnf; then
 		dnf -y install podman-compose || true
@@ -177,6 +185,13 @@ install_podman_stack() {
 		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
 		return
 	fi
+
+	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
+		if [[ -x "${provider_candidate}" ]]; then
+			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			return
+		fi
+	done
 
 	if [[ "${OS_MAJOR:-0}" == "8" ]]; then
 		if command_exists dnf; then
@@ -196,6 +211,13 @@ install_podman_stack() {
 		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
 		return
 	fi
+
+	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
+		if [[ -x "${provider_candidate}" ]]; then
+			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			return
+		fi
+	done
 
 	fail "未能安装可用的 podman compose provider。"
 }

@@ -1,6 +1,6 @@
 # EmdashDeploy
 
-[English](./README.md) | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md) | **Deutsch** | [Français](./README.fr.md) | [한국어](./README.ko.md)
+[English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | **Deutsch** | [Français](./README.fr.md) | [Português](./README.pt.md)
 
 Ein interaktiver VPS-Installer und Betriebswerkzeugkasten für EmDash mit Docker/Podman, optionalem Caddy HTTPS, Backup, Restore und Health Checks.
 
@@ -36,14 +36,14 @@ Nicht unterstützt:
 ```bash
 git clone https://github.com/web-casa/EmdashDeploy.git
 cd EmdashDeploy
-chmod +x install-emdash.sh emdashctl linode-test.sh
-sudo bash install-emdash.sh
+chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
+sudo bash install-emdash.de.sh
 ```
 
 Direkt aktivieren:
 
 ```bash
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.de.sh --activate
 ```
 
 ## GHCR
@@ -77,14 +77,14 @@ Beispiel:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.de.sh --activate
 ```
 
 Beispiel mit vorgebautem App-Image:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.de.sh --activate
 ```
 
 Empfehlung:
@@ -117,3 +117,14 @@ bash linode-test.sh
 ```
 
 Weitere Details stehen in [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
+
+Für Betriebsbefehle kannst du den deutschen Wrapper verwenden:
+
+```bash
+emdashctl.de.sh status
+emdashctl.de.sh doctor
+emdashctl.de.sh smoke
+emdashctl.de.sh logs app -f
+emdashctl.de.sh backup
+emdashctl.de.sh restore /path/to/backup.tar.gz
+```

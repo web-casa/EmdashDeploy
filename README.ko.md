@@ -1,6 +1,6 @@
 # EmdashDeploy
 
-[English](./README.md) | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | **한국어**
+[English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | **한국어** | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
 Docker/Podman, 선택적 Caddy HTTPS, 백업, 복구, 헬스 체크를 지원하는 EmDash용 대화형 VPS 설치 및 운영 도구입니다.
 
@@ -36,14 +36,14 @@ Docker/Podman, 선택적 Caddy HTTPS, 백업, 복구, 헬스 체크를 지원하
 ```bash
 git clone https://github.com/web-casa/EmdashDeploy.git
 cd EmdashDeploy
-chmod +x install-emdash.sh emdashctl linode-test.sh
-sudo bash install-emdash.sh
+chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
+sudo bash install-emdash.ko.sh
 ```
 
 즉시 활성화:
 
 ```bash
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.ko.sh --activate
 ```
 
 ## GHCR
@@ -77,14 +77,14 @@ builder 와 app 의 차이:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.ko.sh --activate
 ```
 
 사전 빌드된 app 이미지 사용 예시:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.ko.sh --activate
 ```
 
 권장:
@@ -117,3 +117,14 @@ bash linode-test.sh
 ```
 
 자세한 테스트 매트릭스는 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)를 참고하세요.
+
+운영 명령은 한국어 wrapper를 사용할 수 있습니다:
+
+```bash
+emdashctl.ko.sh status
+emdashctl.ko.sh doctor
+emdashctl.ko.sh smoke
+emdashctl.ko.sh logs app -f
+emdashctl.ko.sh backup
+emdashctl.ko.sh restore /path/to/backup.tar.gz
+```

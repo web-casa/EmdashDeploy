@@ -25,9 +25,9 @@ prompt_secret() {
 	local -n ref="${var_name}"
 
 	if [[ -n "${default_value}" ]]; then
-		masked_default="(已设置)"
+		masked_default="$(ti set_word)"
 	else
-		masked_default="(留空)"
+		masked_default="$(ti blank_word)"
 	fi
 
 	if [[ ! -t 0 ]]; then
@@ -58,7 +58,7 @@ prompt_yes_no() {
 	fi
 
 	while true; do
-		read -r -p "${label} [y/n, 默认 ${pretty_default}]: " input
+		read -r -p "${label} [y/n, $(ti default_word) ${pretty_default}]: " input
 		input="${input:-${pretty_default}}"
 		case "${input,,}" in
 		y | yes)
@@ -70,8 +70,8 @@ prompt_yes_no() {
 			return
 			;;
 		esac
-		warn "请输入 y 或 n。"
-	done
+			warn "$(ti enter_y_or_n)"
+		done
 }
 
 prompt_choice() {
@@ -91,7 +91,7 @@ prompt_choice() {
 	IFS=' ' read -r -a option_list <<<"${options}"
 
 	while true; do
-		read -r -p "${label} [${options}] (默认 ${default_value}): " input
+		read -r -p "${label} [${options}] ($(ti default_word) ${default_value}): " input
 		input="${input:-${default_value}}"
 		for option in "${option_list[@]}"; do
 			if [[ "${input}" == "${option}" ]]; then
@@ -99,6 +99,6 @@ prompt_choice() {
 				return
 			fi
 		done
-		warn "请输入以下之一: ${options}"
-	done
+			warn "$(ti choose_one_of) ${options}"
+		done
 }

@@ -503,27 +503,42 @@ EOF
 
 install_emdashctl_script() {
 	install -m 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
+	local wrapper
+	for wrapper in \
+		emdashctl.en.sh \
+		emdashctl.ja.sh \
+		emdashctl.ko.sh \
+		emdashctl.es.sh \
+		emdashctl.de.sh \
+		emdashctl.fr.sh \
+		emdashctl.zh-CN.sh \
+		emdashctl.zh-TW.sh \
+		emdashctl.pt.sh; do
+		if [[ -f "${SCRIPT_DIR}/${wrapper}" ]]; then
+			install -m 0755 "${SCRIPT_DIR}/${wrapper}" "/usr/local/bin/${wrapper}"
+		fi
+	done
 }
 
 render_first_run_note() {
 	cat >"${ROOT_DIR}/FIRST_RUN.txt" <<EOF
-EmDash 已安装。
+$(ti first_run_installed)
 
-站点地址:
+$(ti first_run_site_address)
   ${APP_PUBLIC_URL}
 
-后台地址:
+$(ti first_run_admin_address)
   ${APP_PUBLIC_URL}/_emdash/admin
 
-健康检查:
+$(ti first_run_health_check)
   ${APP_PUBLIC_URL}/healthz
 
-首次访问说明:
-  1. 打开后台地址
-  2. 完成 Setup Wizard
-  3. 创建第一个管理员账号和 Passkey
+$(ti first_run_first_visit)
+  $(ti first_run_step1)
+  $(ti first_run_step2)
+  $(ti first_run_step3)
 
-运维命令:
+$(ti first_run_ops_commands)
   emdashctl status
   emdashctl doctor
   emdashctl logs app -f
@@ -549,22 +564,22 @@ print_summary() {
 
 ${message}
 
-配置文件:
+$(ti summary_config_files)
   ${INSTALL_YAML}
   ${COMPOSE_ENV_FILE}
 
-项目目录:
+$(ti summary_project_paths)
   ${ROOT_DIR}
   ${SITE_DIR}
   ${COMPOSE_FILE}
 
-控制命令:
+$(ti summary_control_commands)
   emdashctl status
   emdashctl logs app
   emdashctl restart app
 
-访问地址:
-  站点: ${APP_PUBLIC_URL}
-  后台: ${APP_PUBLIC_URL}/_emdash/admin
+$(ti summary_access_urls)
+  $(ti summary_site): ${APP_PUBLIC_URL}
+  $(ti summary_admin): ${APP_PUBLIC_URL}/_emdash/admin
 EOF
 }

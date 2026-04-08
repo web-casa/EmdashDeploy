@@ -1,6 +1,6 @@
 # EmdashDeploy
 
-[English](./README.md) | **简体中文** | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [한국어](./README.ko.md)
+[English](./README.md) | **简体中文** | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
 EmDash 的交互式 VPS 安装器与运维工具集，支持 Docker/Podman、可选 Caddy HTTPS、备份、恢复和健康检查。
 
@@ -48,20 +48,20 @@ EmDash 的交互式 VPS 安装器与运维工具集，支持 Docker/Podman、可
 ```bash
 git clone https://github.com/web-casa/EmdashDeploy.git
 cd EmdashDeploy
-chmod +x install-emdash.sh emdashctl linode-test.sh
-sudo bash install-emdash.sh
+chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
+sudo bash install-emdash.zh-CN.sh
 ```
 
 立即激活：
 
 ```bash
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.zh-CN.sh --activate
 ```
 
 只生成配置：
 
 ```bash
-sudo bash install-emdash.sh --write-only
+sudo bash install-emdash.zh-CN.sh --write-only
 ```
 
 ## 非交互示例
@@ -72,7 +72,7 @@ SQLite：
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.sh --non-interactive --activate
+sudo bash install-emdash.zh-CN.sh --non-interactive --activate
 ```
 
 PostgreSQL + Redis：
@@ -82,7 +82,7 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.sh --non-interactive --activate
+sudo bash install-emdash.zh-CN.sh --non-interactive --activate
 ```
 
 ## Caddy 与 HTTPS
@@ -137,14 +137,14 @@ builder 和 app 的区别：
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.zh-CN.sh --activate
 ```
 
 使用预构建 app 镜像：
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.zh-CN.sh --activate
 ```
 
 推荐：
@@ -188,3 +188,14 @@ bash linode-test.sh
 ```
 
 更多测试矩阵见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
+
+运维命令建议使用简体中文 wrapper：
+
+```bash
+emdashctl.zh-CN.sh status
+emdashctl.zh-CN.sh doctor
+emdashctl.zh-CN.sh smoke
+emdashctl.zh-CN.sh logs app -f
+emdashctl.zh-CN.sh backup
+emdashctl.zh-CN.sh restore /path/to/backup.tar.gz
+```

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
 log() {
 	printf '[INFO] %s\n' "$*"
 }
@@ -19,7 +21,10 @@ command_exists() {
 
 require_root() {
 	if [[ "${EUID}" -ne 0 ]]; then
-		fail "请使用 root 运行安装器。"
+		if declare -F ti >/dev/null 2>&1; then
+			fail "$(ti require_root)"
+		fi
+		fail "Please run the installer as root."
 	fi
 }
 

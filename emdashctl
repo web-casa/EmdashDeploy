@@ -2,8 +2,119 @@
 set -Eeuo pipefail
 
 IFS=$'\n\t'
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 ENV_FILE="${EMDASH_INSTALL_ENV_FILE:-/etc/emdash/compose.env}"
+
+normalize_ctl_lang() {
+	local input="${1:-en}"
+	input="${input//_/-}"
+	case "${input,,}" in
+	en | english) printf 'en\n' ;;
+	ja | jp | japanese) printf 'ja\n' ;;
+	ko | korean) printf 'ko\n' ;;
+	es | spanish | espanol | español) printf 'es\n' ;;
+	de | german | deutsch) printf 'de\n' ;;
+	fr | french | francais | français) printf 'fr\n' ;;
+	zh-cn | zh-hans | zh-sg | zh) printf 'zh-CN\n' ;;
+	zh-tw | zh-hant | zh-hk) printf 'zh-TW\n' ;;
+	pt | pt-br | pt-pt | portuguese | portugues | português) printf 'pt\n' ;;
+	*) printf 'en\n' ;;
+	esac
+}
+
+detect_ctl_lang() {
+	local script_name base=""
+	script_name="$(basename "$0")"
+	if [[ -n "${EMDASH_INSTALL_LANG:-}" ]]; then
+		EMDASH_INSTALL_LANG="$(normalize_ctl_lang "${EMDASH_INSTALL_LANG}")"
+	elif [[ "${script_name}" == emdashctl.*.sh ]]; then
+		base="${script_name#emdashctl.}"
+		base="${base%.sh}"
+		EMDASH_INSTALL_LANG="$(normalize_ctl_lang "${base}")"
+	else
+		EMDASH_INSTALL_LANG="en"
+	fi
+	export EMDASH_INSTALL_LANG
+}
+
+ct() {
+	local key="$1"
+	local lang="${EMDASH_INSTALL_LANG:-en}"
+	case "${key}" in
+	usage_header)
+		case "${lang}" in en) printf 'Usage:' ;; ja) printf '使い方:' ;; ko) printf '사용법:' ;; es) printf 'Uso:' ;; de) printf 'Verwendung:' ;; fr) printf 'Utilisation :' ;; zh-CN) printf '用法:' ;; zh-TW) printf '用法:' ;; pt) printf 'Uso:' ;; esac ;;
+	not_found)
+		case "${lang}" in en) printf 'Not found' ;; ja) printf '見つかりません' ;; ko) printf '찾을 수 없음' ;; es) printf 'No se encontró' ;; de) printf 'Nicht gefunden' ;; fr) printf 'Introuvable' ;; zh-CN) printf '未找到' ;; zh-TW) printf '未找到' ;; pt) printf 'Não encontrado' ;; esac ;;
+	missing_compose_runtime)
+		case "${lang}" in en) printf 'compose.env is missing CONTAINER_RUNTIME' ;; ja) printf 'compose.env に CONTAINER_RUNTIME がありません' ;; ko) printf 'compose.env에 CONTAINER_RUNTIME가 없습니다' ;; es) printf 'compose.env no contiene CONTAINER_RUNTIME' ;; de) printf 'compose.env enthält CONTAINER_RUNTIME nicht' ;; fr) printf 'compose.env ne contient pas CONTAINER_RUNTIME' ;; zh-CN) printf 'compose.env 缺少 CONTAINER_RUNTIME' ;; zh-TW) printf 'compose.env 缺少 CONTAINER_RUNTIME' ;; pt) printf 'compose.env não contém CONTAINER_RUNTIME' ;; esac ;;
+	missing_compose_file)
+		case "${lang}" in en) printf 'compose.env is missing COMPOSE_FILE' ;; ja) printf 'compose.env に COMPOSE_FILE がありません' ;; ko) printf 'compose.env에 COMPOSE_FILE이 없습니다' ;; es) printf 'compose.env no contiene COMPOSE_FILE' ;; de) printf 'compose.env enthält COMPOSE_FILE nicht' ;; fr) printf 'compose.env ne contient pas COMPOSE_FILE' ;; zh-CN) printf 'compose.env 缺少 COMPOSE_FILE' ;; zh-TW) printf 'compose.env 缺少 COMPOSE_FILE' ;; pt) printf 'compose.env não contém COMPOSE_FILE' ;; esac ;;
+	missing_astro_config)
+		case "${lang}" in en) printf 'astro.config.mjs not found' ;; ja) printf 'astro.config.mjs が見つかりません' ;; ko) printf 'astro.config.mjs를 찾을 수 없습니다' ;; es) printf 'No se encontró astro.config.mjs' ;; de) printf 'astro.config.mjs wurde nicht gefunden' ;; fr) printf 'astro.config.mjs introuvable' ;; zh-CN) printf '未找到 astro.config.mjs' ;; zh-TW) printf '未找到 astro.config.mjs' ;; pt) printf 'astro.config.mjs não encontrado' ;; esac ;;
+	sqlite_db_missing)
+		case "${lang}" in en) printf 'SQLite database does not exist' ;; ja) printf 'SQLite データベースが存在しません' ;; ko) printf 'SQLite 데이터베이스가 존재하지 않습니다' ;; es) printf 'La base de datos SQLite no existe' ;; de) printf 'SQLite-Datenbank existiert nicht' ;; fr) printf 'La base SQLite n’existe pas' ;; zh-CN) printf 'SQLite 数据库不存在' ;; zh-TW) printf 'SQLite 資料庫不存在' ;; pt) printf 'O banco SQLite não existe' ;; esac ;;
+	sqlite_backup_missing)
+		case "${lang}" in en) printf 'SQLite backup file does not exist' ;; ja) printf 'SQLite バックアップファイルが存在しません' ;; ko) printf 'SQLite 백업 파일이 존재하지 않습니다' ;; es) printf 'El archivo de copia de SQLite no existe' ;; de) printf 'SQLite-Backupdatei existiert nicht' ;; fr) printf 'Le fichier de sauvegarde SQLite n’existe pas' ;; zh-CN) printf 'SQLite 备份文件不存在' ;; zh-TW) printf 'SQLite 備份檔不存在' ;; pt) printf 'O arquivo de backup SQLite não existe' ;; esac ;;
+	runtime_label)
+		case "${lang}" in en) printf 'Runtime' ;; ja) printf 'ランタイム' ;; ko) printf '런타임' ;; es) printf 'Runtime' ;; de) printf 'Runtime' ;; fr) printf 'Runtime' ;; zh-CN) printf '运行时' ;; zh-TW) printf '執行環境' ;; pt) printf 'Runtime' ;; esac ;;
+	compose_label)
+		case "${lang}" in en) printf 'Compose' ;; ja) printf 'Compose' ;; ko) printf 'Compose' ;; es) printf 'Compose' ;; de) printf 'Compose' ;; fr) printf 'Compose' ;; zh-CN) printf 'Compose' ;; zh-TW) printf 'Compose' ;; pt) printf 'Compose' ;; esac ;;
+	url_label)
+		case "${lang}" in en) printf 'URL' ;; ja) printf 'URL' ;; ko) printf 'URL' ;; es) printf 'URL' ;; de) printf 'URL' ;; fr) printf 'URL' ;; zh-CN) printf 'URL' ;; zh-TW) printf 'URL' ;; pt) printf 'URL' ;; esac ;;
+	app_running_label)
+		case "${lang}" in en) printf 'App running' ;; ja) printf 'アプリ稼働' ;; ko) printf '앱 실행 상태' ;; es) printf 'Aplicación en ejecución' ;; de) printf 'App läuft' ;; fr) printf 'Application active' ;; zh-CN) printf '应用运行' ;; zh-TW) printf '應用執行中' ;; pt) printf 'Aplicação em execução' ;; esac ;;
+	app_health_label)
+		case "${lang}" in en) printf 'App health' ;; ja) printf 'アプリヘルス' ;; ko) printf '앱 상태' ;; es) printf 'Salud de la aplicación' ;; de) printf 'App-Health' ;; fr) printf 'Santé de l’application' ;; zh-CN) printf '应用健康' ;; zh-TW) printf '應用健康' ;; pt) printf 'Saúde da aplicação' ;; esac ;;
+	setup_status_label)
+		case "${lang}" in en) printf 'Setup status' ;; ja) printf 'セットアップ状態' ;; ko) printf '설정 상태' ;; es) printf 'Estado de configuración' ;; de) printf 'Setup-Status' ;; fr) printf 'État de configuration' ;; zh-CN) printf 'Setup 状态' ;; zh-TW) printf 'Setup 狀態' ;; pt) printf 'Status da configuração' ;; esac ;;
+	postgres_running_label)
+		case "${lang}" in en) printf 'Postgres running' ;; ja) printf 'Postgres 稼働' ;; ko) printf 'Postgres 실행 상태' ;; es) printf 'Postgres en ejecución' ;; de) printf 'Postgres läuft' ;; fr) printf 'Postgres actif' ;; zh-CN) printf 'Postgres 运行' ;; zh-TW) printf 'Postgres 執行中' ;; pt) printf 'Postgres em execução' ;; esac ;;
+	redis_running_label)
+		case "${lang}" in en) printf 'Redis running' ;; ja) printf 'Redis 稼働' ;; ko) printf 'Redis 실행 상태' ;; es) printf 'Redis en ejecución' ;; de) printf 'Redis läuft' ;; fr) printf 'Redis actif' ;; zh-CN) printf 'Redis 运行' ;; zh-TW) printf 'Redis 執行中' ;; pt) printf 'Redis em execução' ;; esac ;;
+	caddy_label)
+		case "${lang}" in en) printf 'Caddy' ;; ja) printf 'Caddy' ;; ko) printf 'Caddy' ;; es) printf 'Caddy' ;; de) printf 'Caddy' ;; fr) printf 'Caddy' ;; zh-CN) printf 'Caddy' ;; zh-TW) printf 'Caddy' ;; pt) printf 'Caddy' ;; esac ;;
+	backup_complete)
+		case "${lang}" in en) printf 'Backup complete' ;; ja) printf 'バックアップ完了' ;; ko) printf '백업 완료' ;; es) printf 'Copia de seguridad completada' ;; de) printf 'Backup abgeschlossen' ;; fr) printf 'Sauvegarde terminée' ;; zh-CN) printf '备份完成' ;; zh-TW) printf '備份完成' ;; pt) printf 'Backup concluído' ;; esac ;;
+	remote_upload_failed_keep_local)
+		case "${lang}" in en) printf 'Remote upload failed; local backup was kept' ;; ja) printf 'リモートアップロードに失敗しましたが、ローカルバックアップは保持されました' ;; ko) printf '원격 업로드에 실패했지만 로컬 백업은 유지되었습니다' ;; es) printf 'La carga remota falló; la copia local se conservó' ;; de) printf 'Remote-Upload fehlgeschlagen; lokales Backup wurde behalten' ;; fr) printf 'Échec de l’envoi distant ; la sauvegarde locale a été conservée' ;; zh-CN) printf '远端上传失败，本地备份仍保留' ;; zh-TW) printf '遠端上傳失敗，本地備份仍保留' ;; pt) printf 'O upload remoto falhou; o backup local foi mantido' ;; esac ;;
+	local_backup_only)
+		case "${lang}" in en) printf 'Keeping local backup only' ;; ja) printf 'ローカルバックアップのみ保持します' ;; ko) printf '로컬 백업만 유지합니다' ;; es) printf 'Se conserva solo la copia local' ;; de) printf 'Nur lokales Backup wird behalten' ;; fr) printf 'Conservation de la sauvegarde locale uniquement' ;; zh-CN) printf '仅保留本地备份' ;; zh-TW) printf '僅保留本地備份' ;; pt) printf 'Mantendo apenas o backup local' ;; esac ;;
+	uploaded_backup_s3)
+		case "${lang}" in en) printf 'Backup uploaded to S3' ;; ja) printf 'バックアップを S3 にアップロードしました' ;; ko) printf '백업을 S3에 업로드했습니다' ;; es) printf 'Copia subida a S3' ;; de) printf 'Backup nach S3 hochgeladen' ;; fr) printf 'Sauvegarde envoyée vers S3' ;; zh-CN) printf '已上传备份到 S3' ;; zh-TW) printf '已上傳備份到 S3' ;; pt) printf 'Backup enviado para o S3' ;; esac ;;
+	provide_backup_file)
+		case "${lang}" in en) printf 'Please provide a backup file.' ;; ja) printf 'バックアップファイルを指定してください。' ;; ko) printf '백업 파일을 지정하세요.' ;; es) printf 'Proporciona un archivo de copia de seguridad.' ;; de) printf 'Bitte gib eine Backup-Datei an.' ;; fr) printf 'Veuillez fournir un fichier de sauvegarde.' ;; zh-CN) printf '请提供备份文件。' ;; zh-TW) printf '請提供備份檔。' ;; pt) printf 'Forneça um arquivo de backup.' ;; esac ;;
+	backup_file_missing)
+		case "${lang}" in en) printf 'Backup file does not exist' ;; ja) printf 'バックアップファイルが存在しません' ;; ko) printf '백업 파일이 존재하지 않습니다' ;; es) printf 'El archivo de copia no existe' ;; de) printf 'Backup-Datei existiert nicht' ;; fr) printf 'Le fichier de sauvegarde n’existe pas' ;; zh-CN) printf '备份文件不存在' ;; zh-TW) printf '備份檔不存在' ;; pt) printf 'O arquivo de backup não existe' ;; esac ;;
+	sqlite_payload_missing)
+		case "${lang}" in en) printf 'SQLite database file was not found in the backup' ;; ja) printf 'バックアップ内に SQLite データベースファイルが見つかりません' ;; ko) printf '백업에서 SQLite 데이터베이스 파일을 찾을 수 없습니다' ;; es) printf 'No se encontró el archivo SQLite en la copia' ;; de) printf 'SQLite-Datenbankdatei wurde im Backup nicht gefunden' ;; fr) printf 'Le fichier SQLite est introuvable dans la sauvegarde' ;; zh-CN) printf '备份中未找到 SQLite 数据库文件' ;; zh-TW) printf '備份中未找到 SQLite 資料庫檔案' ;; pt) printf 'O arquivo SQLite não foi encontrado no backup' ;; esac ;;
+	postgres_payload_missing)
+		case "${lang}" in en) printf 'PostgreSQL dump file was not found in the backup' ;; ja) printf 'バックアップ内に PostgreSQL ダンプが見つかりません' ;; ko) printf '백업에서 PostgreSQL 덤프 파일을 찾을 수 없습니다' ;; es) printf 'No se encontró el volcado PostgreSQL en la copia' ;; de) printf 'PostgreSQL-Dump wurde im Backup nicht gefunden' ;; fr) printf 'Le dump PostgreSQL est introuvable dans la sauvegarde' ;; zh-CN) printf '备份中未找到 PostgreSQL 导出文件' ;; zh-TW) printf '備份中未找到 PostgreSQL 匯出檔' ;; pt) printf 'O dump PostgreSQL não foi encontrado no backup' ;; esac ;;
+	postgres_restore_switch_failed)
+		case "${lang}" in en) printf 'PostgreSQL restore cutover failed; attempted to roll back the original database name.' ;; ja) printf 'PostgreSQL のリストア切り替えに失敗し、元のデータベース名へのロールバックを試みました。' ;; ko) printf 'PostgreSQL 복원 전환에 실패하여 원래 데이터베이스 이름으로 롤백을 시도했습니다.' ;; es) printf 'El cambio de restauración de PostgreSQL falló; se intentó restaurar el nombre original de la base de datos.' ;; de) printf 'Die PostgreSQL-Wiederherstellungsumschaltung ist fehlgeschlagen; es wurde versucht, den ursprünglichen Datenbanknamen wiederherzustellen.' ;; fr) printf 'Le basculement de restauration PostgreSQL a échoué ; une tentative de retour au nom de base initial a été effectuée.' ;; zh-CN) printf 'PostgreSQL 恢复切换失败，已尝试回滚原数据库名称。' ;; zh-TW) printf 'PostgreSQL 還原切換失敗，已嘗試回復原資料庫名稱。' ;; pt) printf 'A troca da restauração PostgreSQL falhou; foi tentado reverter o nome original do banco.' ;; esac ;;
+	restore_health_warn)
+		case "${lang}" in en) printf 'The app did not pass the health check in time after restore' ;; ja) printf 'リストア後、アプリが時間内にヘルスチェックを通過しませんでした' ;; ko) printf '복원 후 앱이 제한 시간 내 상태 확인을 통과하지 못했습니다' ;; es) printf 'La aplicación no pasó la comprobación de salud a tiempo después de la restauración' ;; de) printf 'Die App hat den Health-Check nach der Wiederherstellung nicht rechtzeitig bestanden' ;; fr) printf 'L’application n’a pas passé la vérification de santé à temps après la restauration' ;; zh-CN) printf '应用恢复后未在预期时间内通过健康检查' ;; zh-TW) printf '應用還原後未在預期時間內通過健康檢查' ;; pt) printf 'A aplicação não passou na verificação de saúde a tempo após a restauração' ;; esac ;;
+	restore_complete)
+		case "${lang}" in en) printf 'Restore complete' ;; ja) printf 'リストア完了' ;; ko) printf '복원 완료' ;; es) printf 'Restauración completada' ;; de) printf 'Wiederherstellung abgeschlossen' ;; fr) printf 'Restauration terminée' ;; zh-CN) printf '恢复完成' ;; zh-TW) printf '還原完成' ;; pt) printf 'Restauração concluída' ;; esac ;;
+	prebuilt_pull_fallback)
+		case "${lang}" in en) printf 'Prebuilt app image pull failed; falling back to local build' ;; ja) printf 'ビルド済み app イメージの取得に失敗したため、ローカルビルドへフォールバックします' ;; ko) printf '사전 빌드된 app 이미지 가져오기에 실패하여 로컬 빌드로 전환합니다' ;; es) printf 'Falló la descarga de la imagen app preconstruida; se usará compilación local' ;; de) printf 'Vorgefertigtes App-Image konnte nicht geladen werden; Rückfall auf lokalen Build' ;; fr) printf 'Le téléchargement de l’image app préconstruite a échoué ; retour à une construction locale' ;; zh-CN) printf '预构建 app 镜像拉取失败，回退本地 build' ;; zh-TW) printf '預建 app 映像拉取失敗，回退本地 build' ;; pt) printf 'Falha ao baixar a imagem app pré-construída; voltando para build local' ;; esac ;;
+	caddy_not_installed)
+		case "${lang}" in en) printf 'caddy is not installed' ;; ja) printf 'caddy がインストールされていません' ;; ko) printf 'caddy가 설치되어 있지 않습니다' ;; es) printf 'caddy no está instalado' ;; de) printf 'caddy ist nicht installiert' ;; fr) printf 'caddy n’est pas installé' ;; zh-CN) printf '未安装 caddy' ;; zh-TW) printf '未安裝 caddy' ;; pt) printf 'caddy não está instalado' ;; esac ;;
+	upgrade_targets_supported)
+		case "${lang}" in en) printf 'Supported upgrade targets: app | redis | caddy-config' ;; ja) printf '対応する upgrade 対象: app | redis | caddy-config' ;; ko) printf '지원되는 upgrade 대상: app | redis | caddy-config' ;; es) printf 'Objetivos de upgrade compatibles: app | redis | caddy-config' ;; de) printf 'Unterstützte Upgrade-Ziele: app | redis | caddy-config' ;; fr) printf 'Cibles de mise à niveau prises en charge : app | redis | caddy-config' ;; zh-CN) printf '支持的 upgrade 目标: app | redis | caddy-config' ;; zh-TW) printf '支援的 upgrade 目標: app | redis | caddy-config' ;; pt) printf 'Alvos de upgrade suportados: app | redis | caddy-config' ;; esac ;;
+	reset_only_postgres)
+		case "${lang}" in en) printf 'reset-db-password is only supported for PostgreSQL' ;; ja) printf 'reset-db-password は PostgreSQL のみ対応しています' ;; ko) printf 'reset-db-password는 PostgreSQL에서만 지원됩니다' ;; es) printf 'reset-db-password solo es compatible con PostgreSQL' ;; de) printf 'reset-db-password wird nur für PostgreSQL unterstützt' ;; fr) printf 'reset-db-password est pris en charge uniquement pour PostgreSQL' ;; zh-CN) printf '当前仅 PostgreSQL 支持 reset-db-password' ;; zh-TW) printf '目前僅 PostgreSQL 支援 reset-db-password' ;; pt) printf 'reset-db-password só é compatível com PostgreSQL' ;; esac ;;
+	new_pg_password_label)
+		case "${lang}" in en) printf 'New PostgreSQL password' ;; ja) printf '新しい PostgreSQL パスワード' ;; ko) printf '새 PostgreSQL 비밀번호' ;; es) printf 'Nueva contraseña de PostgreSQL' ;; de) printf 'Neues PostgreSQL-Passwort' ;; fr) printf 'Nouveau mot de passe PostgreSQL' ;; zh-CN) printf '新的 PostgreSQL 密码' ;; zh-TW) printf '新的 PostgreSQL 密碼' ;; pt) printf 'Nova senha do PostgreSQL' ;; esac ;;
+	app_rebuilt_with_new_db_password)
+		case "${lang}" in en) printf 'The app image has been rebuilt and started with the new database password' ;; ja) printf '新しいデータベースパスワードで app イメージを再ビルドして起動しました' ;; ko) printf '새 데이터베이스 비밀번호로 app 이미지를 다시 빌드하고 시작했습니다' ;; es) printf 'La imagen app se volvió a construir y arrancó con la nueva contraseña de base de datos' ;; de) printf 'Das App-Image wurde mit dem neuen Datenbankpasswort neu gebaut und gestartet' ;; fr) printf 'L’image app a été reconstruite et redémarrée avec le nouveau mot de passe de base de données' ;; zh-CN) printf '应用镜像已按新数据库密码重建并启动' ;; zh-TW) printf '應用映像已依新資料庫密碼重建並啟動' ;; pt) printf 'A imagem app foi reconstruída e iniciada com a nova senha do banco' ;; esac ;;
+	unknown_command)
+		case "${lang}" in en) printf 'Unknown command' ;; ja) printf '不明なコマンド' ;; ko) printf '알 수 없는 명령' ;; es) printf 'Comando desconocido' ;; de) printf 'Unbekannter Befehl' ;; fr) printf 'Commande inconnue' ;; zh-CN) printf '未知命令' ;; zh-TW) printf '未知命令' ;; pt) printf 'Comando desconhecido' ;; esac ;;
+	*)
+		printf '%s' "${key}"
+		;;
+	esac
+}
 
 log() {
 	printf '[INFO] %s\n' "$*"
@@ -19,7 +130,117 @@ fail() {
 }
 
 usage() {
-	cat <<'EOF'
+	case "${EMDASH_INSTALL_LANG:-en}" in
+	en)
+		cat <<'EOF'
+emdashctl
+
+Usage:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	ja)
+		cat <<'EOF'
+emdashctl
+
+使い方:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	ko)
+		cat <<'EOF'
+emdashctl
+
+사용법:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	es)
+		cat <<'EOF'
+emdashctl
+
+Uso:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	de)
+		cat <<'EOF'
+emdashctl
+
+Verwendung:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	fr)
+		cat <<'EOF'
+emdashctl
+
+Utilisation :
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	zh-CN)
+		cat <<'EOF'
 emdashctl
 
 用法:
@@ -35,6 +256,44 @@ emdashctl
   emdashctl reset-db-password
   emdashctl doctor [--json]
 EOF
+		;;
+	zh-TW)
+		cat <<'EOF'
+emdashctl
+
+用法:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	pt)
+		cat <<'EOF'
+emdashctl
+
+Uso:
+  emdashctl status [--json]
+  emdashctl smoke [--json]
+  emdashctl logs [app|postgres|redis|caddy] [-f]
+  emdashctl restart [app|postgres|redis|all|caddy]
+  emdashctl backup
+  emdashctl restore <backup-file>
+  emdashctl upgrade app
+  emdashctl upgrade redis
+  emdashctl upgrade caddy-config
+  emdashctl reset-db-password
+  emdashctl doctor [--json]
+EOF
+		;;
+	esac
 }
 
 service_running() {
@@ -230,7 +489,7 @@ PY
 }
 
 load_env() {
-	[[ -f "${ENV_FILE}" ]] || fail "未找到 ${ENV_FILE}"
+	[[ -f "${ENV_FILE}" ]] || fail "$(ct not_found) ${ENV_FILE}"
 	while IFS= read -r line || [[ -n "${line}" ]]; do
 		[[ -z "${line}" ]] && continue
 		[[ "${line}" == \#* ]] && continue
@@ -245,8 +504,8 @@ load_env() {
 		printf -v "${key}" '%s' "${value}"
 		export "${key}"
 	done <"${ENV_FILE}"
-	[[ -n "${CONTAINER_RUNTIME:-}" ]] || fail "compose.env 缺少 CONTAINER_RUNTIME"
-	[[ -n "${COMPOSE_FILE:-}" ]] || fail "compose.env 缺少 COMPOSE_FILE"
+	[[ -n "${CONTAINER_RUNTIME:-}" ]] || fail "$(ct missing_compose_runtime)"
+	[[ -n "${COMPOSE_FILE:-}" ]] || fail "$(ct missing_compose_file)"
 }
 
 run_compose() {
@@ -262,7 +521,7 @@ run_compose() {
 update_generated_postgres_url() {
 	local new_password="$1"
 	local site_config="${ROOT_DIR}/app/site/astro.config.mjs"
-	[[ -f "${site_config}" ]] || fail "未找到 astro.config.mjs: ${site_config}"
+	[[ -f "${site_config}" ]] || fail "$(ct missing_astro_config): ${site_config}"
 	python3 - "${site_config}" "${PG_DB_USER}" "${PG_DB_NAME}" "${new_password}" <<'PY'
 from pathlib import Path
 import json
@@ -292,7 +551,7 @@ PY
 backup_sqlite_database() {
 	local src="$1"
 	local dst="$2"
-	[[ -f "${src}" ]] || fail "SQLite 数据库不存在: ${src}"
+	[[ -f "${src}" ]] || fail "$(ct sqlite_db_missing): ${src}"
 	python3 - "${src}" "${dst}" <<'PY'
 import os
 import sqlite3
@@ -314,7 +573,7 @@ PY
 
 validate_sqlite_backup_file() {
 	local src="$1"
-	[[ -f "${src}" ]] || fail "SQLite 备份文件不存在: ${src}"
+	[[ -f "${src}" ]] || fail "$(ct sqlite_backup_missing): ${src}"
 	python3 - "${src}" <<'PY'
 import sqlite3
 import sys
@@ -409,20 +668,20 @@ EOF
 		return
 	fi
 
-	printf 'Runtime: %s\n' "${CONTAINER_RUNTIME}"
-	printf 'Compose: %s\n' "${COMPOSE_FILE}"
-	printf 'URL: %s\n' "${APP_PUBLIC_URL:-unknown}"
+	printf '%s: %s\n' "$(ct runtime_label)" "${CONTAINER_RUNTIME}"
+	printf '%s: %s\n' "$(ct compose_label)" "${COMPOSE_FILE}"
+	printf '%s: %s\n' "$(ct url_label)" "${APP_PUBLIC_URL:-unknown}"
 	run_compose ps
-	printf 'App running: %s\n' "${app_running}"
-	printf 'App health: %s\n' "${app_health}"
-	printf 'Setup status: %s\n' "${setup_state}"
+	printf '%s: %s\n' "$(ct app_running_label)" "${app_running}"
+	printf '%s: %s\n' "$(ct app_health_label)" "${app_health}"
+	printf '%s: %s\n' "$(ct setup_status_label)" "${setup_state}"
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		printf 'Postgres running: %s\n' "${postgres_running}"
+		printf '%s: %s\n' "$(ct postgres_running_label)" "${postgres_running}"
 	fi
 	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
-		printf 'Redis running: %s\n' "${redis_running}"
+		printf '%s: %s\n' "$(ct redis_running_label)" "${redis_running}"
 	fi
-	printf 'Caddy: %s\n' "${caddy_state}"
+	printf '%s: %s\n' "$(ct caddy_label)" "${caddy_state}"
 }
 
 cmd_logs() {
@@ -479,9 +738,9 @@ cmd_backup() {
 	archive="${ROOT_DIR}/backups/emdash-backup-${stamp}.tar.gz"
 	tar -C "${ROOT_DIR}/backups" -czf "${archive}" "${stamp}"
 	rm -rf "${backup_dir}"
-	log "备份完成: ${archive}"
+	log "$(ct backup_complete): ${archive}"
 	if ! upload_backup "${archive}"; then
-		warn "远端上传失败，本地备份仍保留: ${archive}"
+		warn "$(ct remote_upload_failed_keep_local): ${archive}"
 	fi
 	prune_old_backups
 }
@@ -490,7 +749,7 @@ upload_backup() {
 	local archive="$1"
 	case "${BACKUP_TARGET_TYPE:-local}" in
 	local)
-		log "仅保留本地备份"
+		log "$(ct local_backup_only)"
 		;;
 	s3)
 		upload_backup_s3 "${archive}"
@@ -537,7 +796,7 @@ upload_backup_s3() {
 			--region "${BACKUP_S3_REGION}" || rc=$?
 	fi
 	[[ "${rc}" == "0" ]] || return "${rc}"
-	log "已上传备份到 S3: s3://${BACKUP_S3_BUCKET}/${remote_key}"
+	log "$(ct uploaded_backup_s3): s3://${BACKUP_S3_BUCKET}/${remote_key}"
 }
 
 cmd_restore() {
@@ -550,8 +809,8 @@ cmd_restore() {
 	local temp_db_ident=""
 	local old_db_name=""
 	local old_db_ident=""
-	[[ -n "${archive}" ]] || fail "请提供备份文件。"
-	[[ -f "${archive}" ]] || fail "备份文件不存在: ${archive}"
+	[[ -n "${archive}" ]] || fail "$(ct provide_backup_file)"
+	[[ -f "${archive}" ]] || fail "$(ct backup_file_missing): ${archive}"
 
 	local restore_dir
 	restore_dir="$(mktemp -d)"
@@ -559,7 +818,7 @@ cmd_restore() {
 
 	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
 		db_restore_file="$(find_restore_payload "${restore_dir}" 'data.db')"
-		[[ -n "${db_restore_file}" ]] || fail "备份中未找到 SQLite 数据库文件"
+		[[ -n "${db_restore_file}" ]] || fail "$(ct sqlite_payload_missing)"
 		validate_sqlite_backup_file "${db_restore_file}"
 		run_compose stop app
 		rm -f "${SQLITE_PATH}" "${SQLITE_PATH}-wal" "${SQLITE_PATH}-shm"
@@ -567,7 +826,7 @@ cmd_restore() {
 	else
 		run_compose up -d postgres
 		db_restore_file="$(find_restore_payload "${restore_dir}" 'postgres.sql')"
-		[[ -n "${db_restore_file}" ]] || fail "备份中未找到 PostgreSQL 导出文件"
+		[[ -n "${db_restore_file}" ]] || fail "$(ct postgres_payload_missing)"
 		temp_db_name="emdash_restore_$(date +%s)"
 		old_db_name="emdash_old_$(date +%s)"
 		target_db_ident="$(pg_quote_identifier "${PG_DB_NAME}")"
@@ -585,7 +844,7 @@ cmd_restore() {
 			if run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "SELECT 1 FROM pg_database WHERE datname = $(pg_quote_literal "${old_db_name}")" | grep -q 1; then
 				run_compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${PG_DB_USER}" -d postgres -c "ALTER DATABASE ${old_db_ident} RENAME TO ${target_db_ident}" || true
 			fi
-			fail "PostgreSQL 恢复切换失败，已尝试回滚原数据库名称。"
+				fail "$(ct postgres_restore_switch_failed)"
 		fi
 		run_compose exec -T postgres dropdb -U "${PG_DB_USER}" --if-exists --force "${old_db_name}" >/dev/null 2>&1 || true
 	fi
@@ -598,10 +857,10 @@ cmd_restore() {
 
 	run_compose up -d app
 	if ! wait_for_http_ok "$(health_url)" 180; then
-		warn "应用恢复后未在预期时间内通过健康检查: $(health_url)"
+		warn "$(ct restore_health_warn): $(health_url)"
 	fi
 	rm -rf "${restore_dir}"
-	log "恢复完成"
+	log "$(ct restore_complete)"
 }
 
 cmd_upgrade() {
@@ -614,7 +873,7 @@ cmd_upgrade() {
 				run_compose up -d app
 				return
 			fi
-			warn "预构建 app 镜像拉取失败，回退本地 build"
+				warn "$(ct prebuilt_pull_fallback)"
 		fi
 		run_compose up -d --build app
 		;;
@@ -623,19 +882,19 @@ cmd_upgrade() {
 		run_compose up -d redis
 		;;
 	caddy-config)
-		command -v caddy >/dev/null 2>&1 || fail "未安装 caddy"
+			command -v caddy >/dev/null 2>&1 || fail "$(ct caddy_not_installed)"
 		caddy validate --config "${ROOT_DIR}/caddy/Caddyfile"
 		systemctl reload caddy
 		;;
 	*)
-		fail "支持的 upgrade 目标: app | redis | caddy-config"
+			fail "$(ct upgrade_targets_supported)"
 		;;
 	esac
 }
 
 cmd_reset_db_password() {
 	load_env
-	[[ "${DB_DRIVER}" == "postgres" ]] || fail "当前仅 PostgreSQL 支持 reset-db-password"
+	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
 	local new_password
 	local pg_user_encoded
 	local pg_db_name_encoded
@@ -670,8 +929,8 @@ env_file.write_text("\n".join(out) + "\n")
 PY
 	update_generated_postgres_url "${new_password}"
 	run_compose up -d --build app
-	printf 'New PostgreSQL password: %s\n' "${new_password}"
-	log "应用镜像已按新数据库密码重建并启动"
+	printf '%s: %s\n' "$(ct new_pg_password_label)" "${new_password}"
+	log "$(ct app_rebuilt_with_new_db_password)"
 }
 
 cmd_doctor() {
@@ -922,6 +1181,7 @@ cmd_smoke() {
 }
 
 main() {
+	detect_ctl_lang
 	local cmd="${1:-}"
 	case "${cmd}" in
 	status)
@@ -970,12 +1230,12 @@ main() {
 			cmd_smoke 0
 		fi
 		;;
-	-h | --help | help | "")
-		usage
-		;;
-	*)
-		fail "未知命令: ${cmd}"
-		;;
+		-h | --help | help | "")
+			usage
+			;;
+		*)
+			fail "$(ct unknown_command): ${cmd}"
+			;;
 	esac
 }
 

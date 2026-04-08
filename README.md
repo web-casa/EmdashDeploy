@@ -9,7 +9,7 @@
 
 Interactive VPS installer and operations toolkit for EmDash with Docker/Podman, optional Caddy HTTPS, backup, restore, and health checks.
 
-Languages: **English** | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [한국어](./README.ko.md)
+Languages: **English** | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
 Versioning for this project follows the `HiEmdash` line:
 
@@ -20,26 +20,50 @@ Versioning for this project follows the `HiEmdash` line:
 
 ## Quick Start
 
-Clone the repository and run the installer interactively:
+Clone the repository and run the English installer interactively:
 
 ```bash
 git clone https://github.com/web-casa/EmdashDeploy.git
 cd EmdashDeploy
-chmod +x install-emdash.sh emdashctl linode-test.sh
-sudo bash install-emdash.sh
+chmod +x install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
+sudo bash install-emdash.en.sh
 ```
 
 Activate immediately after generating files:
 
 ```bash
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.en.sh --activate
 ```
 
 Generate files only:
 
 ```bash
-sudo bash install-emdash.sh --write-only
+sudo bash install-emdash.en.sh --write-only
 ```
+
+Available language wrappers:
+
+- `install-emdash.en.sh`
+- `install-emdash.ja.sh`
+- `install-emdash.ko.sh`
+- `install-emdash.es.sh`
+- `install-emdash.de.sh`
+- `install-emdash.fr.sh`
+- `install-emdash.zh-CN.sh`
+- `install-emdash.zh-TW.sh`
+- `install-emdash.pt.sh`
+
+CLI wrappers:
+
+- `emdashctl.en.sh`
+- `emdashctl.ja.sh`
+- `emdashctl.ko.sh`
+- `emdashctl.es.sh`
+- `emdashctl.de.sh`
+- `emdashctl.fr.sh`
+- `emdashctl.zh-CN.sh`
+- `emdashctl.zh-TW.sh`
+- `emdashctl.pt.sh`
 
 ## What This Repository Does
 
@@ -92,7 +116,7 @@ SQLite with local storage:
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.sh --non-interactive --activate
+sudo bash install-emdash.en.sh --non-interactive --activate
 ```
 
 PostgreSQL with Redis:
@@ -102,7 +126,7 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.sh --non-interactive --activate
+sudo bash install-emdash.en.sh --non-interactive --activate
 ```
 
 ## Main Commands
@@ -110,28 +134,28 @@ sudo bash install-emdash.sh --non-interactive --activate
 Installer:
 
 ```bash
-sudo bash install-emdash.sh
-sudo bash install-emdash.sh --activate
-sudo bash install-emdash.sh --write-only
+sudo bash install-emdash.en.sh
+sudo bash install-emdash.en.sh --activate
+sudo bash install-emdash.en.sh --write-only
 ```
 
 Operations:
 
 ```bash
-emdashctl status
-emdashctl status --json
-emdashctl doctor
-emdashctl doctor --json
-emdashctl smoke
-emdashctl smoke --json
-emdashctl logs app
-emdashctl restart app
-emdashctl backup
-emdashctl restore /path/to/backup.tar.gz
-emdashctl upgrade app
-emdashctl upgrade redis
-emdashctl upgrade caddy-config
-emdashctl reset-db-password
+emdashctl.en.sh status
+emdashctl.en.sh status --json
+emdashctl.en.sh doctor
+emdashctl.en.sh doctor --json
+emdashctl.en.sh smoke
+emdashctl.en.sh smoke --json
+emdashctl.en.sh logs app
+emdashctl.en.sh restart app
+emdashctl.en.sh backup
+emdashctl.en.sh restore /path/to/backup.tar.gz
+emdashctl.en.sh upgrade app
+emdashctl.en.sh upgrade redis
+emdashctl.en.sh upgrade caddy-config
+emdashctl.en.sh reset-db-password
 ```
 
 ## Directory Layout
@@ -217,14 +241,14 @@ How to use the published builder image:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/web-casa/emdash-builder:node24-bookworm \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.en.sh --activate
 ```
 
 How to use a prebuilt application image:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.sh --activate
+sudo bash install-emdash.en.sh --activate
 ```
 
 Behavior:
