@@ -355,6 +355,60 @@ install_runtime_stack() {
 	fi
 }
 
+ensure_build_memory_headroom() {
+	local mem_kb="0"
+	local swap_kb="0"
+	local total_mb="0"
+	local target_mb="2304"
+	local create_mb="0"
+	local swap_file="/swapfile.emdash"
+
+	[[ "${WRITE_ONLY:-0}" != "1" ]] || return 0
+	[[ "${ACTIVATE_STACK:-0}" == "1" ]] || return 0
+
+	if [[ -r /proc/meminfo ]]; then
+		mem_kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
+		swap_kb="$(awk '/^SwapTotal:/ { print $2 }' /proc/meminfo)"
+	fi
+
+	mem_kb="${mem_kb:-0}"
+	swap_kb="${swap_kb:-0}"
+	total_mb=$(( (mem_kb + swap_kb) / 1024 ))
+
+	if (( total_mb >= target_mb )); then
+		return 0
+	fi
+
+	if swapon --noheadings --show=NAME 2>/dev/null | grep -qx "${swap_file}"; then
+		return 0
+	fi
+
+	create_mb=$(( target_mb - total_mb ))
+	if (( create_mb < 1024 )); then
+		create_mb=1024
+	fi
+	if (( create_mb > 4096 )); then
+		create_mb=4096
+	fi
+
+	warn "检测到可用内存和 swap 总量较低（约 ${total_mb} MiB），为本地构建临时补充 ${create_mb} MiB swap。"
+
+	if command_exists fallocate; then
+		fallocate -l "${create_mb}M" "${swap_file}" 2>/dev/null || true
+	fi
+	if [[ ! -f "${swap_file}" || ! -s "${swap_file}" ]]; then
+		dd if=/dev/zero of="${swap_file}" bs=1M count="${create_mb}" status=none
+	fi
+
+	chmod 0600 "${swap_file}"
+	mkswap "${swap_file}" >/dev/null
+	swapon "${swap_file}"
+
+	if [[ -w /etc/fstab ]] && ! grep -Fq "${swap_file} none swap sw 0 0" /etc/fstab; then
+		printf '%s\n' "${swap_file} none swap sw 0 0" >>/etc/fstab
+	fi
+}
+
 ensure_runtime_present() {
 	if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
 		command_exists docker || fail "未检测到 docker。请先安装 Docker。"

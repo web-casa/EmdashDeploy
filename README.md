@@ -89,6 +89,7 @@ It is not a generic PaaS. It is a focused deployment tool for EmDash.
 - Generated layout under `/data/emdash`
 - Generated config under `/etc/emdash`
 - JSON output for `status`, `doctor`, and `smoke`
+- Automatic swapfile fallback on low-memory hosts before local image builds
 
 ## Supported Platforms
 

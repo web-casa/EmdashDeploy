@@ -180,6 +180,7 @@ EOF
 render_app_dockerfile() {
 	cat >"${SITE_DIR}/Dockerfile" <<'EOF'
 ARG EMDASH_BASE_IMAGE=node:24-bookworm-slim
+ARG EMDASH_NODE_MAX_OLD_SPACE_SIZE=1536
 FROM ${EMDASH_BASE_IMAGE} AS base
 WORKDIR /app
 ENV PNPM_HOME=/pnpm
@@ -192,7 +193,10 @@ RUN if ! command -v python3 >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1
 RUN corepack enable || true
 
 COPY . .
-RUN corepack prepare pnpm@10.28.0 --activate && pnpm install --no-frozen-lockfile && pnpm build
+RUN export NODE_OPTIONS="--max-old-space-size=${EMDASH_NODE_MAX_OLD_SPACE_SIZE}" \
+	&& corepack prepare pnpm@10.28.0 --activate \
+	&& pnpm install --no-frozen-lockfile \
+	&& pnpm build
 
 ENV HOST=0.0.0.0
 ENV PORT=3000

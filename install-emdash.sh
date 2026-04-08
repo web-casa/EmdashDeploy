@@ -307,6 +307,7 @@ main() {
 
 	if [[ "${ACTIVATE_STACK}" == "1" ]]; then
 		ensure_runtime_present
+		ensure_build_memory_headroom
 		if [[ "${USE_CADDY}" != "1" ]]; then
 			open_required_firewall_ports
 		fi
