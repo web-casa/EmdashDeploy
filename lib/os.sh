@@ -142,6 +142,16 @@ EOF
 
 install_podman_stack() {
 	local provider_candidate=""
+
+	ensure_podman_compose_shims() {
+		local provider_path="$1"
+		[[ -n "${provider_path}" && -x "${provider_path}" ]] || return 0
+		if [[ "${provider_path}" == "/usr/local/bin/podman-compose" ]]; then
+			[[ -x /usr/bin/podman-compose ]] || ln -sf "${provider_path}" /usr/bin/podman-compose
+			[[ -x /usr/bin/docker-compose ]] || ln -sf "${provider_path}" /usr/bin/docker-compose
+		fi
+	}
+
 	if command_exists podman; then
 		log "Podman 已安装"
 	else
@@ -164,12 +174,14 @@ install_podman_stack() {
 
 	if command_exists podman-compose; then
 		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
+		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 		return
 	fi
 
 	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
 		if [[ -x "${provider_candidate}" ]]; then
 			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 			return
 		fi
 	done
@@ -183,12 +195,14 @@ install_podman_stack() {
 
 	if command_exists podman-compose; then
 		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
+		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 		return
 	fi
 
 	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
 		if [[ -x "${provider_candidate}" ]]; then
 			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 			return
 		fi
 	done
@@ -209,12 +223,14 @@ install_podman_stack() {
 
 	if command_exists podman-compose; then
 		PODMAN_COMPOSE_PROVIDER_BIN="$(command -v podman-compose)"
+		ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 		return
 	fi
 
 	for provider_candidate in /usr/local/bin/podman-compose /usr/bin/podman-compose; do
 		if [[ -x "${provider_candidate}" ]]; then
 			PODMAN_COMPOSE_PROVIDER_BIN="${provider_candidate}"
+			ensure_podman_compose_shims "${PODMAN_COMPOSE_PROVIDER_BIN}"
 			return
 		fi
 	done
