@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=../lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
+# shellcheck source=../lib/i18n.sh
+source "${SCRIPT_DIR}/lib/i18n.sh"
 # shellcheck source=../lib/render.sh
 source "${SCRIPT_DIR}/lib/render.sh"
 
