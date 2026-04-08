@@ -587,33 +587,22 @@ if [[ "$9" == "1" ]]; then
 	if [[ "${14}" == "s3" ]]; then
 		latest_backup="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
 		backup_key="${20%/}/$(basename "${latest_backup}")"
-		if [[ -f /etc/emdash/compose.env ]]; then
-			set -a
-			. /etc/emdash/compose.env
-			set +a
-		fi
-		runtime="${CONTAINER_RUNTIME:-docker}"
-		if [[ "${runtime}" == "docker" ]]; then
-			docker run --rm \
-				-e AWS_ACCESS_KEY_ID="${18}" \
-				-e AWS_SECRET_ACCESS_KEY="${19}" \
-				amazon/aws-cli:2.22.21 \
-				s3api head-object \
-				--bucket "${17}" \
-				--key "${backup_key}" \
-				--endpoint-url "${15}" \
-				--region "${16}"
-		else
-			podman run --rm \
-				-e AWS_ACCESS_KEY_ID="${18}" \
-				-e AWS_SECRET_ACCESS_KEY="${19}" \
-				amazon/aws-cli:2.22.21 \
-				s3api head-object \
-				--bucket "${17}" \
-				--key "${backup_key}" \
-				--endpoint-url "${15}" \
-				--region "${16}"
-		fi
+		python3 - "${15}" "${16}" "${17}" "${18}" "${19}" "${backup_key}" <<'PY'
+import sys
+import boto3
+from botocore.config import Config
+
+endpoint, region, bucket, access, secret, key = sys.argv[1:]
+client = boto3.client(
+    "s3",
+    endpoint_url=endpoint,
+    aws_access_key_id=access,
+    aws_secret_access_key=secret,
+    region_name=region,
+    config=Config(signature_version="s3v4"),
+)
+client.head_object(Bucket=bucket, Key=key)
+PY
 	fi
 fi
 EOF

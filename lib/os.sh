@@ -100,36 +100,20 @@ install_base_packages() {
 	systemctl enable --now crond >/dev/null 2>&1 || systemctl enable --now cronie >/dev/null 2>&1 || true
 }
 
-install_aws_cli() {
-	command_exists aws && return 0
-
-	log "安装 AWS CLI"
-	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
-		if apt-get install -y awscli >/dev/null 2>&1; then
-			return 0
-		fi
-
-		local arch="x86_64"
-		case "$(uname -m)" in
-		x86_64 | amd64) arch="x86_64" ;;
-		aarch64 | arm64) arch="aarch64" ;;
-		*) fail "当前架构不支持自动安装 AWS CLI: $(uname -m)" ;;
-		esac
-
-		apt-get install -y unzip
-		local tmpdir
-		tmpdir="$(mktemp -d)"
-		curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}.zip" -o "${tmpdir}/awscliv2.zip"
-		unzip -q "${tmpdir}/awscliv2.zip" -d "${tmpdir}"
-		"${tmpdir}/aws/install" --update
-		rm -rf "${tmpdir}"
-		return
-	fi
-
-	if dnf -y install awscli2 >/dev/null 2>&1; then
+install_boto3_runtime() {
+	if python3 - <<'PY' >/dev/null 2>&1; then
+import importlib.util, sys
+sys.exit(0 if importlib.util.find_spec("boto3") else 1)
+PY
 		return 0
 	fi
-	dnf -y install awscli
+
+	log "安装 Python boto3"
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+		apt-get install -y python3-boto3
+	else
+		dnf -y install python3-boto3
+	fi
 }
 
 install_nodesource_node() {

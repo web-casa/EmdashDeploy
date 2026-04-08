@@ -276,12 +276,12 @@ main() {
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "s3" && "${WRITE_ONLY}" != "1" ]]; then
-		install_aws_cli
+		install_boto3_runtime
 		test_s3_storage
 	fi
 
 	if [[ "${BACKUP_ENABLED}" == "1" && "${BACKUP_TARGET_TYPE}" == "s3" && "${WRITE_ONLY}" != "1" ]]; then
-		install_aws_cli
+		install_boto3_runtime
 	fi
 
 	prepare_layout

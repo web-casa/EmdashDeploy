@@ -167,18 +167,24 @@ test_s3_storage() {
 
 	log "执行对象存储上传测试"
 
-	AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
-	AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
-	aws --endpoint-url "${S3_ENDPOINT}" s3api put-object \
-		--bucket "${S3_BUCKET}" \
-		--key "${test_key}" \
-		--body "${tmp_file}" >/dev/null
+	python3 - "${S3_ENDPOINT}" "${S3_REGION}" "${S3_BUCKET}" "${S3_ACCESS_KEY_ID}" "${S3_SECRET_ACCESS_KEY}" "${test_key}" "${tmp_file}" <<'PY'
+import sys
+import boto3
+from botocore.config import Config
 
-	AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
-	AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
-	aws --endpoint-url "${S3_ENDPOINT}" s3api delete-object \
-		--bucket "${S3_BUCKET}" \
-		--key "${test_key}" >/dev/null
+endpoint, region, bucket, access, secret, key, body_path = sys.argv[1:]
+client = boto3.client(
+    "s3",
+    endpoint_url=endpoint,
+    aws_access_key_id=access,
+    aws_secret_access_key=secret,
+    region_name=region,
+    config=Config(signature_version="s3v4"),
+)
+with open(body_path, "rb") as fh:
+    client.put_object(Bucket=bucket, Key=key, Body=fh)
+client.delete_object(Bucket=bucket, Key=key)
+PY
 
 	rm -f "${tmp_file}"
 	log "对象存储上传测试通过"

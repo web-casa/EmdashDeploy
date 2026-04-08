@@ -93,6 +93,15 @@ load_env() {
 	# shellcheck disable=SC1090
 	source "${ENV_FILE}"
 	set +a
+	ROOT_DIR="${ROOT_DIR:-/data/emdash}"
+	APP_ENV_FILE="${APP_ENV_FILE:-${ENV_FILE}}"
+	INSTALL_YAML="${INSTALL_YAML:-/etc/emdash/install.yml}"
+	SITE_DIR="${SITE_DIR:-${ROOT_DIR}/app/site}"
+	BACKUP_DIR="${BACKUP_DIR:-${ROOT_DIR}/backups}"
+	UPLOADS_DIR="${UPLOADS_DIR:-${ROOT_DIR}/data/uploads}"
+	SESSIONS_DIR="${SESSIONS_DIR:-${ROOT_DIR}/data/sessions}"
+	SQLITE_DIR="${SQLITE_DIR:-${ROOT_DIR}/data/sqlite}"
+	SQLITE_PATH="${SQLITE_PATH:-${SQLITE_DIR}/data.db}"
 }
 
 bool_active() {
@@ -563,12 +572,23 @@ PY
 	rm -rf "${tmpdir}"
 
 	if [[ "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
-		command_exists aws || fail "aws CLI is required for S3 backups"
-		AWS_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID}" \
-		AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY}" \
-		aws --endpoint-url "${BACKUP_S3_ENDPOINT}" s3 cp \
-			"${archive}" \
-			"s3://${BACKUP_S3_BUCKET}/${BACKUP_S3_PREFIX%/}/$(basename "${archive}")"
+		python3 - "${BACKUP_S3_ENDPOINT}" "${BACKUP_S3_REGION}" "${BACKUP_S3_BUCKET}" "${BACKUP_S3_ACCESS_KEY_ID}" "${BACKUP_S3_SECRET_ACCESS_KEY}" "${BACKUP_S3_PREFIX%/}/$(basename "${archive}")" "${archive}" <<'PY'
+import sys
+import boto3
+from botocore.config import Config
+
+endpoint, region, bucket, access, secret, key, archive_path = sys.argv[1:]
+client = boto3.client(
+    "s3",
+    endpoint_url=endpoint,
+    aws_access_key_id=access,
+    aws_secret_access_key=secret,
+    region_name=region,
+    config=Config(signature_version="s3v4"),
+)
+with open(archive_path, "rb") as fh:
+    client.upload_fileobj(fh, bucket, key)
+PY
 	fi
 
 	prune_local_backups
