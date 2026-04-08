@@ -64,7 +64,7 @@ collect_configuration() {
 		prompt_yes_no ENABLE_HTTPS "$(ti enable_https)" "${ENABLE_HTTPS}"
 		prompt_value DOMAIN "$(ti domain)" "${DOMAIN}"
 		prompt_value ADMIN_EMAIL "$(ti admin_email)" "${ADMIN_EMAIL}"
-		if [[ "${ENABLE_HTTPS}" == "1" ]]; then
+		if [[ "${ENABLE_HTTPS}" == "1" && "${WRITE_ONLY}" != "1" ]]; then
 			log "$(ti detect_public_ip)"
 			detect_public_ips
 			if [[ -n "${PUBLIC_IPV4:-}" ]]; then
@@ -253,11 +253,16 @@ main() {
 		warn "$(ti write_only_skip)"
 	fi
 
-	log "$(ti detect_public_ip)"
-	detect_public_ips
+	if [[ "${WRITE_ONLY}" != "1" ]]; then
+		log "$(ti detect_public_ip)"
+		detect_public_ips
+	else
+		PUBLIC_IPV4="${PUBLIC_IPV4:-}"
+		PUBLIC_IPV6="${PUBLIC_IPV6:-}"
+	fi
 	refresh_app_public_url
 
-	if [[ -n "${DOMAIN}" ]]; then
+	if [[ "${WRITE_ONLY}" != "1" && -n "${DOMAIN}" ]]; then
 		validate_domain_requirements
 	fi
 

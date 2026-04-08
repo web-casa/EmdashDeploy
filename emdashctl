@@ -821,8 +821,9 @@ cmd_restore() {
 		[[ -n "${db_restore_file}" ]] || fail "$(ct sqlite_payload_missing)"
 		validate_sqlite_backup_file "${db_restore_file}"
 		run_compose stop app
+		install -d -m 0755 "$(dirname "${SQLITE_PATH}")"
 		rm -f "${SQLITE_PATH}" "${SQLITE_PATH}-wal" "${SQLITE_PATH}-shm"
-		cp -a "${db_restore_file}" "${SQLITE_PATH}"
+		install -m 0644 "${db_restore_file}" "${SQLITE_PATH}"
 	else
 		run_compose up -d postgres
 		db_restore_file="$(find_restore_payload "${restore_dir}" 'postgres.sql')"
@@ -851,8 +852,9 @@ cmd_restore() {
 
 	uploads_restore_dir="$(find "${restore_dir}" -mindepth 2 -maxdepth 2 -type d -name uploads | head -n1)"
 	if [[ "${STORAGE_DRIVER}" == "local" && -n "${uploads_restore_dir}" && -d "${uploads_restore_dir}" ]]; then
-		rm -rf "${UPLOADS_DIR}"
-		cp -a "${uploads_restore_dir}" "${UPLOADS_DIR}"
+		install -d -m 0755 "${UPLOADS_DIR}"
+		find "${UPLOADS_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+		cp -R "${uploads_restore_dir}/." "${UPLOADS_DIR}/"
 	fi
 
 	run_compose up -d app

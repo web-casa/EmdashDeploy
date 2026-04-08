@@ -321,6 +321,12 @@ linode_token=YOUR_TOKEN_HERE
 bash linode-test.sh
 ```
 
+Default test image strategy:
+
+- `sqlite + file + local`: uses `ghcr.io/web-casa/emdash-app:0.2.0-hi.1`
+- other profiles: use `ghcr.io/web-casa/emdash-builder:0.2.0-hi.1`
+- you can still override either path with `LINODE_TEST_INSTALL_APP_IMAGE` or `LINODE_TEST_INSTALL_APP_BASE_IMAGE`
+
 Run the predefined VPS matrix:
 
 ```bash

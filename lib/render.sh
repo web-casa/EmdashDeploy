@@ -579,7 +579,7 @@ $(ti summary_control_commands)
   emdashctl restart app
 EOF
 
-	if [[ "${ACTIVATE_STACK:-0}" != "1" ]]; then
+	if [[ "${ACTIVATE_STACK:-0}" != "1" && "${WRITE_ONLY:-0}" != "1" ]]; then
 		cat <<EOF
 
 $(ti summary_start_services)

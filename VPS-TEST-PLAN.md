@@ -43,6 +43,12 @@ export LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east
 bash linode-test-matrix.sh
 ```
 
+默认镜像策略：
+
+- `sqlite + file + local` 标准组合默认优先使用 `ghcr.io/web-casa/emdash-app:0.2.0-hi.1`
+- 其他组合默认优先使用 `ghcr.io/web-casa/emdash-builder:0.2.0-hi.1`
+- 如需覆盖，可自行设置 `LINODE_TEST_INSTALL_APP_IMAGE` 或 `LINODE_TEST_INSTALL_APP_BASE_IMAGE`
+
 只跑部分场景：
 
 ```bash

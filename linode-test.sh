@@ -81,6 +81,8 @@ linode-test.sh
   - 创建一台临时 Linode VPS
   - 推送当前目录安装器到远端
   - 执行一轮非交互安装和 smoke 测试
+  - 标准 sqlite/file/local 场景默认优先使用 GHCR app image
+  - 其他场景默认优先使用 GHCR builder image
   - 默认测试完成后自动销毁实例
 
 常用环境变量:
@@ -97,6 +99,21 @@ linode-test.sh
   LINODE_TEST_RUN_BACKUP=1
   LINODE_TEST_INSTALL_BACKUP_TARGET=s3
 EOF
+}
+
+apply_default_image_strategy() {
+	if [[ -n "${LINODE_TEST_INSTALL_APP_IMAGE}" || -n "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}" ]]; then
+		return
+	fi
+
+	if [[ "${LINODE_TEST_INSTALL_DB_DRIVER}" == "sqlite" && "${LINODE_TEST_INSTALL_SESSION_DRIVER}" == "file" && "${LINODE_TEST_INSTALL_STORAGE_DRIVER}" == "local" ]]; then
+		LINODE_TEST_INSTALL_APP_IMAGE="ghcr.io/web-casa/emdash-app:0.2.0-hi.1"
+		log "默认使用 GHCR app image: ${LINODE_TEST_INSTALL_APP_IMAGE}"
+		return
+	fi
+
+	LINODE_TEST_INSTALL_APP_BASE_IMAGE="ghcr.io/web-casa/emdash-builder:0.2.0-hi.1"
+	log "默认使用 GHCR builder image: ${LINODE_TEST_INSTALL_APP_BASE_IMAGE}"
 }
 
 require_commands() {
@@ -605,6 +622,7 @@ main() {
 	parse_args "$@"
 	require_commands
 	load_token
+	apply_default_image_strategy
 	trap cleanup EXIT
 	rm -f "${LINODE_TEST_RESULT_FILE}"
 

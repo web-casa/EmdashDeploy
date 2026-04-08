@@ -10,6 +10,10 @@ INSTALL_LANG="${EMDASH_INSTALL_LANG:-en}"
 KEEP_BOOTSTRAP_DIR="${EMDASH_BOOTSTRAP_KEEP:-0}"
 BOOTSTRAP_TMP_DIR=""
 
+warn() {
+	printf '[WARN] %s\n' "$*" >&2
+}
+
 cleanup() {
 	if [[ "${KEEP_BOOTSTRAP_DIR}" == "1" ]]; then
 		return
@@ -20,11 +24,7 @@ cleanup() {
 }
 
 archive_url() {
-	if [[ "${REPO_REF}" =~ ^[0-9] ]] || [[ "${REPO_REF}" == v* ]]; then
-		printf 'https://codeload.github.com/%s/%s/tar.gz/refs/tags/%s\n' "${REPO_OWNER}" "${REPO_NAME}" "${REPO_REF}"
-	else
-		printf 'https://codeload.github.com/%s/%s/tar.gz/refs/heads/%s\n' "${REPO_OWNER}" "${REPO_NAME}" "${REPO_REF}"
-	fi
+	printf 'https://codeload.github.com/%s/%s/tar.gz/%s\n' "${REPO_OWNER}" "${REPO_NAME}" "${REPO_REF}"
 }
 
 main() {
@@ -58,23 +58,38 @@ main() {
 		--lang=*)
 			INSTALL_LANG="${arg#--lang=}"
 			;;
-		--lang)
-			idx=$((idx + 1))
-			[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
-				printf '[ERROR] Missing value for --lang\n' >&2
-				exit 1
-			}
-			INSTALL_LANG="${raw_args[${idx}]}"
-			;;
-		*)
-			args+=("${arg}")
-			;;
+			--lang)
+				idx=$((idx + 1))
+				[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
+					printf '[ERROR] Missing value for --lang\n' >&2
+					exit 1
+				}
+				INSTALL_LANG="${raw_args[${idx}]}"
+				;;
+			--ref=*)
+				REPO_REF="${arg#--ref=}"
+				;;
+			--ref)
+				idx=$((idx + 1))
+				[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
+					printf '[ERROR] Missing value for --ref\n' >&2
+					exit 1
+				}
+				REPO_REF="${raw_args[${idx}]}"
+				;;
+			*)
+				args+=("${arg}")
+				;;
 		esac
 		idx=$((idx + 1))
 	done
 
 	if [[ "${has_mode_flag}" != "1" && "${show_help}" != "1" ]]; then
 		args+=(--activate)
+	fi
+
+	if [[ "${REPO_REF}" == "main" ]]; then
+		warn "Bootstrap is using the mutable ref 'main'. Pass --ref <tag|commit> for a reproducible install."
 	fi
 
 	BOOTSTRAP_TMP_DIR="$(mktemp -d)"
