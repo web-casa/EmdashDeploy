@@ -38,6 +38,22 @@ detect_install_lang() {
 	export EMDASH_INSTALL_LANG
 }
 
+default_timezone_for_lang() {
+	local lang="${EMDASH_INSTALL_LANG:-en}"
+	case "${lang}" in
+	en) printf 'America/New_York\n' ;;
+	ja) printf 'Asia/Tokyo\n' ;;
+	ko) printf 'Asia/Seoul\n' ;;
+	es) printf 'Europe/Madrid\n' ;;
+	de) printf 'Europe/Berlin\n' ;;
+	fr) printf 'Europe/Paris\n' ;;
+	zh-CN) printf 'Asia/Shanghai\n' ;;
+	zh-TW) printf 'Asia/Taipei\n' ;;
+	pt) printf 'America/Sao_Paulo\n' ;;
+	*) printf 'UTC\n' ;;
+	esac
+}
+
 ti() {
 	local key="$1"
 	local lang="${EMDASH_INSTALL_LANG:-en}"
@@ -154,6 +170,10 @@ ti() {
 	enable_https) case "${lang}" in en) printf 'Enable HTTPS' ;; ja) printf 'HTTPS を有効にする' ;; ko) printf 'HTTPS 활성화' ;; es) printf 'Habilitar HTTPS' ;; de) printf 'HTTPS aktivieren' ;; fr) printf 'Activer HTTPS' ;; zh-CN) printf '是否启用 HTTPS' ;; zh-TW) printf '是否啟用 HTTPS' ;; pt) printf 'Ativar HTTPS' ;; esac ;;
 	domain) case "${lang}" in en) printf 'Site domain' ;; ja) printf 'サイトドメイン' ;; ko) printf '사이트 도메인' ;; es) printf 'Dominio del sitio' ;; de) printf 'Website-Domain' ;; fr) printf 'Domaine du site' ;; zh-CN) printf '站点域名' ;; zh-TW) printf '網站網域' ;; pt) printf 'Domínio do site' ;; esac ;;
 	admin_email) case "${lang}" in en) printf 'Caddy / certificate email' ;; ja) printf 'Caddy / 証明書用メール' ;; ko) printf 'Caddy / 인증서 이메일' ;; es) printf 'Correo para Caddy / certificado' ;; de) printf 'E-Mail für Caddy / Zertifikat' ;; fr) printf 'E-mail Caddy / certificat' ;; zh-CN) printf 'Caddy/证书邮箱' ;; zh-TW) printf 'Caddy/憑證郵箱' ;; pt) printf 'E-mail do Caddy / certificado' ;; esac ;;
+	https_public_ip_intro) case "${lang}" in en) printf 'Detected public IP for this server' ;; ja) printf 'このサーバーで検出した公開 IP' ;; ko) printf '이 서버에서 감지한 공인 IP' ;; es) printf 'IP pública detectada para este servidor' ;; de) printf 'Erkannte öffentliche IP dieses Servers' ;; fr) printf 'IP publique détectée pour ce serveur' ;; zh-CN) printf '检测到本机公网 IP' ;; zh-TW) printf '偵測到本機公網 IP' ;; pt) printf 'IP público detectado para este servidor' ;; esac ;;
+	https_dns_hint) case "${lang}" in en) printf 'Please point your domain to the IP above before continuing.' ;; ja) printf '続行する前に、ドメインを上記の IP に向けてください。' ;; ko) printf '계속하기 전에 도메인을 위 IP로 지정하세요.' ;; es) printf 'Apunta tu dominio a la IP anterior antes de continuar.' ;; de) printf 'Richte deine Domain vor dem Fortfahren auf die obige IP.' ;; fr) printf 'Faites pointer votre domaine vers l’IP ci-dessus avant de continuer.' ;; zh-CN) printf '继续之前，请先将域名解析到上面的 IP。' ;; zh-TW) printf '繼續之前，請先將網域解析到上面的 IP。' ;; pt) printf 'Aponte seu domínio para o IP acima antes de continuar.' ;; esac ;;
+	https_dns_confirm) case "${lang}" in en) printf 'Have you finished DNS resolution' ;; ja) printf 'DNS 設定は完了しましたか' ;; ko) printf 'DNS 설정을 완료했나요' ;; es) printf 'Has completado la configuración DNS' ;; de) printf 'Hast du die DNS-Auflösung abgeschlossen' ;; fr) printf 'Avez-vous terminé la configuration DNS' ;; zh-CN) printf '是否已完成域名解析' ;; zh-TW) printf '是否已完成網域解析' ;; pt) printf 'Você concluiu a configuração do DNS' ;; esac ;;
+	https_ip_unavailable) case "${lang}" in en) printf 'Public IP detection was inconclusive. Confirm DNS manually before continuing.' ;; ja) printf '公開 IP を確実に判定できませんでした。続行前に DNS を手動で確認してください。' ;; ko) printf '공인 IP를 확실히 판별하지 못했습니다. 계속하기 전에 DNS를 수동으로 확인하세요.' ;; es) printf 'No se pudo determinar con fiabilidad la IP pública. Verifica el DNS manualmente antes de continuar.' ;; de) printf 'Die öffentliche IP konnte nicht zuverlässig erkannt werden. Prüfe DNS vor dem Fortfahren manuell.' ;; fr) printf 'La détection de l’IP publique n’a pas été concluante. Vérifiez le DNS manuellement avant de continuer.' ;; zh-CN) printf '未能可靠识别公网 IP，请在继续前手动确认域名解析。' ;; zh-TW) printf '未能可靠辨識公網 IP，請在繼續前手動確認網域解析。' ;; pt) printf 'A detecção do IP público não foi conclusiva. Confirme o DNS manualmente antes de continuar.' ;; esac ;;
 	db_driver) case "${lang}" in en) printf 'Database' ;; ja) printf 'データベース' ;; ko) printf '데이터베이스' ;; es) printf 'Base de datos' ;; de) printf 'Datenbank' ;; fr) printf 'Base de données' ;; zh-CN) printf '数据库' ;; zh-TW) printf '資料庫' ;; pt) printf 'Banco de dados' ;; esac ;;
 	pg_db_name) case "${lang}" in en) printf 'PostgreSQL database name' ;; ja) printf 'PostgreSQL データベース名' ;; ko) printf 'PostgreSQL 데이터베이스 이름' ;; es) printf 'Nombre de la base de datos PostgreSQL' ;; de) printf 'PostgreSQL-Datenbankname' ;; fr) printf 'Nom de la base PostgreSQL' ;; zh-CN) printf 'PostgreSQL 数据库名' ;; zh-TW) printf 'PostgreSQL 資料庫名稱' ;; pt) printf 'Nome do banco PostgreSQL' ;; esac ;;
 	pg_db_user) case "${lang}" in en) printf 'PostgreSQL username' ;; ja) printf 'PostgreSQL ユーザー名' ;; ko) printf 'PostgreSQL 사용자 이름' ;; es) printf 'Usuario de PostgreSQL' ;; de) printf 'PostgreSQL-Benutzername' ;; fr) printf 'Nom d’utilisateur PostgreSQL' ;; zh-CN) printf 'PostgreSQL 用户名' ;; zh-TW) printf 'PostgreSQL 使用者名稱' ;; pt) printf 'Usuário do PostgreSQL' ;; esac ;;

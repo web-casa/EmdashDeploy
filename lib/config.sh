@@ -11,7 +11,7 @@ init_defaults() {
 	PROJECT_NAME="emdash"
 	TEMPLATE="starter"
 	ROOT_DIR="/data/emdash"
-	TIMEZONE="Asia/Shanghai"
+	TIMEZONE="$(default_timezone_for_lang)"
 	DOMAIN=""
 	ADMIN_EMAIL=""
 	USE_CADDY="1"

@@ -64,6 +64,22 @@ collect_configuration() {
 		prompt_yes_no ENABLE_HTTPS "$(ti enable_https)" "${ENABLE_HTTPS}"
 		prompt_value DOMAIN "$(ti domain)" "${DOMAIN}"
 		prompt_value ADMIN_EMAIL "$(ti admin_email)" "${ADMIN_EMAIL}"
+		if [[ "${ENABLE_HTTPS}" == "1" ]]; then
+			log "$(ti detect_public_ip)"
+			detect_public_ips
+			if [[ -n "${PUBLIC_IPV4:-}" ]]; then
+				log "$(ti https_public_ip_intro): ${PUBLIC_IPV4}"
+			fi
+			if [[ -n "${PUBLIC_IPV6:-}" ]]; then
+				log "$(ti https_public_ip_intro) (IPv6): ${PUBLIC_IPV6}"
+			fi
+			if [[ -z "${PUBLIC_IPV4:-}" && -z "${PUBLIC_IPV6:-}" ]]; then
+				warn "$(ti https_ip_unavailable)"
+			else
+				log "$(ti https_dns_hint)"
+			fi
+			prompt_confirm_dns_ready
+		fi
 	fi
 
 	prompt_choice DB_DRIVER "$(ti db_driver)" "sqlite postgres" "${DB_DRIVER}"

@@ -102,3 +102,26 @@ prompt_choice() {
 			warn "$(ti choose_one_of) ${options}"
 		done
 }
+
+prompt_confirm_dns_ready() {
+	local input=""
+
+	if [[ ! -t 0 ]]; then
+		return
+	fi
+
+	while true; do
+		read -r -p "$(ti https_dns_confirm) [y/n]: " input
+		case "${input,,}" in
+		y | yes)
+			return
+			;;
+		n | no)
+			warn "$(ti https_dns_hint)"
+			;;
+		*)
+			warn "$(ti enter_y_or_n)"
+			;;
+		esac
+	done
+}
