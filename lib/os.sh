@@ -283,12 +283,15 @@ install_caddy_package() {
 		chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
 		apt_update
 		apt-get install -y caddy
-		return
+	else
+		dnf -y install dnf-plugins-core
+		dnf copr enable -y @caddy/caddy
+		dnf -y install caddy
 	fi
 
-	dnf -y install dnf-plugins-core
-	dnf copr enable -y @caddy/caddy
-	dnf -y install caddy
+	# Package postinst may auto-start caddy and occupy :80/:443 before our
+	# own validation and activation flow runs.
+	systemctl disable --now caddy >/dev/null 2>&1 || true
 }
 
 create_app_user() {
