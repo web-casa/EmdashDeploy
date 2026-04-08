@@ -10,7 +10,7 @@ Ce dépôt sert à déployer EmDash sur un VPS et à fournir les commandes princ
 
 ## Fonctions principales
 
-- Installateur : [`install-emdash.sh`](./install-emdash.sh)
+- Installateur : [`install.sh`](./install.sh)
 - CLI d’exploitation : [`emdashctl`](./emdashctl)
 - Test réel sur VPS Linode : [`linode-test.sh`](./linode-test.sh)
 - SQLite ou PostgreSQL 18
@@ -74,14 +74,14 @@ Exemple :
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.fr.sh --activate
+sudo bash install.sh --lang=fr --activate
 ```
 
 Exemple avec une image app préconstruite :
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.fr.sh --activate
+sudo bash install.sh --lang=fr --activate
 ```
 
 Recommandation :
@@ -115,13 +115,13 @@ bash linode-test.sh
 
 Voir aussi [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
 
-Pour l’exploitation, vous pouvez utiliser le wrapper français :
+Pour l’exploitation, utilisez simplement le paramètre de langue :
 
 ```bash
-emdashctl.fr.sh status
-emdashctl.fr.sh doctor
-emdashctl.fr.sh smoke
-emdashctl.fr.sh logs app -f
-emdashctl.fr.sh backup
-emdashctl.fr.sh restore /path/to/backup.tar.gz
+emdashctl --lang=fr status
+emdashctl --lang=fr doctor
+emdashctl --lang=fr smoke
+emdashctl --lang=fr logs app -f
+emdashctl --lang=fr backup
+emdashctl --lang=fr restore /path/to/backup.tar.gz
 ```

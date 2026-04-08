@@ -10,6 +10,23 @@ INSTALL_LANG="${EMDASH_INSTALL_LANG:-en}"
 KEEP_BOOTSTRAP_DIR="${EMDASH_BOOTSTRAP_KEEP:-0}"
 BOOTSTRAP_TMP_DIR=""
 
+normalize_bootstrap_lang() {
+	local input="${1:-en}"
+	input="${input//_/-}"
+	case "${input,,}" in
+	en | english) printf 'en\n' ;;
+	ja | jp | japanese) printf 'ja\n' ;;
+	ko | korean) printf 'ko\n' ;;
+	es | spanish | espanol | español) printf 'es\n' ;;
+	de | german | deutsch) printf 'de\n' ;;
+	fr | french | francais | français) printf 'fr\n' ;;
+	zh-cn | zh-hans | zh-sg | zh) printf 'zh-CN\n' ;;
+	zh-tw | zh-hant | zh-hk) printf 'zh-TW\n' ;;
+	pt | pt-br | pt-pt | portuguese | portugues | português) printf 'pt\n' ;;
+	*) printf 'en\n' ;;
+	esac
+}
+
 warn() {
 	printf '[WARN] %s\n' "$*" >&2
 }
@@ -30,6 +47,8 @@ archive_url() {
 main() {
 	local archive=""
 	local repo_dir=""
+	local install_entry=""
+	local script_name=""
 	local -a raw_args=("$@")
 	local -a args=()
 	local has_mode_flag="0"
@@ -39,6 +58,17 @@ main() {
 	local idx=0
 
 	trap cleanup EXIT
+
+	script_name="$(basename "$0")"
+	if [[ -n "${EMDASH_INSTALL_LANG:-}" ]]; then
+		INSTALL_LANG="$(normalize_bootstrap_lang "${EMDASH_INSTALL_LANG}")"
+	elif [[ "${script_name}" == bootstrap.*.sh ]]; then
+		INSTALL_LANG="${script_name#bootstrap.}"
+		INSTALL_LANG="${INSTALL_LANG%.sh}"
+		INSTALL_LANG="$(normalize_bootstrap_lang "${INSTALL_LANG}")"
+	else
+		INSTALL_LANG="$(normalize_bootstrap_lang "${INSTALL_LANG}")"
+	fi
 
 	while [[ "${idx}" -lt "${#raw_args[@]}" ]]; do
 		arg="${raw_args[${idx}]}"
@@ -104,16 +134,22 @@ main() {
 	}
 
 	cd "${repo_dir}"
-	chmod +x bootstrap*.sh install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh 2>/dev/null || true
+	chmod +x bootstrap.sh install.sh install-emdash.sh emdashctl linode-test.sh 2>/dev/null || true
+
+	if [[ -f "./install.sh" ]]; then
+		install_entry="./install.sh"
+	else
+		install_entry="./install-emdash.sh"
+	fi
 
 	export EMDASH_INSTALL_LANG="${INSTALL_LANG}"
 	if [[ "${show_help}" == "1" || "${non_interactive}" == "1" ]]; then
-		bash "./install-emdash.sh" "${args[@]}"
+		bash "${install_entry}" "${args[@]}"
 		return
 	fi
 
 	if [[ -r /dev/tty ]]; then
-		bash "./install-emdash.sh" "${args[@]}" </dev/tty
+		bash "${install_entry}" "${args[@]}" </dev/tty
 		return
 	fi
 

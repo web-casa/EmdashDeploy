@@ -10,7 +10,7 @@ Dieses Repository dient dazu, EmDash auf einem VPS bereitzustellen und den laufe
 
 ## Funktionen
 
-- Installer: [`install-emdash.sh`](./install-emdash.sh)
+- Installer: [`install.sh`](./install.sh)
 - Betriebs-CLI: [`emdashctl`](./emdashctl)
 - Reale VPS-Tests über Linode: [`linode-test.sh`](./linode-test.sh)
 - SQLite oder PostgreSQL 18
@@ -74,14 +74,14 @@ Beispiel:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.de.sh --activate
+sudo bash install.sh --lang=de --activate
 ```
 
 Beispiel mit vorgebautem App-Image:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.de.sh --activate
+sudo bash install.sh --lang=de --activate
 ```
 
 Empfehlung:
@@ -118,10 +118,10 @@ Weitere Details stehen in [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
 Für Betriebsbefehle kannst du den deutschen Wrapper verwenden:
 
 ```bash
-emdashctl.de.sh status
-emdashctl.de.sh doctor
-emdashctl.de.sh smoke
-emdashctl.de.sh logs app -f
-emdashctl.de.sh backup
-emdashctl.de.sh restore /path/to/backup.tar.gz
+emdashctl --lang=de status
+emdashctl --lang=de doctor
+emdashctl --lang=de smoke
+emdashctl --lang=de logs app -f
+emdashctl --lang=de backup
+emdashctl --lang=de restore /path/to/backup.tar.gz
 ```

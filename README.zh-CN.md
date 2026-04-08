@@ -19,7 +19,7 @@ EmDash 的交互式 VPS 安装器与运维工具集，支持 Docker/Podman、可
 
 ## 主要功能
 
-- 安装脚本：[`install-emdash.sh`](./install-emdash.sh)
+- 安装脚本：[`install.sh`](./install.sh)
 - 运维 CLI：[`emdashctl`](./emdashctl)
 - Linode 实机测试脚本：[`linode-test.sh`](./linode-test.sh)
 - 宿主机原生安装 Caddy
@@ -69,7 +69,7 @@ SQLite：
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.zh-CN.sh --non-interactive --activate
+sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```
 
 PostgreSQL + Redis：
@@ -79,7 +79,7 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.zh-CN.sh --non-interactive --activate
+sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```
 
 ## Caddy 与 HTTPS
@@ -134,14 +134,14 @@ builder 和 app 的区别：
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.zh-CN.sh --activate
+sudo bash install.sh --lang=zh-CN --activate
 ```
 
 使用预构建 app 镜像：
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.zh-CN.sh --activate
+sudo bash install.sh --lang=zh-CN --activate
 ```
 
 推荐：
@@ -186,13 +186,13 @@ bash linode-test.sh
 
 更多测试矩阵见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
 
-运维命令建议使用简体中文 wrapper：
+运维命令建议直接带语言参数：
 
 ```bash
-emdashctl.zh-CN.sh status
-emdashctl.zh-CN.sh doctor
-emdashctl.zh-CN.sh smoke
-emdashctl.zh-CN.sh logs app -f
-emdashctl.zh-CN.sh backup
-emdashctl.zh-CN.sh restore /path/to/backup.tar.gz
+emdashctl --lang=zh-CN status
+emdashctl --lang=zh-CN doctor
+emdashctl --lang=zh-CN smoke
+emdashctl --lang=zh-CN logs app -f
+emdashctl --lang=zh-CN backup
+emdashctl --lang=zh-CN restore /path/to/backup.tar.gz
 ```

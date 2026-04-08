@@ -27,6 +27,16 @@ usage() {
 parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
+		--lang=*)
+			EMDASH_INSTALL_LANG="$(normalize_install_lang "${1#--lang=}")"
+			export EMDASH_INSTALL_LANG
+			;;
+		--lang)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --lang"
+			EMDASH_INSTALL_LANG="$(normalize_install_lang "$1")"
+			export EMDASH_INSTALL_LANG
+			;;
 		--non-interactive)
 			NON_INTERACTIVE=1
 			;;

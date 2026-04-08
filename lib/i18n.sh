@@ -244,7 +244,7 @@ print_usage() {
 EmDash installer
 
 Usage:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 Options:
   --non-interactive  Use only environment variables and defaults
@@ -273,7 +273,7 @@ EOF
 EmDash installer
 
 使い方:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 オプション:
   --non-interactive  環境変数と既定値のみを使用し、質問しません
@@ -302,7 +302,7 @@ EOF
 EmDash installer
 
 사용법:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 옵션:
   --non-interactive  환경 변수와 기본값만 사용하고 질문하지 않습니다
@@ -331,7 +331,7 @@ EOF
 EmDash installer
 
 Uso:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 Opciones:
   --non-interactive  Usa solo variables de entorno y valores predeterminados
@@ -360,7 +360,7 @@ EOF
 EmDash installer
 
 Verwendung:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 Optionen:
   --non-interactive  Nur Umgebungsvariablen und Standardwerte verwenden
@@ -389,7 +389,7 @@ EOF
 EmDash installer
 
 Utilisation :
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 Options :
   --non-interactive  Utiliser uniquement les variables d’environnement et les valeurs par défaut
@@ -418,7 +418,7 @@ EOF
 EmDash 安装器
 
 用法:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 参数:
   --non-interactive  仅使用环境变量和默认值，不提问
@@ -447,7 +447,7 @@ EOF
 EmDash 安裝器
 
 用法:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 參數:
   --non-interactive  僅使用環境變數與預設值，不提問
@@ -476,7 +476,7 @@ EOF
 EmDash installer
 
 Uso:
-  bash install-emdash.sh [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
 
 Opções:
   --non-interactive  Usa apenas variáveis de ambiente e valores padrão

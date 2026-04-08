@@ -10,7 +10,7 @@ Docker/Podman, 선택적 Caddy HTTPS, 백업, 복구, 헬스 체크를 지원하
 
 ## 주요 기능
 
-- 설치 스크립트: [`install-emdash.sh`](./install-emdash.sh)
+- 설치 스크립트: [`install.sh`](./install.sh)
 - 운영 CLI: [`emdashctl`](./emdashctl)
 - Linode 실서버 테스트 스크립트: [`linode-test.sh`](./linode-test.sh)
 - SQLite / PostgreSQL 18
@@ -74,14 +74,14 @@ builder 와 app 의 차이:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install-emdash.ko.sh --activate
+sudo bash install.sh --lang=ko --activate
 ```
 
 사전 빌드된 app 이미지 사용 예시:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.ko.sh --activate
+sudo bash install.sh --lang=ko --activate
 ```
 
 권장:
@@ -115,13 +115,13 @@ bash linode-test.sh
 
 자세한 테스트 매트릭스는 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)를 참고하세요.
 
-운영 명령은 한국어 wrapper를 사용할 수 있습니다:
+운영 명령은 언어 인자를 붙여 사용할 수 있습니다:
 
 ```bash
-emdashctl.ko.sh status
-emdashctl.ko.sh doctor
-emdashctl.ko.sh smoke
-emdashctl.ko.sh logs app -f
-emdashctl.ko.sh backup
-emdashctl.ko.sh restore /path/to/backup.tar.gz
+emdashctl --lang=ko status
+emdashctl --lang=ko doctor
+emdashctl --lang=ko smoke
+emdashctl --lang=ko logs app -f
+emdashctl --lang=ko backup
+emdashctl --lang=ko restore /path/to/backup.tar.gz
 ```

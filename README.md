@@ -38,61 +38,19 @@ Non-interactive install:
 curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en --non-interactive
 ```
 
-Preferred bootstrap usage:
+Single-entry command style:
 
-- `bootstrap.sh --lang=en`
-- `bootstrap.sh --lang=ja`
-- `bootstrap.sh --lang=ko`
-- `bootstrap.sh --lang=es`
-- `bootstrap.sh --lang=de`
-- `bootstrap.sh --lang=fr`
-- `bootstrap.sh --lang=zh-CN`
-- `bootstrap.sh --lang=zh-TW`
-- `bootstrap.sh --lang=pt`
-
-Compatible bootstrap wrappers:
-
-- `bootstrap.en.sh`
-- `bootstrap.ja.sh`
-- `bootstrap.ko.sh`
-- `bootstrap.es.sh`
-- `bootstrap.de.sh`
-- `bootstrap.fr.sh`
-- `bootstrap.zh-CN.sh`
-- `bootstrap.zh-TW.sh`
-- `bootstrap.pt.sh`
-
-Available local installer wrappers:
-
-- `install-emdash.en.sh`
-- `install-emdash.ja.sh`
-- `install-emdash.ko.sh`
-- `install-emdash.es.sh`
-- `install-emdash.de.sh`
-- `install-emdash.fr.sh`
-- `install-emdash.zh-CN.sh`
-- `install-emdash.zh-TW.sh`
-- `install-emdash.pt.sh`
-
-CLI wrappers:
-
-- `emdashctl.en.sh`
-- `emdashctl.ja.sh`
-- `emdashctl.ko.sh`
-- `emdashctl.es.sh`
-- `emdashctl.de.sh`
-- `emdashctl.fr.sh`
-- `emdashctl.zh-CN.sh`
-- `emdashctl.zh-TW.sh`
-- `emdashctl.pt.sh`
+- `bootstrap.sh --lang=<code>`
+- `install.sh --lang=<code>`
+- `emdashctl --lang=<code>`
 
 If you prefer a local checkout:
 
 ```bash
 git clone https://github.com/web-casa/EmdashDeploy.git
 cd EmdashDeploy
-chmod +x bootstrap*.sh install-emdash*.sh emdashctl emdashctl*.sh linode-test.sh
-sudo bash install-emdash.en.sh --activate
+chmod +x bootstrap.sh install.sh emdashctl linode-test.sh
+sudo bash install.sh --lang=en --activate
 ```
 
 ## What This Repository Does
@@ -112,7 +70,7 @@ It is not a generic PaaS. It is a focused deployment tool for EmDash.
 
 ## Features
 
-- Interactive installer: [`install-emdash.sh`](./install-emdash.sh)
+- Interactive installer: [`install.sh`](./install.sh)
 - Operations CLI: [`emdashctl`](./emdashctl)
 - Real VPS smoke test helper: [`linode-test.sh`](./linode-test.sh)
 - Optional native Caddy install on the host
@@ -146,7 +104,7 @@ SQLite with local storage:
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.en.sh --non-interactive --activate
+sudo bash install.sh --lang=en --non-interactive --activate
 ```
 
 PostgreSQL with Redis:
@@ -156,7 +114,7 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.en.sh --non-interactive --activate
+sudo bash install.sh --lang=en --non-interactive --activate
 ```
 
 ## Main Commands
@@ -164,28 +122,28 @@ sudo bash install-emdash.en.sh --non-interactive --activate
 Installer:
 
 ```bash
-sudo bash install-emdash.en.sh
-sudo bash install-emdash.en.sh --activate
-sudo bash install-emdash.en.sh --write-only
+sudo bash install.sh --lang=en
+sudo bash install.sh --lang=en --activate
+sudo bash install.sh --lang=en --write-only
 ```
 
 Operations:
 
 ```bash
-emdashctl.en.sh status
-emdashctl.en.sh status --json
-emdashctl.en.sh doctor
-emdashctl.en.sh doctor --json
-emdashctl.en.sh smoke
-emdashctl.en.sh smoke --json
-emdashctl.en.sh logs app
-emdashctl.en.sh restart app
-emdashctl.en.sh backup
-emdashctl.en.sh restore /path/to/backup.tar.gz
-emdashctl.en.sh upgrade app
-emdashctl.en.sh upgrade redis
-emdashctl.en.sh upgrade caddy-config
-emdashctl.en.sh reset-db-password
+emdashctl --lang=en status
+emdashctl --lang=en status --json
+emdashctl --lang=en doctor
+emdashctl --lang=en doctor --json
+emdashctl --lang=en smoke
+emdashctl --lang=en smoke --json
+emdashctl --lang=en logs app
+emdashctl --lang=en restart app
+emdashctl --lang=en backup
+emdashctl --lang=en restore /path/to/backup.tar.gz
+emdashctl --lang=en upgrade app
+emdashctl --lang=en upgrade redis
+emdashctl --lang=en upgrade caddy-config
+emdashctl --lang=en reset-db-password
 ```
 
 ## Directory Layout
@@ -271,14 +229,14 @@ How to use the published builder image:
 
 ```bash
 EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/web-casa/emdash-builder:node24-bookworm \
-sudo bash install-emdash.en.sh --activate
+sudo bash install.sh --lang=en --activate
 ```
 
 How to use a prebuilt application image:
 
 ```bash
 EMDASH_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local \
-sudo bash install-emdash.en.sh --activate
+sudo bash install.sh --lang=en --activate
 ```
 
 Behavior:
@@ -374,7 +332,7 @@ For the full scenario list and manual destructive checks, see [`VPS-TEST-PLAN.md
 
 ## Repository Layout
 
-- [`install-emdash.sh`](./install-emdash.sh): main installer
+- [`install.sh`](./install.sh): main installer
 - [`emdashctl`](./emdashctl): operations CLI
 - [`linode-test.sh`](./linode-test.sh): real VPS test helper
 - [`linode-test-matrix.sh`](./linode-test-matrix.sh): predefined VPS matrix runner

@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstra
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.zh-TW.sh --non-interactive --activate
+sudo bash install.sh --lang=zh-TW --non-interactive --activate
 ```
 
 非互動模式，PostgreSQL + Redis：
@@ -38,18 +38,18 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.zh-TW.sh --non-interactive --activate
+sudo bash install.sh --lang=zh-TW --non-interactive --activate
 ```
 
 完整文件請參考英文版：[README.md](./README.md)
 
-維運命令建議使用繁體中文 wrapper：
+維運命令建議直接帶語言參數：
 
 ```bash
-emdashctl.zh-TW.sh status
-emdashctl.zh-TW.sh doctor
-emdashctl.zh-TW.sh smoke
-emdashctl.zh-TW.sh logs app -f
-emdashctl.zh-TW.sh backup
-emdashctl.zh-TW.sh restore /path/to/backup.tar.gz
+emdashctl --lang=zh-TW status
+emdashctl --lang=zh-TW doctor
+emdashctl --lang=zh-TW smoke
+emdashctl --lang=zh-TW logs app -f
+emdashctl --lang=zh-TW backup
+emdashctl --lang=zh-TW restore /path/to/backup.tar.gz
 ```

@@ -28,7 +28,7 @@ Modo não interativo, SQLite:
 EMDASH_INSTALL_DB_DRIVER=sqlite \
 EMDASH_INSTALL_SESSION_DRIVER=file \
 EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install-emdash.pt.sh --non-interactive --activate
+sudo bash install.sh --lang=pt --non-interactive --activate
 ```
 
 Modo não interativo, PostgreSQL + Redis:
@@ -38,18 +38,18 @@ EMDASH_INSTALL_DB_DRIVER=postgres \
 EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
 EMDASH_INSTALL_SESSION_DRIVER=redis \
 EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install-emdash.pt.sh --non-interactive --activate
+sudo bash install.sh --lang=pt --non-interactive --activate
 ```
 
 Para a documentação completa, consulte a versão em inglês: [README.md](./README.md)
 
-Comandos operacionais com wrapper em português:
+Comandos operacionais com parâmetro de idioma:
 
 ```bash
-emdashctl.pt.sh status
-emdashctl.pt.sh doctor
-emdashctl.pt.sh smoke
-emdashctl.pt.sh logs app -f
-emdashctl.pt.sh backup
-emdashctl.pt.sh restore /path/to/backup.tar.gz
+emdashctl --lang=pt status
+emdashctl --lang=pt doctor
+emdashctl --lang=pt smoke
+emdashctl --lang=pt logs app -f
+emdashctl --lang=pt backup
+emdashctl --lang=pt restore /path/to/backup.tar.gz
 ```

@@ -503,8 +503,8 @@ EOF
 
 install_emdashctl_script() {
 	install -m 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
-	local wrapper
-	for wrapper in \
+	local alias
+	for alias in \
 		emdashctl.en.sh \
 		emdashctl.ja.sh \
 		emdashctl.ko.sh \
@@ -514,9 +514,7 @@ install_emdashctl_script() {
 		emdashctl.zh-CN.sh \
 		emdashctl.zh-TW.sh \
 		emdashctl.pt.sh; do
-		if [[ -f "${SCRIPT_DIR}/${wrapper}" ]]; then
-			install -m 0755 "${SCRIPT_DIR}/${wrapper}" "/usr/local/bin/${wrapper}"
-		fi
+		ln -sfn /usr/local/bin/emdashctl "/usr/local/bin/${alias}"
 	done
 }
 
