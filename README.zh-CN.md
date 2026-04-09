@@ -2,48 +2,11 @@
 
 [English](./README.md) | **简体中文** | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
-EmDash 的交互式 VPS 安装器与运维工具集，支持 Docker/Podman、可选 Caddy HTTPS、备份、恢复和健康检查。
-
-## 这个仓库是做什么的
-
-这个仓库用于把 EmDash 部署到 VPS，并提供安装后的基础运维能力。
-
-适合以下场景：
-
-- 想用交互式安装
-- 想通过环境变量做非交互部署
-- Debian/Ubuntu 上用 Docker
-- EL 系统上用 Podman
-- 需要可选的 Caddy 和 HTTPS
-- 需要备份、恢复、健康检查和基础升级命令
-
-## 主要功能
-
-- 安装脚本：[`install.sh`](./install.sh)
-- 运维 CLI：[`emdashctl`](./emdashctl)
-- Linode 实机测试脚本：[`linode-test.sh`](./linode-test.sh)
-- 宿主机原生安装 Caddy
-- 支持 SQLite / PostgreSQL 18
-- 支持 file-based / Redis session
-- 支持 local / S3-compatible storage
-- 支持多源公网 IP 探测
-- 运行目录默认在 `/data/emdash`
-- 配置目录默认在 `/etc/emdash`
-
-## 支持的平台
-
-| 系统 | 版本 | 运行时 |
-| --- | --- | --- |
-| Debian | 12, 13 | Docker |
-| Ubuntu | 22.04, 24.04 | Docker |
-| EL-like | 8, 9, 10 | Podman |
-
-说明：
-
-- 不支持 SLES family
-- 不支持 Turso / libSQL
+原生 VPS 安装器与运维工具集，使用 Node.js、systemd、可选 Caddy HTTPS、备份、恢复和健康检查。
 
 ## 快速开始
+
+交互式安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-CN
@@ -58,12 +21,72 @@ curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstra
 非交互安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-CN --non-interactive
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=zh-CN --non-interactive --activate
 ```
+
+本地仓库方式：
+
+```bash
+git clone https://github.com/web-casa/EmdashDeploy.git
+cd EmdashDeploy
+chmod +x bootstrap.sh install.sh emdashctl linode-test.sh
+sudo bash install.sh --lang=zh-CN --activate
+```
+
+统一入口：
+
+- `bootstrap.sh --lang=<code>`
+- `install.sh --lang=<code>`
+- `emdashctl --lang=<code>`
+
+## 说明
+
+这个仓库把 EmDash 直接部署到 VPS 宿主机，不再走 Docker/Podman。
+
+适合这些场景：
+
+- 交互式安装
+- 环境变量驱动的非交互安装
+- 原生 Node.js + systemd 部署
+- 可选 Caddy + HTTPS
+- SQLite 或 PostgreSQL 18
+- file session 或 Redis
+- local 或 S3-compatible storage
+- 备份、恢复、健康检查、升级
+
+旧的容器版已经归档到 `docker` 分支，`main` 现在只保留原生部署。
+
+## 支持平台
+
+| 系统 | 版本 | 说明 |
+| --- | --- | --- |
+| Debian | 13 | 原生安装 |
+| Ubuntu | 24.04 | 原生安装 |
+| EL-like | 9, 10 | 原生安装 |
+
+补充：
+
+- Node.js 来自 `NodeSource`
+- PostgreSQL 18 来自 `PGDG`
+- Redis 使用系统包
+- EL10 上如果系统提供的是 `valkey`，安装器会自动适配
+
+## 主要功能
+
+- 安装脚本：[`install.sh`](./install.sh)
+- 运维 CLI：[`emdashctl`](./emdashctl)
+- Linode 实机测试：[`linode-test.sh`](./linode-test.sh)
+- 原生 `systemd` 服务
+- 原生 Caddy
+- SQLite / PostgreSQL 18
+- file / Redis session
+- local / S3-compatible storage
+- S3 backup
+- `status` / `doctor` / `smoke` JSON 输出
 
 ## 非交互示例
 
-SQLite：
+SQLite + local：
 
 ```bash
 EMDASH_INSTALL_DB_DRIVER=sqlite \
@@ -82,117 +105,82 @@ EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
 sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```
 
-## Caddy 与 HTTPS
-
-启用 Caddy 后，安装器会：
-
-- 多源检测公网 IP
-- 校验 DNS
-- 检查 `80/443`
-- 在宿主机安装 Caddy
-- 配置 HTTPS
-
-防火墙说明：
-
-- EL 系统启用 Caddy 时，会自动通过 `firewalld` 放行 `80/tcp` 和 `443/tcp`
-- Debian/Ubuntu 如果启用了 `ufw`，也会自动放行 `80/tcp` 和 `443/tcp`
-
-## GHCR 发布说明
-
-仓库内已经包含 GHCR builder 镜像和默认 app 镜像的发布工作流：
-
-- Workflow: [`publish-ghcr-builder.yml`](./.github/workflows/publish-ghcr-builder.yml)
-- Workflow: [`publish-ghcr-app.yml`](./.github/workflows/publish-ghcr-app.yml)
-- Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
-- builder 镜像：`ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
-- 默认 app 镜像：`ghcr.io/<repository_owner>/emdash-app:starter-sqlite-file-local`
-
-builder 和 app 的区别：
-
-- `builder` 是可复用的构建环境镜像。
-- `app` 是已经构建完成的运行时镜像。
-
-适合使用 `builder` 的场景：
-
-- 你希望 VPS 在本地完成站点构建
-- 你使用 PostgreSQL、Redis 或 S3 兼容存储
-- 你改过模板，或者希望保留完整灵活性
-
-适合使用 `app` 的场景：
-
-- 你希望部署速度最快
-- 你不想在 VPS 上本地构建应用
-- 你使用默认发布配置：`starter + sqlite + file + local`
-
-触发条件：
-
-- `main` 分支上的 `docker/base/Dockerfile` 变更
-- `main` 分支上的 workflow 文件变更
-- 手工 `workflow_dispatch`
-
-使用 GHCR builder 镜像：
+Caddy + HTTPS：
 
 ```bash
-EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install.sh --lang=zh-CN --activate
+EMDASH_INSTALL_USE_CADDY=1 \
+EMDASH_INSTALL_ENABLE_HTTPS=1 \
+EMDASH_INSTALL_DOMAIN=example.com \
+EMDASH_INSTALL_ADMIN_EMAIL=you@example.com \
+sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```
 
-使用预构建 app 镜像：
-
-```bash
-EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install.sh --lang=zh-CN --activate
-```
-
-推荐：
-
-- 通用或自定义部署，优先使用 `APP_BASE_IMAGE`
-- 默认 SQLite/file/local 配置，优先使用 `APP_IMAGE`
-
-注意：
-
-- 想匿名拉取时，需要把 GHCR package 设为 public
-- 私有镜像需要先在 VPS 上登录 `ghcr.io`
-- 默认发布的 app 镜像只覆盖 `starter + sqlite + file + local`
-
-## 实机测试
-
-先准备 `.env`：
-
-```bash
-cp .env.example .env
-```
-
-写入：
-
-```bash
-linode_token=YOUR_TOKEN_HERE
-```
-
-运行：
-
-```bash
-bash linode-test.sh
-```
-
-HTTPS 测试：
-
-```bash
-LINODE_TEST_INSTALL_USE_CADDY=1 \
-LINODE_TEST_INSTALL_ENABLE_HTTPS=1 \
-LINODE_TEST_DOMAIN_PROVIDER=sslip.io \
-bash linode-test.sh
-```
-
-更多测试矩阵见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
-
-运维命令建议直接带语言参数：
+## 常用命令
 
 ```bash
 emdashctl --lang=zh-CN status
 emdashctl --lang=zh-CN doctor
 emdashctl --lang=zh-CN smoke
-emdashctl --lang=zh-CN logs app -f
+emdashctl --lang=zh-CN logs app
 emdashctl --lang=zh-CN backup
 emdashctl --lang=zh-CN restore /path/to/backup.tar.gz
+emdashctl --lang=zh-CN upgrade app
+emdashctl --lang=zh-CN reset-db-password
 ```
+
+## 运维示例
+
+恢复最新备份：
+
+```bash
+latest="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
+emdashctl --lang=zh-CN restore "$latest"
+```
+
+重置 PostgreSQL 密码：
+
+```bash
+emdashctl --lang=zh-CN reset-db-password
+```
+
+执行原生升级：
+
+```bash
+emdashctl --lang=zh-CN upgrade app
+```
+
+## 从 `docker` 分支迁移
+
+如果你之前使用的是容器版：
+
+1. 继续用 Docker/Podman，就留在 `docker` 分支
+2. 想用原生部署，再切到 `main`
+3. 注意运行模型已经变化：
+   - 没有 `compose.yml`
+   - 不需要容器运行时
+   - 应用由 `systemd` 管理
+   - PostgreSQL / Redis / Caddy 都直接安装在宿主机
+4. 迁移前建议先做完整备份
+
+## 已知限制
+
+- `main` 不再提供 Docker/Podman 部署
+- 只支持 Debian 13、Ubuntu 24.04、EL9、EL10
+- 模板、插件和构建期配置变更后仍然需要 `pnpm build`
+- `upgrade` 目前只支持 `app` 和 `caddy-config`
+- 用户自己的脚本、用户 crontab、旧 raw URL 不会自动迁移
+
+## 原生实测范围
+
+- Debian 13
+- Ubuntu 24.04
+- EL9
+- EL10
+- SQLite / PostgreSQL / Redis
+- Caddy + HTTPS
+- S3 storage / S3 backup
+- `backup` / `restore` / `upgrade app` / `reset-db-password`
+
+详细矩阵见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
+
+更多兼容性说明见 [`COMPATIBILITY.md`](./COMPATIBILITY.md)。

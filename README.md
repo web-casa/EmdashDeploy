@@ -241,6 +241,27 @@ What is included:
 
 For S3-compatible storage and backups, the native path now uses Python `boto3` rather than a containerized AWS CLI helper.
 
+## Operator Examples
+
+Restore the latest backup:
+
+```bash
+latest="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
+emdashctl --lang=en restore "$latest"
+```
+
+Rotate the PostgreSQL password:
+
+```bash
+emdashctl --lang=en reset-db-password
+```
+
+Refresh the template, rebuild, and restart:
+
+```bash
+emdashctl --lang=en upgrade app
+```
+
 ## Compatibility
 
 Repository-level language alias files have been removed.
@@ -261,6 +282,34 @@ Not migrated automatically:
 - bookmarked raw GitHub URLs for removed alias files
 
 See [`COMPATIBILITY.md`](./COMPATIBILITY.md).
+
+## Migration from `docker` Branch
+
+If you were using the previous container-based implementation:
+
+1. keep using the `docker` branch if you want Docker/Podman deployment
+2. use `main` only for the native installer
+3. expect a different runtime model:
+   - no `compose.yml`
+   - no container runtime requirement
+   - app managed by `systemd`
+   - services installed directly on the host
+4. review native paths before migrating:
+   - `/etc/emdash/emdash.env`
+   - `/etc/systemd/system/emdash-app.service`
+   - `/data/emdash/app/site`
+5. if you migrate an existing host, take a fresh backup first
+
+The archived container implementation remains on the `docker` branch.
+
+## Known Limits
+
+- `main` no longer provides Docker/Podman deployment
+- supported systems are limited to Debian 13, Ubuntu 24.04, EL9, and EL10
+- PostgreSQL password reset support is for native PostgreSQL installs only
+- `upgrade` currently supports `app` and `caddy-config`
+- user crontabs and arbitrary user scripts are not automatically rewritten during command-interface migration
+- template, plugin, and build-time config changes still require `pnpm build`
 
 ## Tested Native Matrix
 

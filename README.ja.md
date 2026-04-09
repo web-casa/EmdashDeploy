@@ -2,136 +2,134 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | **日本語** | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
-EmDash を VPS に導入するための対話型インストーラー兼運用ツールです。Docker/Podman、任意の Caddy HTTPS、バックアップ、リストア、ヘルスチェックに対応します。
+Node.js と systemd を使って EmDash を VPS に直接導入するためのネイティブ運用ツールです。
+
+## クイックスタート
+
+対話型インストール:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ja
+```
+
+設定ファイルのみ生成:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ja --write-only
+```
+
+非対話インストール:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ja --non-interactive --activate
+```
+
+ローカル checkout:
+
+```bash
+git clone https://github.com/web-casa/EmdashDeploy.git
+cd EmdashDeploy
+chmod +x bootstrap.sh install.sh emdashctl linode-test.sh
+sudo bash install.sh --lang=ja --activate
+```
+
+統一エントリポイント:
+
+- `bootstrap.sh --lang=<code>`
+- `install.sh --lang=<code>`
+- `emdashctl --lang=<code>`
 
 ## 概要
 
-このリポジトリは EmDash を VPS に配置し、導入後の基本運用まで扱えるようにするためのものです。
+このリポジトリは EmDash を VPS ホストにネイティブ配置します。Docker/Podman は `main` では使いません。
 
-主な用途:
+対応する内容:
 
 - 対話型インストール
 - 環境変数による非対話インストール
-- Debian/Ubuntu では Docker
-- EL 系では Podman
-- Caddy と HTTPS の任意有効化
-- バックアップ、リストア、診断
+- Node.js + systemd によるネイティブ運用
+- Caddy + HTTPS
+- SQLite / PostgreSQL 18
+- file session / Redis
+- local / S3-compatible storage
+- backup / restore / health check / upgrade
+
+従来のコンテナ版は `docker` ブランチにアーカイブされています。
+
+## 対応プラットフォーム
+
+| OS | バージョン | 備考 |
+| --- | --- | --- |
+| Debian | 13 | ネイティブ |
+| Ubuntu | 24.04 | ネイティブ |
+| EL-like | 9, 10 | ネイティブ |
+
+補足:
+
+- Node.js は `NodeSource`
+- PostgreSQL 18 は `PGDG`
+- Redis はシステムパッケージ
+- EL10 では `valkey` に自動対応
 
 ## 主な機能
 
 - インストーラー: [`install.sh`](./install.sh)
 - 運用 CLI: [`emdashctl`](./emdashctl)
 - Linode 実機テスト: [`linode-test.sh`](./linode-test.sh)
+- ネイティブ `systemd` サービス
+- ネイティブ Caddy
 - SQLite / PostgreSQL 18
-- file-based / Redis session
+- file / Redis session
 - local / S3-compatible storage
-- `/data/emdash` 配下の標準レイアウト
-- `/etc/emdash` 配下の設定生成
+- S3 backup
 
-## 対応プラットフォーム
-
-| OS | バージョン | ランタイム |
-| --- | --- | --- |
-| Debian | 12, 13 | Docker |
-| Ubuntu | 22.04, 24.04 | Docker |
-| EL-like | 8, 9, 10 | Podman |
-
-非対応:
-
-- SLES family
-- Turso / libSQL
-
-## クイックスタート
+## 非対話インストール例
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ja
+EMDASH_INSTALL_DB_DRIVER=sqlite \
+EMDASH_INSTALL_SESSION_DRIVER=file \
+EMDASH_INSTALL_STORAGE_DRIVER=local \
+sudo bash install.sh --lang=ja --non-interactive --activate
 ```
-
-設定ファイルのみ生成する場合:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=ja --write-only
+EMDASH_INSTALL_DB_DRIVER=postgres \
+EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
+EMDASH_INSTALL_SESSION_DRIVER=redis \
+EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
+sudo bash install.sh --lang=ja --non-interactive --activate
 ```
 
-## GHCR
-
-GHCR builder イメージとデフォルト app イメージ公開用の workflow を同梱しています。
-
-- Workflow: [`publish-ghcr-builder.yml`](./.github/workflows/publish-ghcr-builder.yml)
-- Workflow: [`publish-ghcr-app.yml`](./.github/workflows/publish-ghcr-app.yml)
-- Dockerfile: [`docker/base/Dockerfile`](./docker/base/Dockerfile)
-- builder image: `ghcr.io/<repository_owner>/emdash-builder:node24-bookworm`
-- default app image: `ghcr.io/<repository_owner>/emdash-app:starter-sqlite-file-local`
-
-builder と app の違い:
-
-- `builder` は再利用可能なビルド環境イメージです。
-- `app` はビルド済みのランタイムイメージです。
-
-`builder` を使うべきケース:
-
-- VPS 上でローカルビルドしたい
-- PostgreSQL、Redis、S3 互換ストレージを使う
-- テンプレートを変更した、または柔軟性を優先したい
-
-`app` を使うべきケース:
-
-- 最速でデプロイしたい
-- VPS 上でのローカルビルドを省きたい
-- 公開済みのデフォルト構成 `starter + sqlite + file + local` を使う
-
-利用例:
-
-```bash
-EMDASH_INSTALL_APP_BASE_IMAGE=ghcr.io/<owner>/emdash-builder:node24-bookworm \
-sudo bash install.sh --lang=ja --activate
-```
-
-ビルド済み app イメージの利用例:
-
-```bash
-EMDASH_INSTALL_APP_IMAGE=ghcr.io/<owner>/emdash-app:starter-sqlite-file-local \
-sudo bash install.sh --lang=ja --activate
-```
-
-推奨:
-
-- 汎用またはカスタム構成では `APP_BASE_IMAGE` を優先してください
-- デフォルトの SQLite/file/local 構成では `APP_IMAGE` を優先してください
-
-## HTTPS
-
-Caddy を有効にすると、インストーラーは公開 IP 検出、DNS 検証、`80/443` チェック、Caddy 導入、HTTPS 設定を行います。
-
-EL では `firewalld`、Debian/Ubuntu では有効な `ufw` に対して自動でポート開放を行います。
-
-## 実機テスト
-
-```bash
-cp .env.example .env
-```
-
-`.env` に以下を設定します。
-
-```bash
-linode_token=YOUR_TOKEN_HERE
-```
-
-実行:
-
-```bash
-bash linode-test.sh
-```
-
-より詳細なテスト計画は [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md) を参照してください。
-
-運用コマンドは言語パラメータ付きで使えます:
+## 主な運用コマンド
 
 ```bash
 emdashctl --lang=ja status
 emdashctl --lang=ja doctor
 emdashctl --lang=ja smoke
-emdashctl --lang=ja logs app -f
 emdashctl --lang=ja backup
 emdashctl --lang=ja restore /path/to/backup.tar.gz
+emdashctl --lang=ja upgrade app
+emdashctl --lang=ja reset-db-password
 ```
+
+## `docker` ブランチからの移行
+
+コンテナ版を使い続ける場合は `docker` ブランチを使用してください。  
+`main` はネイティブ版です。
+
+違い:
+
+- `compose.yml` は使いません
+- コンテナランタイムは不要です
+- app は `systemd` で管理されます
+- PostgreSQL / Redis / Caddy はホストに直接入ります
+
+## 既知の制限
+
+- `main` では Docker/Podman デプロイを提供しません
+- 対応 OS は Debian 13、Ubuntu 24.04、EL9、EL10 に限定されます
+- テンプレート、プラグイン、ビルド時設定の変更後は `pnpm build` が必要です
+- `upgrade` は現在 `app` と `caddy-config` のみ対応です
+- ユーザー独自スクリプト、user crontab、削除済み raw URL は自動移行されません
+
+詳細は [`COMPATIBILITY.md`](./COMPATIBILITY.md) と [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md) を参照してください。
