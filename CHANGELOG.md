@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.0-hi.2 - 2026-04-09
+
+Native deployment release for the `HiEmdash` line. `main` now ships the host-based installer and operations flow; the previous container-based implementation remains archived on the `docker` branch.
+
+### Changed
+
+- Switched `main` from Docker/Podman deployment to native Node.js + systemd deployment
+- Standardized installer, bootstrap, and operator entrypoints on `--lang`
+- Rewrote repository documentation and VPS test plan for native deployment
+- Updated upgrade behavior to the native host workflow: template refresh, `pnpm install`, `pnpm build`, and service restart
+
+### Added
+
+- Native install path for Debian 13, Ubuntu 24.04, EL9, and EL10
+- Native `systemd` service generation for `emdash-app`
+- Native package installation via NodeSource, PGDG, and system packages
+- Native Caddy, PostgreSQL, Redis/Valkey, S3 storage, and S3 backup support
+- Native release-prep VPS operator validation for backup, restore, password reset, upgrade, and reboot
+
+### Fixed
+
+- PostgreSQL restore now makes extracted dumps readable to the `postgres` OS user
+- PostgreSQL password reset now updates the role safely and rebuilds the app so baked connection settings stay in sync
+- Native Redis service/path handling on EL9 and EL10
+- Native Caddy installation ordering where package auto-start could block HTTPS validation
+- Native S3 storage and backup flows with `boto3`-based verification
+- Linode native test reliability around SSH host keys and workspace upload
+
+### Validation Summary
+
+Validated with real native VPS testing for:
+
+- Debian 13
+- Ubuntu 24.04
+- EL9
+- EL10
+- SQLite, PostgreSQL, Redis/Valkey
+- Caddy + HTTPS
+- S3-compatible media storage
+- S3 backup
+- `emdashctl backup`, `restore`, `upgrade app`, `reset-db-password`, and reboot/autostart
+
+### Notes
+
+- `main` is native deployment only as of this release.
+- The archived container-based implementation remains available on the `docker` branch.
+
 ## 0.2.0-hi.1 - 2026-04-08
 
 First validated HiEmdash production release for VPS deployment.
