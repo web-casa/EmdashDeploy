@@ -342,6 +342,7 @@ activate_caddy_service() {
 	install -d -m 0755 /var/lib/caddy /var/log/caddy
 	install -d -m 0755 "${CADDY_DIR}"
 	touch /var/log/caddy/emdash-access.log
+	chown -R caddy:caddy /var/lib/caddy /var/log/caddy "${CADDY_DIR}"
 	chown caddy:caddy /var/log/caddy/emdash-access.log
 	if command_exists restorecon; then
 		restorecon -RF /etc/caddy "${CADDY_DIR}" "${CADDYFILE_PATH}" /var/lib/caddy /var/log/caddy >/dev/null 2>&1 || true
