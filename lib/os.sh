@@ -383,7 +383,7 @@ install_backup_schedule() {
 	cat >"${cron_file}" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl backup >> ${LOG_DIR}/backup.log 2>&1
+${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl backup 2>&1 | logger -t emdash-backup
 EOF
 	chmod 0644 "${cron_file}"
 }
