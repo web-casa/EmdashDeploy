@@ -97,6 +97,7 @@ load_env() {
 	APP_ENV_FILE="${APP_ENV_FILE:-${ENV_FILE}}"
 	INSTALL_YAML="${INSTALL_YAML:-/etc/emdash/install.yml}"
 	SITE_DIR="${SITE_DIR:-${ROOT_DIR}/app/site}"
+	TMP_DIR="${TMP_DIR:-${ROOT_DIR}/tmp}"
 	BACKUP_DIR="${BACKUP_DIR:-${ROOT_DIR}/backups}"
 	UPLOADS_DIR="${UPLOADS_DIR:-${ROOT_DIR}/data/uploads}"
 	SESSIONS_DIR="${SESSIONS_DIR:-${ROOT_DIR}/data/sessions}"
@@ -165,6 +166,41 @@ if not updated:
     lines.append(f"{key}={quote(value)}")
 path.write_text("\n".join(lines) + "\n")
 PY
+}
+
+create_site_rollback() {
+	local rollback_dir
+	mkdir -p "${TMP_DIR}"
+	rollback_dir="$(mktemp -d "${TMP_DIR}/emdashctl-site-rollback.XXXXXX")"
+	if [[ -d "${SITE_DIR}" ]]; then
+		mkdir -p "${rollback_dir}/site"
+		cp -a "${SITE_DIR}/." "${rollback_dir}/site/"
+	fi
+	printf '%s\n' "${rollback_dir}"
+}
+
+restore_site_rollback() {
+	local rollback_dir="$1"
+	[[ -d "${rollback_dir}/site" ]] || return 0
+	rm -rf "${SITE_DIR}"
+	mkdir -p "${SITE_DIR}"
+	cp -a "${rollback_dir}/site/." "${SITE_DIR}/"
+	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+}
+
+postgres_alter_password() {
+	local role="$1"
+	local password="$2"
+	local alter_sql
+	alter_sql="$(python3 - "${role}" "${password}" <<'PY'
+import sys
+
+user = sys.argv[1].replace('"', '""')
+password = sys.argv[2].replace("'", "''")
+print(f'ALTER ROLE "{user}" WITH PASSWORD \'{password}\';')
+PY
+)"
+	runuser -u postgres -- psql postgres -c "${alter_sql}" >/dev/null
 }
 
 ensure_template_source_checkout() {
@@ -649,15 +685,33 @@ EOF
 
 upgrade_command() {
 	local target="$1"
+	local rollback_dir
 	case "${target}" in
 	app)
+		rollback_dir="$(create_site_rollback)"
 		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
-		ensure_template_source_checkout
-		sync_template_site_tree
-		refresh_managed_site_files
-		runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
+		if ! {
+			ensure_template_source_checkout &&
+			sync_template_site_tree &&
+			refresh_managed_site_files &&
+			runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
+		}; then
+			warn "Upgrade failed; restoring previous site tree."
+			restore_site_rollback "${rollback_dir}"
+			rm -rf "${rollback_dir}"
+			systemctl start "${APP_SYSTEMD_SERVICE}" || true
+			fail "Application upgrade failed; previous site tree was restored."
+		fi
 		systemctl start "${APP_SYSTEMD_SERVICE}"
-		wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after upgrade"
+		if ! wait_http_ok "$(local_health_url)" 60; then
+			warn "Upgraded app did not become healthy; rolling back site tree."
+			systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+			restore_site_rollback "${rollback_dir}"
+			rm -rf "${rollback_dir}"
+			systemctl start "${APP_SYSTEMD_SERVICE}" || true
+			fail "Application did not become healthy after upgrade; previous site tree was restored."
+		fi
+		rm -rf "${rollback_dir}"
 		;;
 	caddy-config)
 		[[ "${USE_CADDY}" == "1" ]] || fail "caddy is not enabled"
@@ -672,30 +726,60 @@ upgrade_command() {
 
 reset_db_password_command() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
-	local new_password pg_user_encoded pg_password_encoded pg_db_name_encoded alter_sql
+	local new_password old_password pg_user_encoded pg_password_encoded pg_db_name_encoded rollback_dir env_backup db_password_changed="0"
 	new_password="$(openssl rand -hex 16)"
+	old_password="${PG_DB_PASSWORD}"
+	rollback_dir="$(create_site_rollback)"
+	env_backup="${rollback_dir}/emdash.env"
+	cp -a "${APP_ENV_FILE}" "${env_backup}"
 	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
-	alter_sql="$(python3 - "${PG_DB_USER}" "${new_password}" <<'PY'
-import sys
-
-user = sys.argv[1].replace('"', '""')
-password = sys.argv[2].replace("'", "''")
-print(f'ALTER ROLE "{user}" WITH PASSWORD \'{password}\';')
-PY
-)"
-	runuser -u postgres -- psql postgres -c "${alter_sql}" >/dev/null
-	update_env_value "PG_DB_PASSWORD" "${new_password}" "${APP_ENV_FILE}"
+	if ! {
+		postgres_alter_password "${PG_DB_USER}" "${new_password}" &&
+		db_password_changed="1" &&
+		update_env_value "PG_DB_PASSWORD" "${new_password}" "${APP_ENV_FILE}"
+	}; then
+		if [[ "${db_password_changed}" == "1" ]]; then
+			postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
+		fi
+		cp -a "${env_backup}" "${APP_ENV_FILE}" 2>/dev/null || true
+		restore_site_rollback "${rollback_dir}"
+		rm -rf "${rollback_dir}"
+		systemctl start "${APP_SYSTEMD_SERVICE}" || true
+		fail "Failed to update PostgreSQL password."
+	fi
 	pg_user_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_USER}")"
 	pg_password_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${new_password}")"
 	pg_db_name_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_NAME}")"
-	update_env_value "DATABASE_URL" "postgres://${pg_user_encoded}:${pg_password_encoded}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db_name_encoded}" "${APP_ENV_FILE}"
-	# astro.config.mjs is evaluated at build time, so PostgreSQL connection changes
-	# must be rebuilt into the server bundle before restart.
-	render_site_astro_config
-	chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/astro.config.mjs"
-	runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
+	if ! {
+		update_env_value "DATABASE_URL" "postgres://${pg_user_encoded}:${pg_password_encoded}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db_name_encoded}" "${APP_ENV_FILE}" &&
+		render_site_astro_config &&
+		chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/astro.config.mjs" &&
+		runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
+	}; then
+		warn "Password reset rebuild failed; rolling back PostgreSQL password and app files."
+		if [[ "${db_password_changed}" == "1" ]]; then
+			postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
+		fi
+		cp -a "${env_backup}" "${APP_ENV_FILE}" 2>/dev/null || true
+		restore_site_rollback "${rollback_dir}"
+		rm -rf "${rollback_dir}"
+		systemctl start "${APP_SYSTEMD_SERVICE}" || true
+		fail "Password reset failed; previous password and app files were restored."
+	fi
 	systemctl start "${APP_SYSTEMD_SERVICE}"
-	wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after password reset"
+	if ! wait_http_ok "$(local_health_url)" 60; then
+		warn "Application did not become healthy after password reset; rolling back."
+		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+		if [[ "${db_password_changed}" == "1" ]]; then
+			postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
+		fi
+		cp -a "${env_backup}" "${APP_ENV_FILE}" 2>/dev/null || true
+		restore_site_rollback "${rollback_dir}"
+		rm -rf "${rollback_dir}"
+		systemctl start "${APP_SYSTEMD_SERVICE}" || true
+		fail "Application did not become healthy after password reset; previous password and app files were restored."
+	fi
+	rm -rf "${rollback_dir}"
 	printf '%s\n' "${new_password}"
 }
 

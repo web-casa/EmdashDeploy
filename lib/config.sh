@@ -192,6 +192,10 @@ validate_config() {
 	BACKUP_ENABLED="$(normalize_bool "${BACKUP_ENABLED}")"
 	OPTIMIZATION_ENABLED="$(normalize_bool "${OPTIMIZATION_ENABLED}")"
 
+	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
+		validate_cron_schedule "${BACKUP_SCHEDULE}"
+	fi
+
 	if [[ "${DB_DRIVER}" == "postgres" && -z "${PG_DB_PASSWORD}" ]]; then
 		PG_DB_PASSWORD="$(random_hex 16)"
 		warn "未提供 PostgreSQL 密码，已自动生成。"
@@ -227,4 +231,15 @@ validate_config() {
 		[[ -n "${BACKUP_S3_SECRET_ACCESS_KEY}" ]] || fail "S3 备份必须提供 secret key。"
 	fi
 	return 0
+}
+
+validate_cron_schedule() {
+	local schedule="$1"
+	local field1 field2 field3 field4 field5 extra field
+	[[ "${schedule}" != *$'\n'* && "${schedule}" != *$'\r'* ]] || fail "备份 cron 不能包含换行。"
+	read -r field1 field2 field3 field4 field5 extra <<<"${schedule}"
+	[[ -n "${field1}" && -n "${field2}" && -n "${field3}" && -n "${field4}" && -n "${field5}" && -z "${extra:-}" ]] || fail "备份 cron 必须是 5 个字段。"
+	for field in "${field1}" "${field2}" "${field3}" "${field4}" "${field5}"; do
+		[[ "${field}" =~ ^[A-Za-z0-9*/,-]+$ ]] || fail "备份 cron 包含不支持的字段: ${field}"
+	done
 }

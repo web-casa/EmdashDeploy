@@ -595,6 +595,38 @@ build_site() {
 	runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
 }
 
+create_site_rollback() {
+	local rollback_dir
+	install -d -m 0755 "${TMP_DIR}"
+	rollback_dir="$(mktemp -d "${TMP_DIR}/site-rollback.XXXXXX")"
+	if [[ -d "${SITE_DIR}" ]]; then
+		mkdir -p "${rollback_dir}/site"
+		cp -a "${SITE_DIR}/." "${rollback_dir}/site/"
+	fi
+	printf '%s\n' "${rollback_dir}"
+}
+
+restore_site_rollback() {
+	local rollback_dir="$1"
+	[[ -d "${rollback_dir}/site" ]] || return 0
+	rm -rf "${SITE_DIR}"
+	mkdir -p "${SITE_DIR}"
+	cp -a "${rollback_dir}/site/." "${SITE_DIR}/"
+	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+}
+
+build_site_with_rollback() {
+	local rollback_dir
+	rollback_dir="$(create_site_rollback)"
+	if ! build_site; then
+		warn "构建失败，正在恢复上一个站点目录。"
+		restore_site_rollback "${rollback_dir}"
+		rm -rf "${rollback_dir}"
+		return 1
+	fi
+	rm -rf "${rollback_dir}"
+}
+
 start_stack() {
 	log "启动 EmDash 原生服务"
 	systemctl daemon-reload
@@ -608,7 +640,10 @@ start_stack() {
 		systemctl enable "${REDIS_SERVICE}" >/dev/null
 		systemctl restart "${REDIS_SERVICE}"
 	fi
-	build_site
+	if ! build_site_with_rollback; then
+		systemctl start "${APP_SYSTEMD_SERVICE}" || true
+		return 1
+	fi
 	systemctl enable "${APP_SYSTEMD_SERVICE}" >/dev/null
 	systemctl restart "${APP_SYSTEMD_SERVICE}"
 }
