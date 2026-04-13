@@ -160,14 +160,42 @@ EOF
 			dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
 			dnf -y install "postgresql${PG_VERSION}-server" "postgresql${PG_VERSION}"
 		fi
-		if [[ ! -f "/var/lib/pgsql/${PG_VERSION}/data/PG_VERSION" ]]; then
-			"/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup" initdb
-		fi
 		POSTGRES_SERVICE="postgresql-${PG_VERSION}"
+		init_postgres_el_datadir
 	fi
 
 	systemctl enable --now "${POSTGRES_SERVICE}"
 	configure_postgres_local
+}
+
+init_postgres_el_datadir() {
+	local data_dir="/var/lib/pgsql/${PG_VERSION}/data"
+	local setup_cmd=""
+	local initdb_cmd=""
+
+	[[ -f "${data_dir}/PG_VERSION" ]] && return 0
+
+	for setup_cmd in \
+		"/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup" \
+		"/usr/bin/postgresql-${PG_VERSION}-setup" \
+		"/usr/libexec/postgresql-${PG_VERSION}-setup"; do
+		if [[ -x "${setup_cmd}" ]]; then
+			"${setup_cmd}" initdb
+			return
+		fi
+	done
+
+	for initdb_cmd in \
+		"/usr/pgsql-${PG_VERSION}/bin/initdb" \
+		"/usr/bin/initdb"; do
+		if [[ -x "${initdb_cmd}" ]]; then
+			install -d -m 0700 -o postgres -g postgres "${data_dir}"
+			runuser -u postgres -- "${initdb_cmd}" -D "${data_dir}"
+			return
+		fi
+	done
+
+	fail "未找到 PostgreSQL ${PG_VERSION} 初始化命令。"
 }
 
 configure_postgres_local() {
