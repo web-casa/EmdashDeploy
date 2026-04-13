@@ -372,13 +372,13 @@ activate_caddy_service() {
 	install -d -m 0755 "${CADDY_DIR}"
 	chown -R caddy:caddy /var/lib/caddy "${CADDY_DIR}"
 	if command_exists restorecon; then
-		restorecon -RF /etc/caddy "${CADDY_DIR}" "${CADDYFILE_PATH}" /var/lib/caddy >/dev/null 2>&1 || true
+		restorecon -RF /etc/caddy "${CADDY_DIR}" "${CADDYFILE_PATH}" "${SYSTEM_CADDYFILE}" /var/lib/caddy >/dev/null 2>&1 || true
 	fi
-	if [[ -e /etc/caddy/Caddyfile && ! -L /etc/caddy/Caddyfile ]]; then
-		cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.emdash.bak.$(date +%Y%m%d-%H%M%S)"
+	if [[ -e "${SYSTEM_CADDYFILE}" && ! -L "${SYSTEM_CADDYFILE}" ]]; then
+		cp -a "${SYSTEM_CADDYFILE}" "${SYSTEM_CADDYFILE}.emdash.bak.$(date +%Y%m%d-%H%M%S)"
 	fi
-	ln -sfn "${CADDYFILE_PATH}" /etc/caddy/Caddyfile
-	caddy validate --config /etc/caddy/Caddyfile
+	ln -sfn "${CADDYFILE_PATH}" "${SYSTEM_CADDYFILE}"
+	caddy validate --config "${SYSTEM_CADDYFILE}"
 	systemctl enable caddy >/dev/null
 	systemctl restart caddy
 }
@@ -409,13 +409,12 @@ open_required_firewall_ports() {
 
 install_backup_schedule() {
 	[[ "${BACKUP_ENABLED}" == "1" ]] || return 0
-	local cron_file="/etc/cron.d/emdash-backup"
-	cat >"${cron_file}" <<EOF
+	cat >"${BACKUP_CRON_FILE}" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl backup 2>&1 | logger -t emdash-backup
 EOF
-	chmod 0644 "${cron_file}"
+	chmod 0644 "${BACKUP_CRON_FILE}"
 }
 
 install_runtime_stack() {

@@ -14,6 +14,7 @@ init_defaults() {
 	TIMEZONE="$(default_timezone_for_lang)"
 	DOMAIN=""
 	ADMIN_EMAIL=""
+	FORCE_SYNC_TEMPLATE="0"
 	USE_CADDY="1"
 	ENABLE_HTTPS="1"
 
@@ -63,6 +64,7 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_INSTALL_ROOT_DIR:-}" ]] && ROOT_DIR="${EMDASH_INSTALL_ROOT_DIR}"
 	[[ -n "${EMDASH_INSTALL_DOMAIN:-}" ]] && DOMAIN="${EMDASH_INSTALL_DOMAIN}"
 	[[ -n "${EMDASH_INSTALL_ADMIN_EMAIL:-}" ]] && ADMIN_EMAIL="${EMDASH_INSTALL_ADMIN_EMAIL}"
+	[[ -n "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE:-}" ]] && FORCE_SYNC_TEMPLATE="$(normalize_bool "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE}")"
 	[[ -n "${EMDASH_INSTALL_DB_DRIVER:-}" ]] && DB_DRIVER="${EMDASH_INSTALL_DB_DRIVER}"
 	[[ -n "${EMDASH_INSTALL_SESSION_DRIVER:-}" ]] && SESSION_DRIVER="${EMDASH_INSTALL_SESSION_DRIVER}"
 	[[ -n "${EMDASH_INSTALL_STORAGE_DRIVER:-}" ]] && STORAGE_DRIVER="${EMDASH_INSTALL_STORAGE_DRIVER}"
@@ -100,6 +102,7 @@ derive_paths() {
 	TMP_DIR="${ROOT_DIR}/tmp"
 	CADDY_DIR="${CONFIG_DIR}/caddy"
 	CADDYFILE_PATH="${CADDY_DIR}/Caddyfile"
+	SYSTEM_CADDYFILE="/etc/caddy/Caddyfile"
 	TEMPLATE_SOURCE_DIR="${APP_DIR}/template-source"
 	SQLITE_DIR="${DATA_DIR}/sqlite"
 	SQLITE_PATH="${SQLITE_DIR}/data.db"
@@ -108,6 +111,7 @@ derive_paths() {
 	POSTGRES_DIR="${DATA_DIR}/postgres"
 	REDIS_DIR="${DATA_DIR}/redis"
 	SCRIPTS_DIR="${ROOT_DIR}/scripts"
+	BACKUP_CRON_FILE="/etc/cron.d/emdash-backup"
 	APP_PORT="3000"
 	APP_BIND_HOST="127.0.0.1"
 	APP_SYSTEMD_SERVICE="emdash-app"
@@ -119,8 +123,11 @@ derive_paths() {
 	APP_RUN_USER="emdash"
 	APP_RUN_GROUP="emdash"
 	APP_NODE_MAX_OLD_SPACE_SIZE="1536"
-	APP_BUILD_SCRIPT="${SITE_DIR}/emdash-build.sh"
-	APP_START_SCRIPT="${SITE_DIR}/emdash-start.sh"
+	APP_BUILD_SCRIPT="${SCRIPTS_DIR}/emdash-build.sh"
+	APP_START_SCRIPT="${SCRIPTS_DIR}/emdash-start.sh"
+	SITE_SYNC_MODE="sync"
+	ACTIVATION_ROLLBACK_ACTIVE="0"
+	ACTIVATION_ROLLBACK_DIR=""
 	POSTGRES_HOST="127.0.0.1"
 	POSTGRES_PORT="5432"
 	REDIS_HOST="127.0.0.1"
@@ -142,6 +149,22 @@ read_existing_env_value() {
 		set +a
 		printf '%s' "${!key-}"
 	)
+}
+
+read_install_yaml_section_value() {
+	local section="$1"
+	local key="$2"
+	[[ -f "${INSTALL_YAML:-}" ]] || return 0
+
+	awk -v section="${section}" -v key="${key}" '
+		$0 == section ":" { in_section=1; next }
+		in_section && $0 !~ /^ / { in_section=0 }
+		in_section && $0 ~ ("^  " key ": ") {
+			sub("^  " key ": ", "", $0)
+			print
+			exit
+		}
+	' "${INSTALL_YAML}"
 }
 
 load_existing_install_state() {

@@ -40,11 +40,7 @@ clone_template_repo() {
 		log "拉取 EmDash 模板 ${TEMPLATE}"
 		git clone --depth 1 --branch "${TEMPLATES_REF}" "${TEMPLATES_REPO}" "${TEMPLATE_SOURCE_DIR}"
 	fi
-	if [[ -f "${SITE_DIR}/package.json" ]]; then
-		log "检测到现有 EmDash 模板目录，跳过同步"
-		return
-	fi
-	sync_template_into_site
+	prepare_site_directory
 }
 
 sync_template_into_site() {
@@ -55,7 +51,71 @@ sync_template_into_site() {
 	cp -a "${template_path}/." "${SITE_DIR}/"
 }
 
+prepare_site_directory() {
+	if [[ "${FORCE_SYNC_TEMPLATE}" == "1" ]]; then
+		log "已启用模板强制同步，覆盖现有站点源码"
+		sync_template_into_site
+		SITE_SYNC_MODE="sync"
+		return
+	fi
+
+	if [[ ! -f "${SITE_DIR}/package.json" ]]; then
+		sync_template_into_site
+		SITE_SYNC_MODE="sync"
+		return
+	fi
+
+	SITE_SYNC_MODE="preserve"
+
+	local existing_template=""
+	local existing_db_driver=""
+	local existing_session_driver=""
+	local existing_storage_driver=""
+	existing_template="$(read_install_yaml_section_value project template || true)"
+	existing_db_driver="$(read_install_yaml_section_value database driver || true)"
+	existing_session_driver="$(read_install_yaml_section_value session driver || true)"
+	existing_storage_driver="$(read_install_yaml_section_value storage driver || true)"
+
+	if [[ -z "${existing_template}" && -f "${APP_ENV_FILE:-}" ]]; then
+		existing_template="$(read_existing_env_value "${APP_ENV_FILE}" TEMPLATE || true)"
+	fi
+	if [[ -z "${existing_db_driver}" && -f "${APP_ENV_FILE:-}" ]]; then
+		existing_db_driver="$(read_existing_env_value "${APP_ENV_FILE}" DB_DRIVER || true)"
+	fi
+	if [[ -z "${existing_session_driver}" && -f "${APP_ENV_FILE:-}" ]]; then
+		existing_session_driver="$(read_existing_env_value "${APP_ENV_FILE}" SESSION_DRIVER || true)"
+	fi
+	if [[ -z "${existing_storage_driver}" && -f "${APP_ENV_FILE:-}" ]]; then
+		existing_storage_driver="$(read_existing_env_value "${APP_ENV_FILE}" STORAGE_DRIVER || true)"
+	fi
+
+	if [[ -z "${existing_template}" && -z "${existing_db_driver}" && -z "${existing_session_driver}" && -z "${existing_storage_driver}" ]]; then
+		fail "检测到现有站点源码，但缺少 install.yml 和 emdash.env 中的现有模板/驱动元数据。为避免混合旧站点与新运行时配置，请先恢复配置文件或设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+	fi
+
+	if [[ -n "${existing_template}" && "${existing_template}" != "${TEMPLATE}" ]]; then
+		fail "检测到现有站点源码使用模板 ${existing_template}，当前请求模板 ${TEMPLATE}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+	fi
+	if [[ -n "${existing_db_driver}" && "${existing_db_driver}" != "${DB_DRIVER}" ]]; then
+		fail "检测到现有站点源码数据库驱动为 ${existing_db_driver}，当前请求为 ${DB_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+	fi
+	if [[ -n "${existing_session_driver}" && "${existing_session_driver}" != "${SESSION_DRIVER}" ]]; then
+		fail "检测到现有站点源码 session 驱动为 ${existing_session_driver}，当前请求为 ${SESSION_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+	fi
+	if [[ -n "${existing_storage_driver}" && "${existing_storage_driver}" != "${STORAGE_DRIVER}" ]]; then
+		fail "检测到现有站点源码存储驱动为 ${existing_storage_driver}，当前请求为 ${STORAGE_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+	fi
+
+	[[ -f "${SITE_DIR}/astro.config.mjs" ]] || fail "检测到现有站点源码，但缺少 astro.config.mjs：${SITE_DIR}/astro.config.mjs"
+	log "检测到现有 EmDash 站点目录，保留当前模板源码"
+}
+
 patch_template_package_json() {
+	if [[ "${SITE_SYNC_MODE:-sync}" != "sync" ]]; then
+		log "保留现有 package.json"
+		return
+	fi
+
 	local redis_snippet='{"ioredis":"^5.7.0"}'
 	local pg_snippet='{"pg":"^8.16.3"}'
 	local s3_snippet='{"@aws-sdk/client-s3":"^3.879.0","@aws-sdk/s3-request-presigner":"^3.879.0"}'
@@ -89,105 +149,161 @@ PY
 }
 
 render_astro_config() {
-	local session_block=""
-	local session_import=""
-	local storage_block=""
-	local db_import=""
-	local db_block=""
-	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
-		session_import='import { defineConfig, fontProviders, sessionDrivers } from "astro/config";'
-		session_block='	session: {
-		driver: sessionDrivers.redis({
-			url: process.env.REDIS_URL,
-		}),
-	},
-'
-	else
-		session_import='import { defineConfig, fontProviders } from "astro/config";'
+	if [[ "${SITE_SYNC_MODE:-sync}" != "sync" ]]; then
+		log "保留现有 astro.config.mjs，运行时通过 EMDASH_SITE_URL/SITE_URL 提供 public origin"
+		return
 	fi
 
-	if [[ "${STORAGE_DRIVER}" == "s3" ]]; then
-		storage_block='storage: s3({
-				endpoint: process.env.S3_ENDPOINT,
-				region: process.env.S3_REGION,
-				bucket: process.env.S3_BUCKET,
-				accessKeyId: process.env.S3_ACCESS_KEY_ID,
-				secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-				publicUrl: process.env.S3_PUBLIC_URL || undefined,
-			}),'
-	else
-		storage_block='storage: local({
-				directory: process.env.UPLOADS_DIR,
-				baseUrl: "/_emdash/api/media/file",
-			}),'
-	fi
+	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" python3 <<'PY'
+import os
+import re
+from pathlib import Path
 
-	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		db_import='import { postgres } from "emdash/db";'
-		db_block='database: postgres({
-				host: process.env.POSTGRES_HOST,
-				port: Number(process.env.POSTGRES_PORT || "5432"),
-				database: process.env.PG_DB_NAME,
-				user: process.env.PG_DB_USER,
-				password: process.env.PG_DB_PASSWORD,
-			}),'
-	else
-		db_import='import { sqlite } from "emdash/db";'
-		db_block='database: sqlite({
-				url: `file:${process.env.SQLITE_PATH}`,
-			}),'
-	fi
+site_dir = Path(os.environ["SITE_DIR"])
+path = site_dir / "astro.config.mjs"
+text = path.read_text()
 
-	cat >"${SITE_DIR}/astro.config.mjs" <<EOF
-import node from "@astrojs/node";
-import react from "@astrojs/react";
-${session_import}
-import emdash, { local, s3 } from "emdash/astro";
-${db_import}
+db_driver = os.environ["DB_DRIVER"]
+session_driver = os.environ["SESSION_DRIVER"]
+storage_driver = os.environ["STORAGE_DRIVER"]
 
-export default defineConfig({
-	output: "server",
-	adapter: node({
-		mode: "standalone",
-	}),
-${session_block}	image: {
-		layout: "constrained",
-		responsiveStyles: true,
-	},
-	fonts: [
-		{
-			provider: fontProviders.google(),
-			name: "Inter",
-			cssVariable: "--font-sans",
-			weights: [400, 500, 600, 700],
-			fallbacks: ["sans-serif"],
-		},
-		{
-			provider: fontProviders.google(),
-			name: "Merriweather",
-			cssVariable: "--font-serif",
-			weights: [400, 700],
-			fallbacks: ["serif"],
-		},
-		{
-			provider: fontProviders.google(),
-			name: "JetBrains Mono",
-			cssVariable: "--font-mono",
-			weights: [400, 500],
-			fallbacks: ["monospace"],
-		},
-	],
-	integrations: [
-		react(),
-		emdash({
-			siteUrl: process.env.EMDASH_SITE_URL || process.env.SITE_URL || undefined,
-			${db_block}
-			${storage_block}
-		}),
-	],
-	devToolbar: { enabled: false },
-});
-EOF
+
+def update_named_import(source: str, module: str, required: list[str]) -> str:
+    pattern = rf'import\s*\{{\s*([^}}]*)\s*\}}\s*from\s*"{re.escape(module)}";'
+    match = re.search(pattern, source)
+    if not match:
+        raise SystemExit(f"missing import for {module} in {path}")
+    names = [item.strip() for item in match.group(1).split(",") if item.strip()]
+    merged: list[str] = []
+    for name in names + required:
+        if name not in merged:
+            merged.append(name)
+    if module == "astro/config" and session_driver != "redis":
+        merged = [name for name in merged if name != "sessionDrivers"]
+    replacement = f'import {{ {", ".join(merged)} }} from "{module}";'
+    return source[:match.start()] + replacement + source[match.end():]
+
+
+def update_emdash_import(source: str) -> str:
+    pattern = r'import\s+emdash,\s*\{\s*([^}]*)\s*\}\s*from\s*"emdash/astro";'
+    match = re.search(pattern, source)
+    if not match:
+        raise SystemExit(f'missing emdash/astro import in {path}')
+    names = [item.strip() for item in match.group(1).split(",") if item.strip()]
+    required = ["local"]
+    if storage_driver == "s3":
+        required.append("s3")
+    merged: list[str] = []
+    for name in names + required:
+        if name not in merged:
+            merged.append(name)
+    replacement = f'import emdash, {{ {", ".join(merged)} }} from "emdash/astro";'
+    return source[:match.start()] + replacement + source[match.end():]
+
+
+def update_db_import(source: str) -> str:
+    required = "postgres" if db_driver == "postgres" else "sqlite"
+    pattern = r'import\s*\{\s*([^}]*)\s*\}\s*from\s*"emdash/db";'
+    match = re.search(pattern, source)
+    if not match:
+        raise SystemExit(f'missing emdash/db import in {path}')
+    replacement = f'import {{ {required} }} from "emdash/db";'
+    return source[:match.start()] + replacement + source[match.end():]
+
+
+def replace_session_block(source: str) -> str:
+    source = re.sub(
+        r'\n\tsession:\s*\{\n\t\tdriver: sessionDrivers\.redis\(\{\n\t\t\turl: process\.env\.REDIS_URL,\n\t\t\}\),\n\t\},\n',
+        '\n',
+        source,
+        count=1,
+    )
+    if session_driver != "redis":
+        return source
+    adapter_block = '\tadapter: node({\n\t\tmode: "standalone",\n\t}),\n'
+    session_block = (
+        '\tsession: {\n'
+        '\t\tdriver: sessionDrivers.redis({\n'
+        '\t\t\turl: process.env.REDIS_URL,\n'
+        '\t\t}),\n'
+        '\t},\n'
+    )
+    if adapter_block not in source:
+        raise SystemExit(f'cannot find adapter block in {path}')
+    return source.replace(adapter_block, adapter_block + session_block, 1)
+
+
+def replace_emdash_block(source: str) -> str:
+    pattern = r'emdash\(\{\n(?P<body>[\s\S]*?)\n\t\t\}\)'
+    match = re.search(pattern, source)
+    if not match:
+        raise SystemExit(f'cannot find emdash config block in {path}')
+    body = match.group("body")
+    body = re.sub(r'^\t\t\tsiteUrl:.*\n', '', body, flags=re.MULTILINE)
+    body = re.sub(
+        r'^\t\t\tdatabase:\s*(?:sqlite|postgres)\(\{[\s\S]*?\n\t\t\t\}\),\n?',
+        '',
+        body,
+        flags=re.MULTILINE,
+    )
+    body = re.sub(
+        r'^\t\t\tstorage:\s*(?:local|s3)\(\{[\s\S]*?\n\t\t\t\}\),\n?',
+        '',
+        body,
+        flags=re.MULTILINE,
+    )
+    body = body.lstrip("\n")
+
+    if db_driver == "postgres":
+        db_block = (
+            '\t\t\tdatabase: postgres({\n'
+            '\t\t\t\thost: process.env.POSTGRES_HOST,\n'
+            '\t\t\t\tport: Number(process.env.POSTGRES_PORT || "5432"),\n'
+            '\t\t\t\tdatabase: process.env.PG_DB_NAME,\n'
+            '\t\t\t\tuser: process.env.PG_DB_USER,\n'
+            '\t\t\t\tpassword: process.env.PG_DB_PASSWORD,\n'
+            '\t\t\t}),\n'
+        )
+    else:
+        db_block = (
+            '\t\t\tdatabase: sqlite({\n'
+            '\t\t\t\turl: `file:${process.env.SQLITE_PATH}`,\n'
+            '\t\t\t}),\n'
+        )
+
+    if storage_driver == "s3":
+        storage_block = (
+            '\t\t\tstorage: s3({\n'
+            '\t\t\t\tendpoint: process.env.S3_ENDPOINT,\n'
+            '\t\t\t\tregion: process.env.S3_REGION,\n'
+            '\t\t\t\tbucket: process.env.S3_BUCKET,\n'
+            '\t\t\t\taccessKeyId: process.env.S3_ACCESS_KEY_ID,\n'
+            '\t\t\t\tsecretAccessKey: process.env.S3_SECRET_ACCESS_KEY,\n'
+            '\t\t\t\tpublicUrl: process.env.S3_PUBLIC_URL || undefined,\n'
+            '\t\t\t}),\n'
+        )
+    else:
+        storage_block = (
+            '\t\t\tstorage: local({\n'
+            '\t\t\t\tdirectory: process.env.UPLOADS_DIR,\n'
+            '\t\t\t\tbaseUrl: "/_emdash/api/media/file",\n'
+            '\t\t\t}),\n'
+        )
+
+    site_url_line = '\t\t\tsiteUrl: process.env.EMDASH_SITE_URL || process.env.SITE_URL || undefined,\n'
+    new_body = site_url_line + db_block + storage_block + body
+    replacement = f'emdash({{\n{new_body}\n\t\t}})'
+    return source[:match.start()] + replacement + source[match.end():]
+
+
+text = update_named_import(text, "astro/config", ["defineConfig"] + (["sessionDrivers"] if session_driver == "redis" else []))
+text = update_emdash_import(text)
+text = update_db_import(text)
+text = replace_session_block(text)
+text = replace_emdash_block(text)
+
+path.write_text(text)
+PY
 }
 
 render_app_scripts() {
@@ -232,6 +348,11 @@ EOF
 }
 
 render_health_endpoint() {
+	if [[ "${SITE_SYNC_MODE:-sync}" != "sync" ]]; then
+		log "保留现有 healthz 路由实现"
+		return
+	fi
+
 	ensure_dir "${SITE_DIR}/src/pages"
 	cat >"${SITE_DIR}/src/pages/healthz.ts" <<'EOF'
 export const GET = () => {
@@ -629,16 +750,128 @@ create_site_rollback() {
 		mkdir -p "${rollback_dir}/site"
 		cp -a "${SITE_DIR}/." "${rollback_dir}/site/"
 	fi
+	if [[ -d "${SCRIPTS_DIR}" ]]; then
+		mkdir -p "${rollback_dir}/scripts"
+		cp -a "${SCRIPTS_DIR}/." "${rollback_dir}/scripts/"
+	fi
 	printf '%s\n' "${rollback_dir}"
+}
+
+backup_managed_file() {
+	local source_path="$1"
+	local backup_dir="$2"
+	mkdir -p "${backup_dir}"
+	if [[ -f "${source_path}" ]]; then
+		cp -a "${source_path}" "${backup_dir}/content"
+	else
+		: >"${backup_dir}/missing"
+	fi
+}
+
+restore_managed_file() {
+	local backup_dir="$1"
+	local target_path="$2"
+	if [[ -f "${backup_dir}/content" ]]; then
+		mkdir -p "$(dirname "${target_path}")"
+		cp -a "${backup_dir}/content" "${target_path}"
+		return
+	fi
+	if [[ -f "${backup_dir}/missing" ]]; then
+		rm -f "${target_path}"
+	fi
+}
+
+backup_service_state() {
+	local service_name="$1"
+	local backup_dir="$2"
+	mkdir -p "${backup_dir}"
+	{
+		if command -v systemctl >/dev/null 2>&1; then
+			printf 'enabled=%s\n' "$(systemctl is-enabled "${service_name}" 2>/dev/null || printf 'unknown')"
+			printf 'active=%s\n' "$(systemctl is-active "${service_name}" 2>/dev/null || printf 'unknown')"
+		else
+			printf 'enabled=unknown\n'
+			printf 'active=unknown\n'
+		fi
+	} >"${backup_dir}/state"
+}
+
+restore_service_state() {
+	local service_name="$1"
+	local backup_dir="$2"
+	local enabled_state=""
+	local active_state=""
+	[[ -f "${backup_dir}/state" ]] || return 0
+	command -v systemctl >/dev/null 2>&1 || return 0
+
+	enabled_state="$(awk -F= '$1=="enabled" {print $2}' "${backup_dir}/state")"
+	active_state="$(awk -F= '$1=="active" {print $2}' "${backup_dir}/state")"
+
+	case "${enabled_state}" in
+	enabled) systemctl enable "${service_name}" >/dev/null 2>&1 || true ;;
+	disabled) systemctl disable "${service_name}" >/dev/null 2>&1 || true ;;
+	masked) systemctl mask "${service_name}" >/dev/null 2>&1 || true ;;
+	esac
+
+	case "${active_state}" in
+	active | activating | reloading) systemctl restart "${service_name}" >/dev/null 2>&1 || true ;;
+	inactive | failed | deactivating) systemctl stop "${service_name}" >/dev/null 2>&1 || true ;;
+	esac
 }
 
 restore_site_rollback() {
 	local rollback_dir="$1"
-	[[ -d "${rollback_dir}/site" ]] || return 0
-	rm -rf "${SITE_DIR}"
-	mkdir -p "${SITE_DIR}"
-	cp -a "${rollback_dir}/site/." "${SITE_DIR}/"
-	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+	if [[ -d "${rollback_dir}/site" ]]; then
+		rm -rf "${SITE_DIR}"
+		mkdir -p "${SITE_DIR}"
+		cp -a "${rollback_dir}/site/." "${SITE_DIR}/"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+	fi
+	if [[ -d "${rollback_dir}/scripts" ]]; then
+		rm -rf "${SCRIPTS_DIR}"
+		mkdir -p "${SCRIPTS_DIR}"
+		cp -a "${rollback_dir}/scripts/." "${SCRIPTS_DIR}/"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}"
+	fi
+}
+
+create_activation_rollback() {
+	local rollback_dir
+	rollback_dir="$(create_site_rollback)"
+	backup_managed_file "${APP_ENV_FILE}" "${rollback_dir}/app-env"
+	backup_managed_file "${APP_SYSTEMD_UNIT}" "${rollback_dir}/systemd-unit"
+	backup_managed_file "${INSTALL_YAML}" "${rollback_dir}/install-yaml"
+	if [[ "${USE_CADDY}" == "1" ]]; then
+		backup_managed_file "${CADDYFILE_PATH}" "${rollback_dir}/managed-caddyfile"
+		backup_managed_file "${SYSTEM_CADDYFILE}" "${rollback_dir}/system-caddyfile"
+		backup_service_state "caddy" "${rollback_dir}/caddy-service"
+	fi
+	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
+		backup_managed_file "${BACKUP_CRON_FILE}" "${rollback_dir}/backup-cron"
+	fi
+	printf '%s\n' "${rollback_dir}"
+}
+
+restore_activation_rollback() {
+	local rollback_dir="$1"
+	restore_site_rollback "${rollback_dir}"
+	restore_managed_file "${rollback_dir}/app-env" "${APP_ENV_FILE}"
+	restore_managed_file "${rollback_dir}/systemd-unit" "${APP_SYSTEMD_UNIT}"
+	restore_managed_file "${rollback_dir}/install-yaml" "${INSTALL_YAML}"
+	if [[ "${USE_CADDY}" == "1" ]]; then
+		restore_managed_file "${rollback_dir}/managed-caddyfile" "${CADDYFILE_PATH}"
+		restore_managed_file "${rollback_dir}/system-caddyfile" "${SYSTEM_CADDYFILE}"
+		restore_service_state "caddy" "${rollback_dir}/caddy-service"
+	fi
+	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
+		restore_managed_file "${rollback_dir}/backup-cron" "${BACKUP_CRON_FILE}"
+	fi
+}
+
+clear_activation_rollback() {
+	local rollback_dir="$1"
+	[[ -n "${rollback_dir}" ]] || return 0
+	rm -rf "${rollback_dir}"
 }
 
 build_site_with_rollback() {

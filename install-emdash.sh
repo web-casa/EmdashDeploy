@@ -245,6 +245,39 @@ except Exception:
 PY
 }
 
+prepare_activation_rollback() {
+	if [[ "${WRITE_ONLY}" == "1" || "${ACTIVATE_STACK}" != "1" ]]; then
+		return 0
+	fi
+	ACTIVATION_ROLLBACK_DIR="$(create_activation_rollback)"
+	ACTIVATION_ROLLBACK_ACTIVE="1"
+}
+
+cleanup_activation_rollback() {
+	if [[ "${ACTIVATION_ROLLBACK_ACTIVE:-0}" != "1" ]]; then
+		return 0
+	fi
+	clear_activation_rollback "${ACTIVATION_ROLLBACK_DIR:-}"
+	ACTIVATION_ROLLBACK_ACTIVE="0"
+	ACTIVATION_ROLLBACK_DIR=""
+}
+
+activation_rollback_on_exit() {
+	local exit_code="$1"
+	if [[ "${exit_code}" -eq 0 || "${ACTIVATION_ROLLBACK_ACTIVE:-0}" != "1" || -z "${ACTIVATION_ROLLBACK_DIR:-}" ]]; then
+		return 0
+	fi
+
+	warn "安装失败，正在恢复安装前的站点与运行时配置。"
+	restore_activation_rollback "${ACTIVATION_ROLLBACK_DIR}" || true
+	if [[ "${WRITE_ONLY}" != "1" ]]; then
+		systemctl daemon-reload >/dev/null 2>&1 || true
+		systemctl start "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+	fi
+	cleanup_activation_rollback || true
+	return 0
+}
+
 main() {
 	detect_install_lang
 	parse_args "$@"
@@ -254,6 +287,7 @@ main() {
 	detect_os_family
 	collect_configuration
 	derive_paths
+	trap 'activation_rollback_on_exit "$?"' EXIT
 	load_existing_install_state
 	validate_config
 
@@ -286,6 +320,7 @@ main() {
 	fi
 
 	prepare_layout
+	prepare_activation_rollback
 	clone_template_repo
 	patch_template_package_json
 	render_astro_config
@@ -318,6 +353,7 @@ main() {
 			activate_caddy_service
 		fi
 		wait_for_stack_ready || warn "$(ti activate_health_warn)"
+		cleanup_activation_rollback
 		print_setup_guidance
 		print_summary "$(ti summary_generated_started)"
 		exit 0
