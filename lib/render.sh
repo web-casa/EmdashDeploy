@@ -95,7 +95,7 @@ render_astro_config() {
 	local db_import=""
 	local db_block=""
 	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
-		session_import='import { defineConfig, sessionDrivers } from "astro/config";'
+		session_import='import { defineConfig, fontProviders, sessionDrivers } from "astro/config";'
 		session_block='	session: {
 		driver: sessionDrivers.redis({
 			url: process.env.REDIS_URL,
@@ -103,7 +103,7 @@ render_astro_config() {
 	},
 '
 	else
-		session_import='import { defineConfig } from "astro/config";'
+		session_import='import { defineConfig, fontProviders } from "astro/config";'
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "s3" ]]; then
@@ -154,6 +154,29 @@ ${session_block}	image: {
 		layout: "constrained",
 		responsiveStyles: true,
 	},
+	fonts: [
+		{
+			provider: fontProviders.google(),
+			name: "Inter",
+			cssVariable: "--font-sans",
+			weights: [400, 500, 600, 700],
+			fallbacks: ["sans-serif"],
+		},
+		{
+			provider: fontProviders.google(),
+			name: "Merriweather",
+			cssVariable: "--font-serif",
+			weights: [400, 700],
+			fallbacks: ["serif"],
+		},
+		{
+			provider: fontProviders.google(),
+			name: "JetBrains Mono",
+			cssVariable: "--font-mono",
+			weights: [400, 500],
+			fallbacks: ["monospace"],
+		},
+	],
 	integrations: [
 		react(),
 		emdash({

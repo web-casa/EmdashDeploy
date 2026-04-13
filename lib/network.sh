@@ -92,6 +92,19 @@ port_in_use() {
 	ss -ltn "( sport = :${port} )" 2>/dev/null | tail -n +2 | grep -q .
 }
 
+port_in_use_by_foreign_process() {
+	local port="$1"
+	local listeners=""
+	listeners="$(ss -ltnp "( sport = :${port} )" 2>/dev/null | tail -n +2 || true)"
+	[[ -n "${listeners}" ]] || return 1
+
+	if systemctl is-active --quiet caddy 2>/dev/null && ! printf '%s\n' "${listeners}" | grep -Fv 'users:(("caddy"' >/dev/null; then
+		return 1
+	fi
+
+	return 0
+}
+
 resolve_record() {
 	local domain="$1"
 	local family="$2"
@@ -117,10 +130,10 @@ validate_domain_requirements() {
 		return
 	fi
 
-	if port_in_use 80; then
+	if port_in_use_by_foreign_process 80; then
 		fail "检测到 80 端口已被占用，无法为 Caddy 提供 HTTP/HTTPS。"
 	fi
-	if port_in_use 443; then
+	if port_in_use_by_foreign_process 443; then
 		fail "检测到 443 端口已被占用，无法为 Caddy 提供 HTTP/HTTPS。"
 	fi
 

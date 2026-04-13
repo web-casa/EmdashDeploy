@@ -126,9 +126,49 @@ derive_paths() {
 	REDIS_HOST="127.0.0.1"
 	REDIS_PORT="6379"
 
-	EMDASH_AUTH_SECRET="${EMDASH_AUTH_SECRET:-$(random_hex 32)}"
-	EMDASH_PREVIEW_SECRET="${EMDASH_PREVIEW_SECRET:-$(random_hex 32)}"
+	EMDASH_AUTH_SECRET="${EMDASH_AUTH_SECRET:-}"
+	EMDASH_PREVIEW_SECRET="${EMDASH_PREVIEW_SECRET:-}"
 	refresh_app_public_url
+}
+
+read_existing_env_value() {
+	local env_file="$1"
+	local key="$2"
+	(
+		set +u
+		set -a
+		# shellcheck disable=SC1090
+		. "${env_file}"
+		set +a
+		printf '%s' "${!key-}"
+	)
+}
+
+load_existing_install_state() {
+	[[ -f "${APP_ENV_FILE:-}" ]] || return 0
+
+	local existing_pg_password=""
+	local existing_redis_password=""
+	local existing_auth_secret=""
+	local existing_preview_secret=""
+
+	existing_pg_password="$(read_existing_env_value "${APP_ENV_FILE}" PG_DB_PASSWORD || true)"
+	existing_redis_password="$(read_existing_env_value "${APP_ENV_FILE}" REDIS_PASSWORD || true)"
+	existing_auth_secret="$(read_existing_env_value "${APP_ENV_FILE}" EMDASH_AUTH_SECRET || true)"
+	existing_preview_secret="$(read_existing_env_value "${APP_ENV_FILE}" EMDASH_PREVIEW_SECRET || true)"
+
+	if [[ -z "${EMDASH_INSTALL_PG_PASSWORD:-}" && -z "${PG_DB_PASSWORD}" && -n "${existing_pg_password}" ]]; then
+		PG_DB_PASSWORD="${existing_pg_password}"
+	fi
+	if [[ -z "${EMDASH_INSTALL_REDIS_PASSWORD:-}" && -z "${REDIS_PASSWORD}" && -n "${existing_redis_password}" ]]; then
+		REDIS_PASSWORD="${existing_redis_password}"
+	fi
+	if [[ -z "${EMDASH_AUTH_SECRET:-}" && -n "${existing_auth_secret}" ]]; then
+		EMDASH_AUTH_SECRET="${existing_auth_secret}"
+	fi
+	if [[ -z "${EMDASH_PREVIEW_SECRET:-}" && -n "${existing_preview_secret}" ]]; then
+		EMDASH_PREVIEW_SECRET="${existing_preview_secret}"
+	fi
 }
 
 pick_public_endpoint_host() {
@@ -204,6 +244,12 @@ validate_config() {
 		REDIS_PASSWORD="$(random_hex 16)"
 		warn "未提供 Redis 密码，已自动生成。"
 	fi
+	if [[ -z "${EMDASH_AUTH_SECRET}" ]]; then
+		EMDASH_AUTH_SECRET="$(random_hex 32)"
+	fi
+	if [[ -z "${EMDASH_PREVIEW_SECRET}" ]]; then
+		EMDASH_PREVIEW_SECRET="$(random_hex 32)"
+	fi
 
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
 		[[ "${PG_DB_USER}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "PostgreSQL 用户名仅支持字母、数字和下划线，且必须以字母或下划线开头。"
@@ -237,7 +283,7 @@ validate_cron_schedule() {
 	local schedule="$1"
 	local field1 field2 field3 field4 field5 extra field
 	[[ "${schedule}" != *$'\n'* && "${schedule}" != *$'\r'* ]] || fail "备份 cron 不能包含换行。"
-	read -r field1 field2 field3 field4 field5 extra <<<"${schedule}"
+	IFS=$' \t' read -r field1 field2 field3 field4 field5 extra <<<"${schedule}"
 	[[ -n "${field1}" && -n "${field2}" && -n "${field3}" && -n "${field4}" && -n "${field5}" && -z "${extra:-}" ]] || fail "备份 cron 必须是 5 个字段。"
 	for field in "${field1}" "${field2}" "${field3}" "${field4}" "${field5}"; do
 		[[ "${field}" =~ ^[A-Za-z0-9*/,-]+$ ]] || fail "备份 cron 包含不支持的字段: ${field}"

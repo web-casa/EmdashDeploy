@@ -14,9 +14,11 @@ LINODE_TEST_KEEP="${LINODE_TEST_KEEP:-0}"
 LINODE_TEST_SSH_USER="${LINODE_TEST_SSH_USER:-root}"
 LINODE_TEST_CREATE_TIMEOUT="${LINODE_TEST_CREATE_TIMEOUT:-900}"
 LINODE_TEST_SSH_TIMEOUT="${LINODE_TEST_SSH_TIMEOUT:-600}"
+LINODE_TEST_SSH_COMMAND_RETRIES="${LINODE_TEST_SSH_COMMAND_RETRIES:-4}"
 LINODE_TEST_REMOTE_DIR="${LINODE_TEST_REMOTE_DIR:-/root/emdash-1key}"
 LINODE_TEST_RESULT_FILE="${LINODE_TEST_RESULT_FILE:-${SCRIPT_DIR}/linode-test-result.json}"
 LINODE_TEST_FAILURE_LOG="${LINODE_TEST_FAILURE_LOG:-${SCRIPT_DIR}/linode-test-failure.log}"
+LINODE_TEST_INSTALL_TEMPLATE="${LINODE_TEST_INSTALL_TEMPLATE:-starter}"
 LINODE_TEST_INSTALL_DB_DRIVER="${LINODE_TEST_INSTALL_DB_DRIVER:-sqlite}"
 LINODE_TEST_INSTALL_SESSION_DRIVER="${LINODE_TEST_INSTALL_SESSION_DRIVER:-file}"
 LINODE_TEST_INSTALL_STORAGE_DRIVER="${LINODE_TEST_INSTALL_STORAGE_DRIVER:-local}"
@@ -24,8 +26,6 @@ LINODE_TEST_INSTALL_USE_CADDY="${LINODE_TEST_INSTALL_USE_CADDY:-0}"
 LINODE_TEST_INSTALL_ENABLE_HTTPS="${LINODE_TEST_INSTALL_ENABLE_HTTPS:-0}"
 LINODE_TEST_INSTALL_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-}"
 LINODE_TEST_INSTALL_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-}"
-LINODE_TEST_INSTALL_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-}"
-LINODE_TEST_INSTALL_APP_BASE_IMAGE="${LINODE_TEST_INSTALL_APP_BASE_IMAGE:-}"
 LINODE_TEST_INSTALL_S3_PROVIDER="${LINODE_TEST_INSTALL_S3_PROVIDER:-}"
 LINODE_TEST_INSTALL_S3_ENDPOINT="${LINODE_TEST_INSTALL_S3_ENDPOINT:-}"
 LINODE_TEST_INSTALL_S3_REGION="${LINODE_TEST_INSTALL_S3_REGION:-}"
@@ -33,6 +33,9 @@ LINODE_TEST_INSTALL_S3_BUCKET="${LINODE_TEST_INSTALL_S3_BUCKET:-}"
 LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID="${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID:-}"
 LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY="${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY:-}"
 LINODE_TEST_INSTALL_S3_PUBLIC_URL="${LINODE_TEST_INSTALL_S3_PUBLIC_URL:-}"
+LINODE_TEST_CHECK_PUBLIC_ROUTES="${LINODE_TEST_CHECK_PUBLIC_ROUTES:-1}"
+LINODE_TEST_REPEAT_INSTALL="${LINODE_TEST_REPEAT_INSTALL:-0}"
+LINODE_TEST_KEEP_ON_FAILURE="${LINODE_TEST_KEEP_ON_FAILURE:-1}"
 LINODE_TEST_RUN_BACKUP="${LINODE_TEST_RUN_BACKUP:-0}"
 LINODE_TEST_INSTALL_BACKUP_TARGET="${LINODE_TEST_INSTALL_BACKUP_TARGET:-}"
 LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT="${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT:-}"
@@ -81,9 +84,9 @@ linode-test.sh
   - 从 .env 读取 linode_token
   - 创建一台临时 Linode VPS
   - 推送当前目录安装器到远端
-  - 执行一轮非交互安装和 smoke 测试
-  - 标准 sqlite/file/local 场景默认优先使用 GHCR app image
-  - 其他场景默认优先使用 GHCR builder image
+  - 执行一轮非交互 native 安装和 smoke 测试
+  - 额外检查首页、后台入口、healthz 和 setup API，避免只测健康接口
+  - 可选重复安装，覆盖 git pull/pnpm install/pnpm build 回归路径
   - 默认测试完成后自动销毁实例
 
 常用环境变量:
@@ -91,10 +94,13 @@ linode-test.sh
   LINODE_TEST_REGION_CANDIDATES=us-lax,us-west,us-east
   LINODE_TEST_TYPE=g6-standard-1
   LINODE_TEST_IMAGE=linode/ubuntu24.04
+  LINODE_TEST_INSTALL_TEMPLATE=blog
   LINODE_TEST_INSTALL_DB_DRIVER=postgres
   LINODE_TEST_INSTALL_SESSION_DRIVER=redis
-  LINODE_TEST_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:starter-sqlite-file-local
-  LINODE_TEST_INSTALL_APP_BASE_IMAGE=ghcr.io/web-casa/emdash-builder:node24-bookworm
+  LINODE_TEST_INSTALL_USE_CADDY=1
+  LINODE_TEST_INSTALL_ENABLE_HTTPS=1
+  LINODE_TEST_REPEAT_INSTALL=1
+  LINODE_TEST_KEEP_ON_FAILURE=1
   LINODE_TEST_INSTALL_S3_ENDPOINT=https://s3.example.com
   LINODE_TEST_INSTALL_S3_BUCKET=my-media-bucket
   LINODE_TEST_RUN_BACKUP=1
@@ -103,18 +109,7 @@ EOF
 }
 
 apply_default_image_strategy() {
-	if [[ -n "${LINODE_TEST_INSTALL_APP_IMAGE}" || -n "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}" ]]; then
-		return
-	fi
-
-	if [[ "${LINODE_TEST_INSTALL_DB_DRIVER}" == "sqlite" && "${LINODE_TEST_INSTALL_SESSION_DRIVER}" == "file" && "${LINODE_TEST_INSTALL_STORAGE_DRIVER}" == "local" ]]; then
-		LINODE_TEST_INSTALL_APP_IMAGE="ghcr.io/web-casa/emdash-app:0.2.0-hi.1"
-		log "默认使用 GHCR app image: ${LINODE_TEST_INSTALL_APP_IMAGE}"
-		return
-	fi
-
-	LINODE_TEST_INSTALL_APP_BASE_IMAGE="ghcr.io/web-casa/emdash-builder:0.2.0-hi.1"
-	log "默认使用 GHCR builder image: ${LINODE_TEST_INSTALL_APP_BASE_IMAGE}"
+	:
 }
 
 require_commands() {
@@ -410,16 +405,52 @@ wait_for_ssh() {
 	done
 }
 
+ssh_with_retries() {
+	local description="$1"
+	local command="$2"
+	local attempt=1
+	while (( attempt <= LINODE_TEST_SSH_COMMAND_RETRIES )); do
+		if ssh -i "${SSH_KEY_FILE}" \
+			-o StrictHostKeyChecking=accept-new \
+			-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+			-o GlobalKnownHostsFile=/dev/null \
+			-o ConnectTimeout=10 \
+			"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "${command}"; then
+			return 0
+		fi
+		warn "${description} 失败 (${attempt}/${LINODE_TEST_SSH_COMMAND_RETRIES})，准备重试。"
+		sleep $(( attempt * 5 ))
+		attempt=$(( attempt + 1 ))
+	done
+	return 1
+}
+
+scp_with_retries() {
+	local source="$1"
+	local target="$2"
+	local attempt=1
+	while (( attempt <= LINODE_TEST_SSH_COMMAND_RETRIES )); do
+		if scp -i "${SSH_KEY_FILE}" \
+			-o StrictHostKeyChecking=accept-new \
+			-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+			-o GlobalKnownHostsFile=/dev/null \
+			-o ConnectTimeout=10 \
+			"${source}" "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}:${target}"; then
+			return 0
+		fi
+		warn "SCP 上传失败 (${attempt}/${LINODE_TEST_SSH_COMMAND_RETRIES})，准备重试。"
+		sleep $(( attempt * 5 ))
+		attempt=$(( attempt + 1 ))
+	done
+	return 1
+}
+
 push_workspace() {
 	local bundle_file remote_bundle
 	bundle_file="$(mktemp "${TMPDIR:-/tmp}/emdash-linode-workspace-XXXXXX.tar.gz")"
 	remote_bundle="${LINODE_TEST_REMOTE_DIR}/workspace.tar.gz"
 	log "推送当前安装器到远端 ${LINODE_INSTANCE_IP}"
-	ssh -i "${SSH_KEY_FILE}" \
-		-o StrictHostKeyChecking=accept-new \
-		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
-		-o GlobalKnownHostsFile=/dev/null \
-		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
+	if ! ssh_with_retries "远端目录准备" "bash -lc '
 set -e
 if ! command -v tar >/dev/null 2>&1; then
 	if command -v dnf >/dev/null 2>&1; then
@@ -436,21 +467,25 @@ if ! command -v tar >/dev/null 2>&1; then
 fi
 rm -rf \"${LINODE_TEST_REMOTE_DIR}\"
 mkdir -p \"${LINODE_TEST_REMOTE_DIR}\"
-'"
+'"; then
+		rm -f "${bundle_file}"
+		return 1
+	fi
 	tar -C "${SCRIPT_DIR}" \
 		--exclude='.env' \
+		--exclude='.git' \
+		--exclude='test-results' \
+		--exclude='*.db' \
 		--exclude='linode-test-result.json' \
 		-czf "${bundle_file}" .
-	scp -i "${SSH_KEY_FILE}" \
-		-o StrictHostKeyChecking=accept-new \
-		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
-		-o GlobalKnownHostsFile=/dev/null \
-		"${bundle_file}" "${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}:${remote_bundle}"
-	ssh -i "${SSH_KEY_FILE}" \
-		-o StrictHostKeyChecking=accept-new \
-		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
-		-o GlobalKnownHostsFile=/dev/null \
-		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "tar -xzf '${remote_bundle}' -C '${LINODE_TEST_REMOTE_DIR}' && rm -f '${remote_bundle}'"
+	if ! scp_with_retries "${bundle_file}" "${remote_bundle}"; then
+		rm -f "${bundle_file}"
+		return 1
+	fi
+	if ! ssh_with_retries "远端工作区解包" "tar -xzf '${remote_bundle}' -C '${LINODE_TEST_REMOTE_DIR}' && rm -f '${remote_bundle}'"; then
+		rm -f "${bundle_file}"
+		return 1
+	fi
 	rm -f "${bundle_file}"
 }
 
@@ -462,30 +497,19 @@ collect_remote_failure_context() {
 		-o GlobalKnownHostsFile=/dev/null \
 		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc '
 set +e
-if [[ -f /etc/emdash/compose.env ]]; then
+if [[ -f /etc/emdash/emdash.env ]]; then
 	set -a
-	. /etc/emdash/compose.env
+	. /etc/emdash/emdash.env
 	set +a
 fi
-run_compose() {
-	if command -v docker >/dev/null 2>&1; then
-		docker compose -f /data/emdash/compose/compose.yml \"\$@\"
-	elif [[ -n \"\${PODMAN_COMPOSE_PROVIDER_BIN:-}\" && -x \"\${PODMAN_COMPOSE_PROVIDER_BIN}\" ]]; then
-		env -u PODMAN_COMPOSE_PROVIDER_BIN \"\${PODMAN_COMPOSE_PROVIDER_BIN}\" -f /data/emdash/compose/compose.yml \"\$@\"
-	elif command -v podman-compose >/dev/null 2>&1; then
-		podman-compose -f /data/emdash/compose/compose.yml \"\$@\"
-	elif command -v podman >/dev/null 2>&1; then
-		podman compose -f /data/emdash/compose/compose.yml \"\$@\"
-	else
-		echo \"compose runtime not found\"
-		return 127
-	fi
-}
-echo \"===== docker compose ps =====\"
-run_compose ps
+echo \"===== os-release =====\"
+cat /etc/os-release
 echo
-echo \"===== docker compose logs app =====\"
-run_compose logs --tail 200 app
+echo \"===== versions =====\"
+node --version
+corepack --version
+pnpm --version
+python3 --version
 echo
 echo \"===== emdashctl doctor --json =====\"
 /usr/local/bin/emdashctl doctor --json
@@ -493,14 +517,40 @@ echo
 echo \"===== emdashctl status --json =====\"
 /usr/local/bin/emdashctl status --json
 echo
-echo \"===== local setup api =====\"
-curl -i --max-time 15 http://127.0.0.1:3000/_emdash/api/setup/status
+echo \"===== systemctl status =====\"
+for unit in emdash-app caddy redis redis-server valkey postgresql postgresql-18 postgresql@18-main; do
+	systemctl status \"\${unit}\" --no-pager
+	echo
+done
+echo \"===== local routes =====\"
+for path in /healthz / /_emdash/admin /_emdash/api/setup/status; do
+	echo \"--- http://127.0.0.1:\${APP_PORT:-3000}\${path}\"
+	curl -k -i --max-time 20 \"http://127.0.0.1:\${APP_PORT:-3000}\${path}\"
+	echo
+done
+if [[ -n \"\${APP_PUBLIC_URL:-}\" ]]; then
+	echo \"===== public routes =====\"
+	for path in /healthz / /_emdash/admin /_emdash/api/setup/status; do
+		echo \"--- \${APP_PUBLIC_URL}\${path}\"
+		curl -k -i --max-time 30 \"\${APP_PUBLIC_URL}\${path}\"
+		echo
+	done
+fi
+echo \"===== dist server chunks =====\"
+find /data/emdash/app/site/dist/server -maxdepth 2 -type f 2>/dev/null | sort | tail -n 200
 echo
 echo \"===== journalctl -u emdash-app =====\"
-journalctl -u emdash-app -n 200 --no-pager
+journalctl -u emdash-app -n 300 --no-pager
 echo
 echo \"===== journalctl -u caddy =====\"
 journalctl -u caddy -n 200 --no-pager
+echo
+echo \"===== journalctl database/session units =====\"
+for unit in redis redis-server valkey postgresql postgresql-18 postgresql@18-main; do
+	echo \"--- \${unit}\"
+	journalctl -u \"\${unit}\" -n 120 --no-pager
+	echo
+done
 '" >"${LINODE_TEST_FAILURE_LOG}" 2>&1 || true
 	warn "远端失败日志已保存到 ${LINODE_TEST_FAILURE_LOG}"
 }
@@ -511,83 +561,127 @@ run_remote_test() {
 set -Eeuo pipefail
 cd "$1"
 chmod +x install-emdash.sh emdashctl
-export EMDASH_INSTALL_TEMPLATE=starter
+export EMDASH_INSTALL_TEMPLATE="$2"
 export EMDASH_INSTALL_ROOT_DIR=/data/emdash
-export EMDASH_INSTALL_DB_DRIVER="$2"
-export EMDASH_INSTALL_SESSION_DRIVER="$3"
-export EMDASH_INSTALL_STORAGE_DRIVER="$4"
-export EMDASH_INSTALL_USE_CADDY="$5"
-export EMDASH_INSTALL_ENABLE_HTTPS="$6"
-if [[ -n "${12}" ]]; then
-	export EMDASH_INSTALL_APP_IMAGE="${12}"
-fi
-if [[ -n "${13}" ]]; then
-	export EMDASH_INSTALL_APP_BASE_IMAGE="${13}"
-fi
-if [[ -n "${10}" ]]; then
-	export EMDASH_INSTALL_DOMAIN="${10}"
-fi
+export EMDASH_INSTALL_DB_DRIVER="$3"
+export EMDASH_INSTALL_SESSION_DRIVER="$4"
+export EMDASH_INSTALL_STORAGE_DRIVER="$5"
+export EMDASH_INSTALL_USE_CADDY="$6"
+export EMDASH_INSTALL_ENABLE_HTTPS="$7"
 if [[ -n "${11}" ]]; then
-	export EMDASH_INSTALL_ADMIN_EMAIL="${11}"
+	export EMDASH_INSTALL_DOMAIN="${11}"
 fi
-if [[ -n "$7" ]]; then
-	export EMDASH_INSTALL_PG_PASSWORD="$7"
+if [[ -n "${12}" ]]; then
+	export EMDASH_INSTALL_ADMIN_EMAIL="${12}"
 fi
 if [[ -n "$8" ]]; then
-	export EMDASH_INSTALL_REDIS_PASSWORD="$8"
+	export EMDASH_INSTALL_PG_PASSWORD="$8"
 fi
-if [[ -n "${14}" ]]; then
-	export EMDASH_INSTALL_BACKUP_TARGET="${14}"
+if [[ -n "$9" ]]; then
+	export EMDASH_INSTALL_REDIS_PASSWORD="$9"
 fi
 if [[ -n "${15}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_ENDPOINT="${15}"
+	export EMDASH_INSTALL_BACKUP_TARGET="${15}"
 fi
 if [[ -n "${16}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_REGION="${16}"
+	export EMDASH_INSTALL_BACKUP_S3_ENDPOINT="${16}"
 fi
 if [[ -n "${17}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_BUCKET="${17}"
+	export EMDASH_INSTALL_BACKUP_S3_REGION="${17}"
 fi
 if [[ -n "${18}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${18}"
+	export EMDASH_INSTALL_BACKUP_S3_BUCKET="${18}"
 fi
 if [[ -n "${19}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${19}"
+	export EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${19}"
 fi
 if [[ -n "${20}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_PREFIX="${20}"
+	export EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${20}"
 fi
 if [[ -n "${21}" ]]; then
-	export EMDASH_INSTALL_S3_PROVIDER="${21}"
+	export EMDASH_INSTALL_BACKUP_S3_PREFIX="${21}"
 fi
 if [[ -n "${22}" ]]; then
-	export EMDASH_INSTALL_S3_ENDPOINT="${22}"
+	export EMDASH_INSTALL_S3_PROVIDER="${22}"
 fi
 if [[ -n "${23}" ]]; then
-	export EMDASH_INSTALL_S3_REGION="${23}"
+	export EMDASH_INSTALL_S3_ENDPOINT="${23}"
 fi
 if [[ -n "${24}" ]]; then
-	export EMDASH_INSTALL_S3_BUCKET="${24}"
+	export EMDASH_INSTALL_S3_REGION="${24}"
 fi
 if [[ -n "${25}" ]]; then
-	export EMDASH_INSTALL_S3_ACCESS_KEY_ID="${25}"
+	export EMDASH_INSTALL_S3_BUCKET="${25}"
 fi
 if [[ -n "${26}" ]]; then
-	export EMDASH_INSTALL_S3_SECRET_ACCESS_KEY="${26}"
+	export EMDASH_INSTALL_S3_ACCESS_KEY_ID="${26}"
 fi
 if [[ -n "${27}" ]]; then
-	export EMDASH_INSTALL_S3_PUBLIC_URL="${27}"
+	export EMDASH_INSTALL_S3_SECRET_ACCESS_KEY="${27}"
 fi
+if [[ -n "${28}" ]]; then
+	export EMDASH_INSTALL_S3_PUBLIC_URL="${28}"
+fi
+check_public_routes="${13}"
+repeat_install="${14}"
+run_checks() {
+	/usr/local/bin/emdashctl status --json
+	/usr/local/bin/emdashctl doctor --json
+	/usr/local/bin/emdashctl smoke --json
+	# The app can report health OK while rendering public pages fails; check real routes too.
+	set -a
+	. /etc/emdash/emdash.env
+	set +a
+	check_url() {
+		local method="$1"
+		local url="$2"
+		local body_file=""
+		local status
+		if [[ "${method}" == "HEAD" ]]; then
+			status="$(curl -k -sS -I --max-time 30 -o /dev/null -w '%{http_code}' "${url}")"
+		else
+			body_file="$(mktemp)"
+			status="$(curl -k -sS --max-time 30 -o "${body_file}" -w '%{http_code}' "${url}")"
+		fi
+		case "${status}" in
+		2* | 3*) printf 'route ok: %s %s -> %s\n' "${method}" "${url}" "${status}" ;;
+		*) printf 'route failed: %s %s -> %s\n' "${method}" "${url}" "${status}" >&2; [[ -n "${body_file}" ]] && rm -f "${body_file}"; return 1 ;;
+		esac
+		if [[ -n "${body_file}" ]]; then
+			if grep -q 'Internal server error' "${body_file}"; then
+				printf 'route body contains internal server error: %s %s\n' "${method}" "${url}" >&2
+				rm -f "${body_file}"
+				return 1
+			fi
+			rm -f "${body_file}"
+		fi
+	}
+	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/healthz"
+	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/"
+	check_url HEAD "http://127.0.0.1:${APP_PORT:-3000}/_emdash/admin"
+	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/_emdash/admin/setup"
+	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/_emdash/api/setup/status"
+	if [[ "${check_public_routes}" == "1" && -n "${APP_PUBLIC_URL:-}" ]]; then
+		check_url GET "${APP_PUBLIC_URL}/healthz"
+		check_url GET "${APP_PUBLIC_URL}/"
+		check_url HEAD "${APP_PUBLIC_URL}/_emdash/admin"
+		check_url GET "${APP_PUBLIC_URL}/_emdash/admin/setup"
+		check_url GET "${APP_PUBLIC_URL}/_emdash/api/setup/status"
+	fi
+}
+
 bash install-emdash.sh --non-interactive --activate
-/usr/local/bin/emdashctl status --json
-/usr/local/bin/emdashctl doctor --json
-/usr/local/bin/emdashctl smoke --json
-if [[ "$9" == "1" ]]; then
+run_checks
+if [[ "${repeat_install}" == "1" ]]; then
+	bash install-emdash.sh --non-interactive --activate
+	run_checks
+fi
+if [[ "${10}" == "1" ]]; then
 	/usr/local/bin/emdashctl backup
-	if [[ "${14}" == "s3" ]]; then
+	if [[ "${15}" == "s3" ]]; then
 		latest_backup="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
-		backup_key="${20%/}/$(basename "${latest_backup}")"
-		python3 - "${15}" "${16}" "${17}" "${18}" "${19}" "${backup_key}" <<'PY'
+		backup_key="${21%/}/$(basename "${latest_backup}")"
+		python3 - "${16}" "${17}" "${18}" "${19}" "${20}" "${backup_key}" <<'PY'
 import sys
 import boto3
 from botocore.config import Config
@@ -611,8 +705,12 @@ EOF
 		-o StrictHostKeyChecking=accept-new \
 		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
 		-o GlobalKnownHostsFile=/dev/null \
-		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_APP_BASE_IMAGE}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_TEMPLATE}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_CHECK_PUBLIC_ROUTES}") $(printf '%q' "${LINODE_TEST_REPEAT_INSTALL}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
 		collect_remote_failure_context
+		if [[ "${LINODE_TEST_KEEP_ON_FAILURE}" == "1" ]]; then
+			LINODE_TEST_KEEP="1"
+			LINODE_TEST_KEEP_SSH_KEY="1"
+		fi
 		return 1
 	fi
 }
@@ -626,7 +724,13 @@ write_result_file() {
 		--arg image "${LINODE_TEST_IMAGE}" \
 		--arg type "${LINODE_TEST_TYPE}" \
 		--arg regions "${LINODE_TEST_REGION_CANDIDATES}" \
+		--arg template "${LINODE_TEST_INSTALL_TEMPLATE}" \
+		--arg db "${LINODE_TEST_INSTALL_DB_DRIVER}" \
+		--arg session "${LINODE_TEST_INSTALL_SESSION_DRIVER}" \
+		--arg storage "${LINODE_TEST_INSTALL_STORAGE_DRIVER}" \
 		--arg domain "${LINODE_TEST_INSTALL_DOMAIN}" \
+		--arg check_public_routes "${LINODE_TEST_CHECK_PUBLIC_ROUTES}" \
+		--arg repeat_install "${LINODE_TEST_REPEAT_INSTALL}" \
 		--arg keep "${LINODE_TEST_KEEP}" \
 		--arg keep_ssh_key "${LINODE_TEST_KEEP_SSH_KEY}" \
 		--arg ssh_key_file "${SSH_KEY_FILE}" \
@@ -638,7 +742,13 @@ write_result_file() {
 			image: $image,
 			type: $type,
 			region_candidates: $regions,
+			template: $template,
+			db_driver: $db,
+			session_driver: $session,
+			storage_driver: $storage,
 			domain: $domain,
+			check_public_routes: ($check_public_routes == "1"),
+			repeat_install: ($repeat_install == "1"),
 			keep: ($keep == "1"),
 			keep_ssh_key: ($keep_ssh_key == "1"),
 			ssh_key_file: (if $keep_ssh_key == "1" then $ssh_key_file else "" end)
@@ -685,8 +795,15 @@ main() {
 			destroy_current_instance
 			continue
 		fi
-		push_workspace
-		run_remote_test
+		if ! push_workspace; then
+			warn "区域 ${region} 工作区上传失败，尝试下一个区域。"
+			destroy_current_instance
+			continue
+		fi
+		if ! run_remote_test; then
+			write_result_file
+			fail "远端真实安装验证失败，已收集失败上下文。"
+		fi
 		write_result_file
 		log "Linode 临时测试完成"
 		attempt_success=1

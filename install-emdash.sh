@@ -254,6 +254,7 @@ main() {
 	detect_os_family
 	collect_configuration
 	derive_paths
+	load_existing_install_state
 	validate_config
 
 	if [[ "${WRITE_ONLY}" != "1" ]]; then
