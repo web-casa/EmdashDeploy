@@ -210,7 +210,8 @@ install_redis_server() {
 	fi
 
 	configure_redis_local
-	systemctl enable --now "${REDIS_SERVICE}"
+	systemctl enable "${REDIS_SERVICE}" >/dev/null
+	systemctl restart "${REDIS_SERVICE}"
 }
 
 configure_redis_local() {
@@ -350,7 +351,8 @@ activate_caddy_service() {
 	fi
 	ln -sfn "${CADDYFILE_PATH}" /etc/caddy/Caddyfile
 	caddy validate --config /etc/caddy/Caddyfile
-	systemctl enable --now caddy
+	systemctl enable caddy >/dev/null
+	systemctl restart caddy
 }
 
 open_required_firewall_ports() {

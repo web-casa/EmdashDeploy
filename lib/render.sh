@@ -597,15 +597,20 @@ build_site() {
 
 start_stack() {
 	log "启动 EmDash 原生服务"
-	build_site
 	systemctl daemon-reload
+	if systemctl is-active --quiet "${APP_SYSTEMD_SERVICE}"; then
+		systemctl stop "${APP_SYSTEMD_SERVICE}"
+	fi
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
 		systemctl enable --now "${POSTGRES_SERVICE}"
 	fi
 	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
-		systemctl enable --now "${REDIS_SERVICE}"
+		systemctl enable "${REDIS_SERVICE}" >/dev/null
+		systemctl restart "${REDIS_SERVICE}"
 	fi
-	systemctl enable --now "${APP_SYSTEMD_SERVICE}"
+	build_site
+	systemctl enable "${APP_SYSTEMD_SERVICE}" >/dev/null
+	systemctl restart "${APP_SYSTEMD_SERVICE}"
 }
 
 print_summary() {
