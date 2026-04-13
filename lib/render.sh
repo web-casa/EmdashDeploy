@@ -180,6 +180,7 @@ ${session_block}	image: {
 	integrations: [
 		react(),
 		emdash({
+			siteUrl: process.env.EMDASH_SITE_URL || process.env.SITE_URL || undefined,
 			${db_block}
 			${storage_block}
 		}),
@@ -268,6 +269,8 @@ render_app_env() {
 		append_env_line APP_PORT "${APP_PORT}"
 		append_env_line APP_BIND_HOST "${APP_BIND_HOST}"
 		append_env_line APP_PUBLIC_URL "${APP_PUBLIC_URL}"
+		append_env_line EMDASH_SITE_URL "${APP_PUBLIC_URL}"
+		append_env_line SITE_URL "${APP_PUBLIC_URL}"
 		append_env_line APP_SYSTEMD_SERVICE "${APP_SYSTEMD_SERVICE}"
 		append_env_line APP_SYSTEMD_UNIT "${APP_SYSTEMD_UNIT}"
 		append_env_line APP_RUN_USER "${APP_RUN_USER}"
