@@ -651,11 +651,12 @@ upgrade_command() {
 	local target="$1"
 	case "${target}" in
 	app)
+		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
 		ensure_template_source_checkout
 		sync_template_site_tree
 		refresh_managed_site_files
 		runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
-		systemctl restart "${APP_SYSTEMD_SERVICE}"
+		systemctl start "${APP_SYSTEMD_SERVICE}"
 		wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after upgrade"
 		;;
 	caddy-config)
@@ -673,6 +674,7 @@ reset_db_password_command() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
 	local new_password pg_user_encoded pg_password_encoded pg_db_name_encoded alter_sql
 	new_password="$(openssl rand -hex 16)"
+	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
 	alter_sql="$(python3 - "${PG_DB_USER}" "${new_password}" <<'PY'
 import sys
 
@@ -692,7 +694,7 @@ PY
 	render_site_astro_config
 	chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/astro.config.mjs"
 	runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
-	systemctl restart "${APP_SYSTEMD_SERVICE}"
+	systemctl start "${APP_SYSTEMD_SERVICE}"
 	wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after password reset"
 	printf '%s\n' "${new_password}"
 }
