@@ -381,7 +381,6 @@ render_caddy_file() {
 
 	local site_header=""
 	local global_block=""
-	local caddy_access_log="/var/log/caddy/emdash-access.log"
 	if [[ "${ENABLE_HTTPS}" == "1" ]]; then
 		site_header="${DOMAIN}"
 	else
@@ -403,11 +402,8 @@ ${site_header} {
 	encode zstd gzip
 
 	log {
-		output file ${caddy_access_log} {
-			roll_size ${LOG_CADDY_ROTATE_SIZE_MB}MiB
-			roll_keep ${LOG_CADDY_ROTATE_KEEP}
-			roll_keep_for ${LOG_CADDY_ROTATE_KEEP_DAYS}d
-		}
+		output stdout
+		format json
 	}
 
 	reverse_proxy 127.0.0.1:${APP_PORT}
