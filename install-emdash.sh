@@ -65,7 +65,7 @@ collect_configuration() {
 	fi
 
 	prompt_value PROJECT_NAME "$(ti project_name)" "${PROJECT_NAME}"
-	prompt_choice TEMPLATE "$(ti template)" "starter blog marketing portfolio blank" "${TEMPLATE}"
+	prompt_choice TEMPLATE "$(ti template)" "blog marketing portfolio blank" "${TEMPLATE}"
 	prompt_value ROOT_DIR "$(ti root_dir)" "${ROOT_DIR}"
 	prompt_value TIMEZONE "$(ti timezone)" "${TIMEZONE}"
 

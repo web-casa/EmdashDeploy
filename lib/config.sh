@@ -9,7 +9,7 @@ init_defaults() {
 	TEMPLATES_REF="${TEMPLATES_REF:-main}"
 
 	PROJECT_NAME="emdash"
-	TEMPLATE="starter"
+	TEMPLATE="blog"
 	ROOT_DIR="/data/emdash"
 	TIMEZONE="$(default_timezone_for_lang)"
 	DOMAIN=""
@@ -226,7 +226,7 @@ refresh_app_public_url() {
 
 validate_config() {
 	case " ${TEMPLATE} " in
-	" starter " | " blog " | " marketing " | " portfolio " | " blank ") ;;
+	" blog " | " marketing " | " portfolio " | " blank ") ;;
 	*) fail "$(printf "$(ti unsupported_template)" "${TEMPLATE}")" ;;
 	esac
 
