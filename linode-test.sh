@@ -12,8 +12,8 @@ LINODE_TEST_REGION_CANDIDATES="${LINODE_TEST_REGION_CANDIDATES:-us-lax,us-west,u
 LINODE_TEST_LABEL_PREFIX="${LINODE_TEST_LABEL_PREFIX:-emdash-test}"
 LINODE_TEST_KEEP="${LINODE_TEST_KEEP:-0}"
 LINODE_TEST_SSH_USER="${LINODE_TEST_SSH_USER:-root}"
-LINODE_TEST_CREATE_TIMEOUT="${LINODE_TEST_CREATE_TIMEOUT:-900}"
-LINODE_TEST_SSH_TIMEOUT="${LINODE_TEST_SSH_TIMEOUT:-600}"
+LINODE_TEST_CREATE_TIMEOUT="${LINODE_TEST_CREATE_TIMEOUT:-300}"
+LINODE_TEST_SSH_TIMEOUT="${LINODE_TEST_SSH_TIMEOUT:-180}"
 LINODE_TEST_SSH_COMMAND_RETRIES="${LINODE_TEST_SSH_COMMAND_RETRIES:-4}"
 LINODE_TEST_REMOTE_DIR="${LINODE_TEST_REMOTE_DIR:-/root/emdash-1key}"
 LINODE_TEST_RESULT_FILE="${LINODE_TEST_RESULT_FILE:-${SCRIPT_DIR}/linode-test-result.json}"
@@ -106,10 +106,6 @@ linode-test.sh
   LINODE_TEST_RUN_BACKUP=1
   LINODE_TEST_INSTALL_BACKUP_TARGET=s3
 EOF
-}
-
-apply_default_image_strategy() {
-	:
 }
 
 require_commands() {
@@ -475,8 +471,11 @@ mkdir -p \"${LINODE_TEST_REMOTE_DIR}\"
 		--exclude='.env' \
 		--exclude='.git' \
 		--exclude='test-results' \
+		--exclude='node_modules' \
+		--exclude='docker' \
 		--exclude='*.db' \
 		--exclude='linode-test-result.json' \
+		--exclude='linode-test-failure.log' \
 		-czf "${bundle_file}" .
 	if ! scp_with_retries "${bundle_file}" "${remote_bundle}"; then
 		rm -f "${bundle_file}"
@@ -517,9 +516,13 @@ echo
 echo \"===== emdashctl status --json =====\"
 /usr/local/bin/emdashctl status --json
 echo
+echo \"===== installed postgres/valkey packages =====\"
+rpm -q --qf '\''%{NAME} %{VERSION}-%{RELEASE} %{VENDOR}\n'\'' postgresql*-server valkey 2>/dev/null || true
+dpkg -l postgresql-* valkey 2>/dev/null | grep '\''^ii'\'' || true
+echo
 echo \"===== systemctl status =====\"
-for unit in emdash-app caddy redis redis-server valkey postgresql postgresql-18 postgresql@18-main; do
-	systemctl status \"\${unit}\" --no-pager
+for unit in emdash-app caddy valkey redis redis-server postgresql postgresql-18 postgresql@18-main; do
+	systemctl status \"\${unit}\" --no-pager 2>/dev/null
 	echo
 done
 echo \"===== local routes =====\"
@@ -555,157 +558,157 @@ done
 	warn "远端失败日志已保存到 ${LINODE_TEST_FAILURE_LOG}"
 }
 
+shell_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+emit_env_line() {
+	local key="$1" val="$2"
+	printf '%s=%s\n' "${key}" "$(shell_quote "${val}")"
+}
+
+emit_env_line_if_set() {
+	local key="$1" val="$2"
+	[[ -n "${val}" ]] && emit_env_line "${key}" "${val}"
+}
+
+build_remote_env_file() {
+	local env_file="$1"
+	{
+		emit_env_line EMDASH_INSTALL_TEMPLATE "${LINODE_TEST_INSTALL_TEMPLATE}"
+		emit_env_line EMDASH_INSTALL_ROOT_DIR /data/emdash
+		emit_env_line EMDASH_INSTALL_DB_DRIVER "${LINODE_TEST_INSTALL_DB_DRIVER}"
+		emit_env_line EMDASH_INSTALL_SESSION_DRIVER "${LINODE_TEST_INSTALL_SESSION_DRIVER}"
+		emit_env_line EMDASH_INSTALL_STORAGE_DRIVER "${LINODE_TEST_INSTALL_STORAGE_DRIVER}"
+		emit_env_line EMDASH_INSTALL_USE_CADDY "${LINODE_TEST_INSTALL_USE_CADDY}"
+		emit_env_line EMDASH_INSTALL_ENABLE_HTTPS "${LINODE_TEST_INSTALL_ENABLE_HTTPS}"
+		emit_env_line_if_set EMDASH_INSTALL_DOMAIN "${LINODE_TEST_INSTALL_DOMAIN}"
+		emit_env_line_if_set EMDASH_INSTALL_ADMIN_EMAIL "${LINODE_TEST_INSTALL_ADMIN_EMAIL}"
+		emit_env_line_if_set EMDASH_INSTALL_PG_PASSWORD "${LINODE_TEST_INSTALL_PG_PASSWORD}"
+		emit_env_line_if_set EMDASH_INSTALL_REDIS_PASSWORD "${LINODE_TEST_INSTALL_REDIS_PASSWORD}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_PROVIDER "${LINODE_TEST_INSTALL_S3_PROVIDER}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_ENDPOINT "${LINODE_TEST_INSTALL_S3_ENDPOINT}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_REGION "${LINODE_TEST_INSTALL_S3_REGION}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_BUCKET "${LINODE_TEST_INSTALL_S3_BUCKET}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_ACCESS_KEY_ID "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_SECRET_ACCESS_KEY "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}"
+		emit_env_line_if_set EMDASH_INSTALL_S3_PUBLIC_URL "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_TARGET "${LINODE_TEST_INSTALL_BACKUP_TARGET}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_ENDPOINT "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_REGION "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_BUCKET "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}"
+		emit_env_line_if_set EMDASH_INSTALL_BACKUP_S3_PREFIX "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}"
+		emit_env_line LINODE_TEST_CHECK_PUBLIC_ROUTES "${LINODE_TEST_CHECK_PUBLIC_ROUTES}"
+		emit_env_line LINODE_TEST_REPEAT_INSTALL "${LINODE_TEST_REPEAT_INSTALL}"
+		emit_env_line LINODE_TEST_RUN_BACKUP "${LINODE_TEST_RUN_BACKUP}"
+	} >"${env_file}"
+}
+
 run_remote_test() {
-	local remote_cmd
-	read -r -d '' remote_cmd <<'EOF' || true
+	local local_env_file remote_env_file
+	local_env_file="$(mktemp)"
+	remote_env_file="${LINODE_TEST_REMOTE_DIR}/test.env"
+
+	build_remote_env_file "${local_env_file}"
+	if ! scp_with_retries "${local_env_file}" "${remote_env_file}"; then
+		rm -f "${local_env_file}"
+		return 1
+	fi
+	rm -f "${local_env_file}"
+
+	log "执行远端安装和 smoke 测试"
+	if ! ssh -tt -i "${SSH_KEY_FILE}" \
+		-o StrictHostKeyChecking=accept-new \
+		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
+		-o GlobalKnownHostsFile=/dev/null \
+		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q' "
 set -Eeuo pipefail
-cd "$1"
+cd '${LINODE_TEST_REMOTE_DIR}'
+set -a && source test.env && set +a
 chmod +x install-emdash.sh emdashctl
-export EMDASH_INSTALL_TEMPLATE="$2"
-export EMDASH_INSTALL_ROOT_DIR=/data/emdash
-export EMDASH_INSTALL_DB_DRIVER="$3"
-export EMDASH_INSTALL_SESSION_DRIVER="$4"
-export EMDASH_INSTALL_STORAGE_DRIVER="$5"
-export EMDASH_INSTALL_USE_CADDY="$6"
-export EMDASH_INSTALL_ENABLE_HTTPS="$7"
-if [[ -n "${11}" ]]; then
-	export EMDASH_INSTALL_DOMAIN="${11}"
-fi
-if [[ -n "${12}" ]]; then
-	export EMDASH_INSTALL_ADMIN_EMAIL="${12}"
-fi
-if [[ -n "$8" ]]; then
-	export EMDASH_INSTALL_PG_PASSWORD="$8"
-fi
-if [[ -n "$9" ]]; then
-	export EMDASH_INSTALL_REDIS_PASSWORD="$9"
-fi
-if [[ -n "${15}" ]]; then
-	export EMDASH_INSTALL_BACKUP_TARGET="${15}"
-fi
-if [[ -n "${16}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_ENDPOINT="${16}"
-fi
-if [[ -n "${17}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_REGION="${17}"
-fi
-if [[ -n "${18}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_BUCKET="${18}"
-fi
-if [[ -n "${19}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID="${19}"
-fi
-if [[ -n "${20}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY="${20}"
-fi
-if [[ -n "${21}" ]]; then
-	export EMDASH_INSTALL_BACKUP_S3_PREFIX="${21}"
-fi
-if [[ -n "${22}" ]]; then
-	export EMDASH_INSTALL_S3_PROVIDER="${22}"
-fi
-if [[ -n "${23}" ]]; then
-	export EMDASH_INSTALL_S3_ENDPOINT="${23}"
-fi
-if [[ -n "${24}" ]]; then
-	export EMDASH_INSTALL_S3_REGION="${24}"
-fi
-if [[ -n "${25}" ]]; then
-	export EMDASH_INSTALL_S3_BUCKET="${25}"
-fi
-if [[ -n "${26}" ]]; then
-	export EMDASH_INSTALL_S3_ACCESS_KEY_ID="${26}"
-fi
-if [[ -n "${27}" ]]; then
-	export EMDASH_INSTALL_S3_SECRET_ACCESS_KEY="${27}"
-fi
-if [[ -n "${28}" ]]; then
-	export EMDASH_INSTALL_S3_PUBLIC_URL="${28}"
-fi
-check_public_routes="${13}"
-repeat_install="${14}"
+
 run_checks() {
 	/usr/local/bin/emdashctl status --json
 	/usr/local/bin/emdashctl doctor --json
 	/usr/local/bin/emdashctl smoke --json
-	# The app can report health OK while rendering public pages fails; check real routes too.
 	set -a
 	. /etc/emdash/emdash.env
 	set +a
 	check_url() {
-		local method="$1"
-		local url="$2"
-		local body_file=""
+		local method=\"\$1\"
+		local url=\"\$2\"
+		local body_file=\"\"
 		local status
-		if [[ "${method}" == "HEAD" ]]; then
-			status="$(curl -k -sS -I --max-time 30 -o /dev/null -w '%{http_code}' "${url}")"
+		if [[ \"\${method}\" == \"HEAD\" ]]; then
+			status=\"\$(curl -k -sS -I --max-time 30 -o /dev/null -w '%{http_code}' \"\${url}\")\"
 		else
-			body_file="$(mktemp)"
-			status="$(curl -k -sS --max-time 30 -o "${body_file}" -w '%{http_code}' "${url}")"
+			body_file=\"\$(mktemp)\"
+			status=\"\$(curl -k -sS --max-time 30 -o \"\${body_file}\" -w '%{http_code}' \"\${url}\")\"
 		fi
-		case "${status}" in
-		2* | 3*) printf 'route ok: %s %s -> %s\n' "${method}" "${url}" "${status}" ;;
-		*) printf 'route failed: %s %s -> %s\n' "${method}" "${url}" "${status}" >&2; [[ -n "${body_file}" ]] && rm -f "${body_file}"; return 1 ;;
+		case \"\${status}\" in
+		2* | 3*) printf 'route ok: %s %s -> %s\n' \"\${method}\" \"\${url}\" \"\${status}\" ;;
+		*) printf 'route failed: %s %s -> %s\n' \"\${method}\" \"\${url}\" \"\${status}\" >&2; [[ -n \"\${body_file}\" ]] && rm -f \"\${body_file}\"; return 1 ;;
 		esac
-		if [[ -n "${body_file}" ]]; then
-			if grep -q 'Internal server error' "${body_file}"; then
-				printf 'route body contains internal server error: %s %s\n' "${method}" "${url}" >&2
-				rm -f "${body_file}"
+		if [[ -n \"\${body_file}\" ]]; then
+			if grep -q 'Internal server error' \"\${body_file}\"; then
+				printf 'route body contains internal server error: %s %s\n' \"\${method}\" \"\${url}\" >&2
+				rm -f \"\${body_file}\"
 				return 1
 			fi
-			rm -f "${body_file}"
+			rm -f \"\${body_file}\"
 		fi
 	}
-	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/healthz"
-	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/"
-	check_url HEAD "http://127.0.0.1:${APP_PORT:-3000}/_emdash/admin"
-	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/_emdash/admin/setup"
-	check_url GET "http://127.0.0.1:${APP_PORT:-3000}/_emdash/api/setup/status"
-	if [[ "${check_public_routes}" == "1" && -n "${APP_PUBLIC_URL:-}" ]]; then
-		check_url GET "${APP_PUBLIC_URL}/healthz"
-		check_url GET "${APP_PUBLIC_URL}/"
-		check_url HEAD "${APP_PUBLIC_URL}/_emdash/admin"
-		check_url GET "${APP_PUBLIC_URL}/_emdash/admin/setup"
-		check_url GET "${APP_PUBLIC_URL}/_emdash/api/setup/status"
+	check_url GET \"http://127.0.0.1:\${APP_PORT:-3000}/healthz\"
+	check_url GET \"http://127.0.0.1:\${APP_PORT:-3000}/\"
+	check_url HEAD \"http://127.0.0.1:\${APP_PORT:-3000}/_emdash/admin\"
+	check_url GET \"http://127.0.0.1:\${APP_PORT:-3000}/_emdash/admin/setup\"
+	check_url GET \"http://127.0.0.1:\${APP_PORT:-3000}/_emdash/api/setup/status\"
+	if [[ \"\${LINODE_TEST_CHECK_PUBLIC_ROUTES}\" == \"1\" && -n \"\${APP_PUBLIC_URL:-}\" ]]; then
+		check_url GET \"\${APP_PUBLIC_URL}/healthz\"
+		check_url GET \"\${APP_PUBLIC_URL}/\"
+		check_url HEAD \"\${APP_PUBLIC_URL}/_emdash/admin\"
+		check_url GET \"\${APP_PUBLIC_URL}/_emdash/admin/setup\"
+		check_url GET \"\${APP_PUBLIC_URL}/_emdash/api/setup/status\"
 	fi
 }
 
 bash install-emdash.sh --non-interactive --activate
 run_checks
-if [[ "${repeat_install}" == "1" ]]; then
+
+/usr/local/bin/emdashctl upgrade app
+run_checks
+
+if [[ \"\${LINODE_TEST_REPEAT_INSTALL}\" == \"1\" ]]; then
 	bash install-emdash.sh --non-interactive --activate
 	run_checks
 fi
-if [[ "${10}" == "1" ]]; then
+
+if [[ \"\${LINODE_TEST_RUN_BACKUP}\" == \"1\" ]]; then
 	/usr/local/bin/emdashctl backup
-	if [[ "${15}" == "s3" ]]; then
-		latest_backup="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
-		backup_key="${21%/}/$(basename "${latest_backup}")"
-		python3 - "${16}" "${17}" "${18}" "${19}" "${20}" "${backup_key}" <<'PY'
+	if [[ \"\${EMDASH_INSTALL_BACKUP_TARGET:-}\" == \"s3\" ]]; then
+		latest_backup=\"\$(ls -1t /data/emdash/backups/emdash-backup-*.tar.gz | head -n1)\"
+		backup_key=\"\${EMDASH_INSTALL_BACKUP_S3_PREFIX%/}/\$(basename \"\${latest_backup}\")\"
+		python3 - \"\${EMDASH_INSTALL_BACKUP_S3_ENDPOINT}\" \"\${EMDASH_INSTALL_BACKUP_S3_REGION}\" \"\${EMDASH_INSTALL_BACKUP_S3_BUCKET}\" \"\${EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID}\" \"\${EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}\" \"\${backup_key}\" <<'PY'
 import sys
 import boto3
 from botocore.config import Config
 
 endpoint, region, bucket, access, secret, key = sys.argv[1:]
 client = boto3.client(
-    "s3",
+    \"s3\",
     endpoint_url=endpoint,
     aws_access_key_id=access,
     aws_secret_access_key=secret,
     region_name=region,
-    config=Config(signature_version="s3v4"),
+    config=Config(signature_version=\"s3v4\"),
 )
 client.head_object(Bucket=bucket, Key=key)
 PY
 	fi
 fi
-EOF
-	log "执行远端安装和 smoke 测试"
-	if ! ssh -tt -i "${SSH_KEY_FILE}" \
-		-o StrictHostKeyChecking=accept-new \
-		-o UserKnownHostsFile="${SSH_KNOWN_HOSTS_FILE}" \
-		-o GlobalKnownHostsFile=/dev/null \
-		"${LINODE_TEST_SSH_USER}@${LINODE_INSTANCE_IP}" "bash -lc $(printf '%q ' "${remote_cmd}") bash $(printf '%q' "${LINODE_TEST_REMOTE_DIR}") $(printf '%q' "${LINODE_TEST_INSTALL_TEMPLATE}") $(printf '%q' "${LINODE_TEST_INSTALL_DB_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_SESSION_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_STORAGE_DRIVER}") $(printf '%q' "${LINODE_TEST_INSTALL_USE_CADDY}") $(printf '%q' "${LINODE_TEST_INSTALL_ENABLE_HTTPS}") $(printf '%q' "${LINODE_TEST_INSTALL_PG_PASSWORD}") $(printf '%q' "${LINODE_TEST_INSTALL_REDIS_PASSWORD}") $(printf '%q' "${LINODE_TEST_RUN_BACKUP}") $(printf '%q' "${LINODE_TEST_INSTALL_DOMAIN}") $(printf '%q' "${LINODE_TEST_INSTALL_ADMIN_EMAIL}") $(printf '%q' "${LINODE_TEST_CHECK_PUBLIC_ROUTES}") $(printf '%q' "${LINODE_TEST_REPEAT_INSTALL}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_TARGET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PROVIDER}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ENDPOINT}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_REGION}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_BUCKET}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_ACCESS_KEY_ID}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_SECRET_ACCESS_KEY}") $(printf '%q' "${LINODE_TEST_INSTALL_S3_PUBLIC_URL}")"; then
+")"; then
 		collect_remote_failure_context
 		if [[ "${LINODE_TEST_KEEP_ON_FAILURE}" == "1" ]]; then
 			LINODE_TEST_KEEP="1"
@@ -761,7 +764,6 @@ main() {
 	parse_args "$@"
 	require_commands
 	load_token
-	apply_default_image_strategy
 	trap cleanup EXIT
 	rm -f "${LINODE_TEST_RESULT_FILE}"
 

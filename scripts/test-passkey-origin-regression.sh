@@ -60,7 +60,7 @@ setup_case() {
 	PUBLIC_IPV4="203.0.113.10"
 	PUBLIC_IPV6=""
 	POSTGRES_SERVICE="postgresql"
-	REDIS_SERVICE="redis"
+	REDIS_SERVICE="valkey"
 	DOMAIN="${domain}"
 	ADMIN_EMAIL="${admin_email}"
 	USE_CADDY="${use_caddy}"

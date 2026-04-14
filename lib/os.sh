@@ -11,14 +11,14 @@ detect_os_family() {
 	OS_MAJOR="${OS_VERSION_ID%%.*}"
 	OS_CODENAME="${VERSION_CODENAME:-}"
 	POSTGRES_SERVICE="postgresql"
-	REDIS_SERVICE="redis"
+	REDIS_SERVICE="valkey"
 
 	case "${OS_ID}" in
 	debian)
 		case "${OS_MAJOR}" in
 		13)
 			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="trixie"
-			REDIS_SERVICE="redis-server"
+			REDIS_SERVICE="valkey-server"
 			;;
 		*) fail "仅支持 Debian 13，当前为 ${OS_LABEL}" ;;
 		esac
@@ -27,7 +27,7 @@ detect_os_family() {
 		case "${OS_MAJOR}" in
 		24)
 			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="noble"
-			REDIS_SERVICE="redis-server"
+			REDIS_SERVICE="valkey-server"
 			;;
 		*) fail "仅支持 Ubuntu 24.04，当前为 ${OS_LABEL}" ;;
 		esac
@@ -35,11 +35,9 @@ detect_os_family() {
 	rocky | almalinux | rhel | ol | centos | centos_stream)
 		case "${OS_MAJOR}" in
 		9 | 10)
-			POSTGRES_SERVICE="postgresql-${PG_VERSION}"
-			if [[ "${OS_MAJOR}" == "10" ]]; then
-				REDIS_SERVICE="valkey"
-			else
-				REDIS_SERVICE="redis"
+			# Refined later by install_postgres_server after package is present
+			if systemctl cat "postgresql-${PG_VERSION}.service" &>/dev/null; then
+				POSTGRES_SERVICE="postgresql-${PG_VERSION}"
 			fi
 			;;
 		*) fail "仅支持 EL 9/10，当前为 ${OS_LABEL}" ;;
@@ -49,10 +47,6 @@ detect_os_family() {
 		fail "当前系统不在支持范围内: ${OS_LABEL}"
 		;;
 	esac
-}
-
-choose_container_runtime() {
-	:
 }
 
 apt_update() {
@@ -154,12 +148,20 @@ EOF
 		fi
 		POSTGRES_SERVICE="postgresql"
 	else
-		if ! rpm -q "postgresql${PG_VERSION}-server" >/dev/null 2>&1; then
-			log "安装 PostgreSQL ${PG_VERSION} (PGDG)"
-			dnf -qy module disable postgresql || true
-			dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
-			dnf -y install "postgresql${PG_VERSION}-server" "postgresql${PG_VERSION}"
+		dnf -qy module disable postgresql || true
+		rpm -q pgdg-redhat-repo >/dev/null 2>&1 \
+			|| dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+		# Replace AppStream packages with PGDG for consistent paths/units
+		if rpm -q "postgresql${PG_VERSION}-server" >/dev/null 2>&1 \
+			&& ! rpm -q --qf '%{RELEASE}\n' "postgresql${PG_VERSION}-server" | grep -qi pgdg; then
+			log "替换 AppStream PostgreSQL ${PG_VERSION} 为 PGDG 版本"
+			dnf -y remove "postgresql${PG_VERSION}-server" "postgresql${PG_VERSION}" "postgresql${PG_VERSION}-private-libs" \
+				|| warn "移除 AppStream PostgreSQL 失败，继续尝试安装 PGDG 版本"
 		fi
+		log "安装 PostgreSQL ${PG_VERSION} (PGDG)"
+		dnf -y install --disablerepo='*appstream*' \
+			--enablerepo="pgdg${PG_VERSION}" --enablerepo='pgdg-common' \
+			"postgresql${PG_VERSION}-server" "postgresql${PG_VERSION}"
 		POSTGRES_SERVICE="postgresql-${PG_VERSION}"
 		init_postgres_el_datadir
 	fi
@@ -227,14 +229,11 @@ install_redis_server() {
 	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
 
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
-		dpkg -s redis-server >/dev/null 2>&1 || apt-get install -y redis-server
-		REDIS_SERVICE="redis-server"
-	elif [[ "${OS_MAJOR}" == "10" ]]; then
+		dpkg -s valkey >/dev/null 2>&1 || apt-get install -y valkey
+		REDIS_SERVICE="valkey-server"
+	else
 		rpm -q valkey >/dev/null 2>&1 || dnf -y install valkey
 		REDIS_SERVICE="valkey"
-	else
-		rpm -q redis >/dev/null 2>&1 || dnf -y install redis
-		REDIS_SERVICE="redis"
 	fi
 
 	configure_redis_local
@@ -246,13 +245,13 @@ configure_redis_local() {
 	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
 
 	local redis_conf=""
-	for candidate in /etc/redis/redis.conf /etc/redis.conf /etc/valkey/valkey.conf /etc/valkey.conf; do
+	for candidate in /etc/valkey/valkey.conf /etc/valkey.conf /etc/redis/redis.conf /etc/redis.conf; do
 		if [[ -f "${candidate}" ]]; then
 			redis_conf="${candidate}"
 			break
 		fi
 	done
-	[[ -f "${redis_conf}" ]] || fail "未找到 Redis 配置文件: ${redis_conf}"
+	[[ -f "${redis_conf}" ]] || fail "未找到 Valkey/Redis 配置文件。"
 
 	REDIS_CONF_PATH="${redis_conf}" REDIS_CONF_PASSWORD="${REDIS_PASSWORD}" python3 <<'PY'
 from pathlib import Path
@@ -432,10 +431,12 @@ ensure_runtime_present() {
 	command_exists node || fail "未检测到 node。"
 	command_exists pnpm || fail "未检测到 pnpm。"
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		systemctl is-enabled "${POSTGRES_SERVICE}" >/dev/null 2>&1 || true
+		systemctl is-enabled "${POSTGRES_SERVICE}" >/dev/null 2>&1 \
+			|| warn "PostgreSQL 服务 ${POSTGRES_SERVICE} 未启用。"
 	fi
 	if [[ "${SESSION_DRIVER}" == "redis" ]]; then
-		systemctl is-enabled "${REDIS_SERVICE}" >/dev/null 2>&1 || true
+		systemctl is-enabled "${REDIS_SERVICE}" >/dev/null 2>&1 \
+			|| warn "Valkey/Redis 服务 ${REDIS_SERVICE} 未启用。"
 	fi
 	if [[ "${USE_CADDY}" == "1" ]] && ! command_exists caddy; then
 		fail "未检测到 caddy。"

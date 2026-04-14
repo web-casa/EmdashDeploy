@@ -267,9 +267,11 @@ activation_rollback_on_exit() {
 	if [[ "${exit_code}" -eq 0 || "${ACTIVATION_ROLLBACK_ACTIVE:-0}" != "1" || -z "${ACTIVATION_ROLLBACK_DIR:-}" ]]; then
 		return 0
 	fi
+	ACTIVATION_ROLLBACK_ACTIVE="0"
 
 	warn "安装失败，正在恢复安装前的站点与运行时配置。"
-	restore_activation_rollback "${ACTIVATION_ROLLBACK_DIR}" || true
+	restore_activation_rollback "${ACTIVATION_ROLLBACK_DIR}" \
+		|| warn "回滚恢复部分失败，请手动检查。"
 	if [[ "${WRITE_ONLY}" != "1" ]]; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
 		systemctl start "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
@@ -288,6 +290,8 @@ main() {
 	collect_configuration
 	derive_paths
 	trap 'activation_rollback_on_exit "$?"' EXIT
+	trap 'activation_rollback_on_exit 130; exit 130' INT
+	trap 'activation_rollback_on_exit 143; exit 143' TERM
 	load_existing_install_state
 	validate_config
 

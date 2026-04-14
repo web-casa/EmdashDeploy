@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${LINODE_TEST_MATRIX_OUTPUT_DIR:-${SCRIPT_DIR}/test-results}"
 SCENARIO_FILTER="${LINODE_TEST_MATRIX_SCENARIOS:-}"
 KEEP_ON_FAILURE="${LINODE_TEST_MATRIX_KEEP_ON_FAILURE:-0}"
+PARALLEL="${LINODE_TEST_MATRIX_PARALLEL:-0}"
 SUMMARY_JSON=""
 SUMMARY_MD=""
 RUN_ID=""
@@ -16,7 +17,7 @@ usage() {
 linode-test-matrix.sh
 
 Usage:
-  bash linode-test-matrix.sh [--list] [--scenario <name>[,<name>...]] [--output-dir <dir>] [--keep-on-failure]
+  bash linode-test-matrix.sh [--list] [--scenario <name>[,<name>...]] [--output-dir <dir>] [--keep-on-failure] [--parallel]
 
 Examples:
   bash linode-test-matrix.sh
@@ -55,12 +56,17 @@ centos9-builder
 debian13-postgres-file
 centos9-postgres-redis
 debian13-s3-backup
+alma10-postgres-redis
+centos10-sqlite-file
+rocky9-postgres-redis
+ubuntu24-postgres-redis
 EOF
 }
 
 scenario_exists() {
 	case "$1" in
-	debian13-caddy-app | centos9-builder | debian13-postgres-file | centos9-postgres-redis | debian13-s3-backup)
+	debian13-caddy-app | centos9-builder | debian13-postgres-file | centos9-postgres-redis | debian13-s3-backup \
+	| alma10-postgres-redis | centos10-sqlite-file | rocky9-postgres-redis | ubuntu24-postgres-redis)
 		return 0
 		;;
 	esac
@@ -128,6 +134,44 @@ unset MATRIX_DOMAIN_PROVIDER MATRIX_APP_IMAGE MATRIX_APP_BASE_IMAGE MATRIX_PG_PA
 			MATRIX_BACKUP_S3_SECRET_ACCESS_KEY="${LINODE_TEST_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY:-}"
 			MATRIX_BACKUP_S3_PREFIX="${LINODE_TEST_INSTALL_BACKUP_S3_PREFIX:-backups}"
 			;;
+	alma10-postgres-redis)
+		MATRIX_IMAGE="linode/almalinux10"
+		MATRIX_DB="postgres"
+		MATRIX_SESSION="redis"
+		MATRIX_STORAGE="local"
+		MATRIX_USE_CADDY="0"
+		MATRIX_ENABLE_HTTPS="0"
+		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
+		MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
+		;;
+	centos10-sqlite-file)
+		MATRIX_IMAGE="linode/centos-stream10"
+		MATRIX_DB="sqlite"
+		MATRIX_SESSION="file"
+		MATRIX_STORAGE="local"
+		MATRIX_USE_CADDY="0"
+		MATRIX_ENABLE_HTTPS="0"
+		;;
+	rocky9-postgres-redis)
+		MATRIX_IMAGE="linode/rocky9"
+		MATRIX_DB="postgres"
+		MATRIX_SESSION="redis"
+		MATRIX_STORAGE="local"
+		MATRIX_USE_CADDY="0"
+		MATRIX_ENABLE_HTTPS="0"
+		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
+		MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
+		;;
+	ubuntu24-postgres-redis)
+		MATRIX_IMAGE="linode/ubuntu24.04"
+		MATRIX_DB="postgres"
+		MATRIX_SESSION="redis"
+		MATRIX_STORAGE="local"
+		MATRIX_USE_CADDY="0"
+		MATRIX_ENABLE_HTTPS="0"
+		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
+		MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
+		;;
 	*)
 		fail "Unknown scenario: ${scenario}"
 		;;
@@ -153,6 +197,9 @@ parse_args() {
 			;;
 		--keep-on-failure)
 			KEEP_ON_FAILURE="1"
+			;;
+		--parallel)
+			PARALLEL="1"
 			;;
 		-h | --help)
 			usage
@@ -293,14 +340,44 @@ main() {
 	tmp_summary="$(mktemp)"
 	printf '[]\n' >"${tmp_summary}"
 
-	while IFS= read -r scenario; do
-		[[ -n "${scenario}" ]] || continue
-		item_file="$(mktemp)"
-		run_scenario "${scenario}" "${item_file}"
-		jq -n --slurpfile item "${item_file}" --slurpfile arr "${tmp_summary}" '$arr[0] + [$item[0]]' >"${tmp_summary}.new"
-		mv "${tmp_summary}.new" "${tmp_summary}"
-		rm -f "${item_file}"
-	done < <(selected_scenarios)
+	if [[ "${PARALLEL}" == "1" ]]; then
+		local -a pids=()
+		local -a item_files=()
+		local -a scenarios_ordered=()
+		while IFS= read -r scenario; do
+			[[ -n "${scenario}" ]] || continue
+			scenarios_ordered+=("${scenario}")
+			item_file="${OUTPUT_DIR}/.item-${scenario}.json"
+			item_files+=("${item_file}")
+			run_scenario "${scenario}" "${item_file}" &
+			pids+=($!)
+			log "启动并行场景: ${scenario} (PID $!)"
+		done < <(selected_scenarios)
+		local idx=0
+		for pid in "${pids[@]}"; do
+			wait "${pid}" || true
+			item_file="${item_files[${idx}]}"
+			if [[ ! -f "${item_file}" ]]; then
+				warn "场景 ${scenarios_ordered[${idx}]} 未生成结果文件，标记为失败"
+				jq -n --arg scenario "${scenarios_ordered[${idx}]}" \
+					'{scenario: $scenario, passed: false, exit_code: 1, image: "unknown", db_driver: "unknown", session_driver: "unknown", storage_driver: "unknown", use_caddy: false, enable_https: false, backup_target: "", app_image: "", app_base_image: "", started_at: "", finished_at: "", result_file: "", failure_log: ""}' \
+					>"${item_file}"
+			fi
+			jq -n --slurpfile item "${item_file}" --slurpfile arr "${tmp_summary}" '$arr[0] + [$item[0]]' >"${tmp_summary}.new"
+			mv "${tmp_summary}.new" "${tmp_summary}"
+			rm -f "${item_file}"
+			idx=$(( idx + 1 ))
+		done
+	else
+		while IFS= read -r scenario; do
+			[[ -n "${scenario}" ]] || continue
+			item_file="$(mktemp)"
+			run_scenario "${scenario}" "${item_file}"
+			jq -n --slurpfile item "${item_file}" --slurpfile arr "${tmp_summary}" '$arr[0] + [$item[0]]' >"${tmp_summary}.new"
+			mv "${tmp_summary}.new" "${tmp_summary}"
+			rm -f "${item_file}"
+		done < <(selected_scenarios)
+	fi
 
 	jq -n \
 		--arg generated_at "$(date -Iseconds)" \

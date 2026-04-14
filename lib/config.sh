@@ -227,27 +227,27 @@ refresh_app_public_url() {
 validate_config() {
 	case " ${TEMPLATE} " in
 	" starter " | " blog " | " marketing " | " portfolio " | " blank ") ;;
-	*) fail "不支持的模板: ${TEMPLATE}" ;;
+	*) fail "$(printf "$(ti unsupported_template)" "${TEMPLATE}")" ;;
 	esac
 
 	case "${DB_DRIVER}" in
 	sqlite | postgres) ;;
-	*) fail "不支持的数据库: ${DB_DRIVER}" ;;
+	*) fail "$(printf "$(ti unsupported_db)" "${DB_DRIVER}")" ;;
 	esac
 
 	case "${SESSION_DRIVER}" in
 	file | redis) ;;
-	*) fail "不支持的 session 驱动: ${SESSION_DRIVER}" ;;
+	*) fail "$(printf "$(ti unsupported_session)" "${SESSION_DRIVER}")" ;;
 	esac
 
 	case "${STORAGE_DRIVER}" in
 	local | s3) ;;
-	*) fail "不支持的存储驱动: ${STORAGE_DRIVER}" ;;
+	*) fail "$(printf "$(ti unsupported_storage)" "${STORAGE_DRIVER}")" ;;
 	esac
 
 	case "${BACKUP_TARGET_TYPE}" in
 	local | s3) ;;
-	*) fail "不支持的备份目标: ${BACKUP_TARGET_TYPE}" ;;
+	*) fail "$(printf "$(ti unsupported_backup_target)" "${BACKUP_TARGET_TYPE}")" ;;
 	esac
 
 	USE_CADDY="$(normalize_bool "${USE_CADDY}")"
@@ -275,29 +275,29 @@ validate_config() {
 	fi
 
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		[[ "${PG_DB_USER}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "PostgreSQL 用户名仅支持字母、数字和下划线，且必须以字母或下划线开头。"
-		[[ "${PG_DB_NAME}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "PostgreSQL 数据库名仅支持字母、数字和下划线，且必须以字母或下划线开头。"
+		[[ "${PG_DB_USER}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "$(ti pg_username_invalid)"
+		[[ "${PG_DB_NAME}" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "$(ti pg_dbname_invalid)"
 	fi
 
 	if [[ "${USE_CADDY}" == "1" && -z "${DOMAIN}" ]]; then
-		fail "启用 Caddy 时必须提供 DOMAIN。"
+		fail "$(ti caddy_requires_domain)"
 	fi
 	if [[ "${USE_CADDY}" == "1" && "${ENABLE_HTTPS}" == "1" && -z "${ADMIN_EMAIL}" ]]; then
-		fail "启用 HTTPS 时必须提供 ADMIN_EMAIL。"
+		fail "$(ti https_requires_email)"
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "s3" ]]; then
-		[[ -n "${S3_ENDPOINT}" ]] || fail "S3 存储必须提供 endpoint。"
-		[[ -n "${S3_BUCKET}" ]] || fail "S3 存储必须提供 bucket。"
-		[[ -n "${S3_ACCESS_KEY_ID}" ]] || fail "S3 存储必须提供 access key。"
-		[[ -n "${S3_SECRET_ACCESS_KEY}" ]] || fail "S3 存储必须提供 secret key。"
+		[[ -n "${S3_ENDPOINT}" ]] || fail "$(ti s3_requires_endpoint)"
+		[[ -n "${S3_BUCKET}" ]] || fail "$(ti s3_requires_bucket)"
+		[[ -n "${S3_ACCESS_KEY_ID}" ]] || fail "$(ti s3_requires_access_key)"
+		[[ -n "${S3_SECRET_ACCESS_KEY}" ]] || fail "$(ti s3_requires_secret_key)"
 	fi
 
 	if [[ "${BACKUP_ENABLED}" == "1" && "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
-		[[ -n "${BACKUP_S3_ENDPOINT}" ]] || fail "S3 备份必须提供 endpoint。"
-		[[ -n "${BACKUP_S3_BUCKET}" ]] || fail "S3 备份必须提供 bucket。"
-		[[ -n "${BACKUP_S3_ACCESS_KEY_ID}" ]] || fail "S3 备份必须提供 access key。"
-		[[ -n "${BACKUP_S3_SECRET_ACCESS_KEY}" ]] || fail "S3 备份必须提供 secret key。"
+		[[ -n "${BACKUP_S3_ENDPOINT}" ]] || fail "$(ti s3_backup_requires_endpoint)"
+		[[ -n "${BACKUP_S3_BUCKET}" ]] || fail "$(ti s3_backup_requires_bucket)"
+		[[ -n "${BACKUP_S3_ACCESS_KEY_ID}" ]] || fail "$(ti s3_backup_requires_access_key)"
+		[[ -n "${BACKUP_S3_SECRET_ACCESS_KEY}" ]] || fail "$(ti s3_backup_requires_secret_key)"
 	fi
 	return 0
 }
@@ -305,10 +305,10 @@ validate_config() {
 validate_cron_schedule() {
 	local schedule="$1"
 	local field1 field2 field3 field4 field5 extra field
-	[[ "${schedule}" != *$'\n'* && "${schedule}" != *$'\r'* ]] || fail "备份 cron 不能包含换行。"
+	[[ "${schedule}" != *$'\n'* && "${schedule}" != *$'\r'* ]] || fail "$(ti cron_no_newline)"
 	IFS=$' \t' read -r field1 field2 field3 field4 field5 extra <<<"${schedule}"
-	[[ -n "${field1}" && -n "${field2}" && -n "${field3}" && -n "${field4}" && -n "${field5}" && -z "${extra:-}" ]] || fail "备份 cron 必须是 5 个字段。"
+	[[ -n "${field1}" && -n "${field2}" && -n "${field3}" && -n "${field4}" && -n "${field5}" && -z "${extra:-}" ]] || fail "$(ti cron_five_fields)"
 	for field in "${field1}" "${field2}" "${field3}" "${field4}" "${field5}"; do
-		[[ "${field}" =~ ^[A-Za-z0-9*/,-]+$ ]] || fail "备份 cron 包含不支持的字段: ${field}"
+		[[ "${field}" =~ ^[A-Za-z0-9*/,-]+$ ]] || fail "$(printf "$(ti cron_invalid_field)" "${field}")"
 	done
 }

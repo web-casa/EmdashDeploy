@@ -45,7 +45,7 @@ clone_template_repo() {
 
 sync_template_into_site() {
 	local template_path="${TEMPLATE_SOURCE_DIR}/${TEMPLATE}"
-	[[ -d "${template_path}" ]] || fail "模板目录不存在: ${template_path}"
+	[[ -d "${template_path}" ]] || fail "$(printf "$(ti template_dir_missing)" "${template_path}")"
 	rm -rf "${SITE_DIR}"
 	ensure_dir "${SITE_DIR}"
 	cp -a "${template_path}/." "${SITE_DIR}/"
@@ -90,23 +90,23 @@ prepare_site_directory() {
 	fi
 
 	if [[ -z "${existing_template}" && -z "${existing_db_driver}" && -z "${existing_session_driver}" && -z "${existing_storage_driver}" ]]; then
-		fail "检测到现有站点源码，但缺少 install.yml 和 emdash.env 中的现有模板/驱动元数据。为避免混合旧站点与新运行时配置，请先恢复配置文件或设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+		fail "$(ti existing_site_missing_metadata)"
 	fi
 
 	if [[ -n "${existing_template}" && "${existing_template}" != "${TEMPLATE}" ]]; then
-		fail "检测到现有站点源码使用模板 ${existing_template}，当前请求模板 ${TEMPLATE}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+		fail "$(printf "$(ti existing_site_template_mismatch)" "${existing_template}" "${TEMPLATE}")"
 	fi
 	if [[ -n "${existing_db_driver}" && "${existing_db_driver}" != "${DB_DRIVER}" ]]; then
-		fail "检测到现有站点源码数据库驱动为 ${existing_db_driver}，当前请求为 ${DB_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+		fail "$(printf "$(ti existing_site_db_mismatch)" "${existing_db_driver}" "${DB_DRIVER}")"
 	fi
 	if [[ -n "${existing_session_driver}" && "${existing_session_driver}" != "${SESSION_DRIVER}" ]]; then
-		fail "检测到现有站点源码 session 驱动为 ${existing_session_driver}，当前请求为 ${SESSION_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+		fail "$(printf "$(ti existing_site_session_mismatch)" "${existing_session_driver}" "${SESSION_DRIVER}")"
 	fi
 	if [[ -n "${existing_storage_driver}" && "${existing_storage_driver}" != "${STORAGE_DRIVER}" ]]; then
-		fail "检测到现有站点源码存储驱动为 ${existing_storage_driver}，当前请求为 ${STORAGE_DRIVER}。如需覆盖，请设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1。"
+		fail "$(printf "$(ti existing_site_storage_mismatch)" "${existing_storage_driver}" "${STORAGE_DRIVER}")"
 	fi
 
-	[[ -f "${SITE_DIR}/astro.config.mjs" ]] || fail "检测到现有站点源码，但缺少 astro.config.mjs：${SITE_DIR}/astro.config.mjs"
+	[[ -f "${SITE_DIR}/astro.config.mjs" ]] || fail "$(ti existing_site_missing_astro_config)"
 	log "检测到现有 EmDash 站点目录，保留当前模板源码"
 }
 
@@ -154,156 +154,8 @@ render_astro_config() {
 		return
 	fi
 
-	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" python3 <<'PY'
-import os
-import re
-from pathlib import Path
-
-site_dir = Path(os.environ["SITE_DIR"])
-path = site_dir / "astro.config.mjs"
-text = path.read_text()
-
-db_driver = os.environ["DB_DRIVER"]
-session_driver = os.environ["SESSION_DRIVER"]
-storage_driver = os.environ["STORAGE_DRIVER"]
-
-
-def update_named_import(source: str, module: str, required: list[str]) -> str:
-    pattern = rf'import\s*\{{\s*([^}}]*)\s*\}}\s*from\s*"{re.escape(module)}";'
-    match = re.search(pattern, source)
-    if not match:
-        raise SystemExit(f"missing import for {module} in {path}")
-    names = [item.strip() for item in match.group(1).split(",") if item.strip()]
-    merged: list[str] = []
-    for name in names + required:
-        if name not in merged:
-            merged.append(name)
-    if module == "astro/config" and session_driver != "redis":
-        merged = [name for name in merged if name != "sessionDrivers"]
-    replacement = f'import {{ {", ".join(merged)} }} from "{module}";'
-    return source[:match.start()] + replacement + source[match.end():]
-
-
-def update_emdash_import(source: str) -> str:
-    pattern = r'import\s+emdash,\s*\{\s*([^}]*)\s*\}\s*from\s*"emdash/astro";'
-    match = re.search(pattern, source)
-    if not match:
-        raise SystemExit(f'missing emdash/astro import in {path}')
-    names = [item.strip() for item in match.group(1).split(",") if item.strip()]
-    required = ["local"]
-    if storage_driver == "s3":
-        required.append("s3")
-    merged: list[str] = []
-    for name in names + required:
-        if name not in merged:
-            merged.append(name)
-    replacement = f'import emdash, {{ {", ".join(merged)} }} from "emdash/astro";'
-    return source[:match.start()] + replacement + source[match.end():]
-
-
-def update_db_import(source: str) -> str:
-    required = "postgres" if db_driver == "postgres" else "sqlite"
-    pattern = r'import\s*\{\s*([^}]*)\s*\}\s*from\s*"emdash/db";'
-    match = re.search(pattern, source)
-    if not match:
-        raise SystemExit(f'missing emdash/db import in {path}')
-    replacement = f'import {{ {required} }} from "emdash/db";'
-    return source[:match.start()] + replacement + source[match.end():]
-
-
-def replace_session_block(source: str) -> str:
-    source = re.sub(
-        r'\n\tsession:\s*\{\n\t\tdriver: sessionDrivers\.redis\(\{\n\t\t\turl: process\.env\.REDIS_URL,\n\t\t\}\),\n\t\},\n',
-        '\n',
-        source,
-        count=1,
-    )
-    if session_driver != "redis":
-        return source
-    adapter_block = '\tadapter: node({\n\t\tmode: "standalone",\n\t}),\n'
-    session_block = (
-        '\tsession: {\n'
-        '\t\tdriver: sessionDrivers.redis({\n'
-        '\t\t\turl: process.env.REDIS_URL,\n'
-        '\t\t}),\n'
-        '\t},\n'
-    )
-    if adapter_block not in source:
-        raise SystemExit(f'cannot find adapter block in {path}')
-    return source.replace(adapter_block, adapter_block + session_block, 1)
-
-
-def replace_emdash_block(source: str) -> str:
-    pattern = r'emdash\(\{\n(?P<body>[\s\S]*?)\n\t\t\}\)'
-    match = re.search(pattern, source)
-    if not match:
-        raise SystemExit(f'cannot find emdash config block in {path}')
-    body = match.group("body")
-    body = re.sub(r'^\t\t\tsiteUrl:.*\n', '', body, flags=re.MULTILINE)
-    body = re.sub(
-        r'^\t\t\tdatabase:\s*(?:sqlite|postgres)\(\{[\s\S]*?\n\t\t\t\}\),\n?',
-        '',
-        body,
-        flags=re.MULTILINE,
-    )
-    body = re.sub(
-        r'^\t\t\tstorage:\s*(?:local|s3)\(\{[\s\S]*?\n\t\t\t\}\),\n?',
-        '',
-        body,
-        flags=re.MULTILINE,
-    )
-    body = body.lstrip("\n")
-
-    if db_driver == "postgres":
-        db_block = (
-            '\t\t\tdatabase: postgres({\n'
-            '\t\t\t\thost: process.env.POSTGRES_HOST,\n'
-            '\t\t\t\tport: Number(process.env.POSTGRES_PORT || "5432"),\n'
-            '\t\t\t\tdatabase: process.env.PG_DB_NAME,\n'
-            '\t\t\t\tuser: process.env.PG_DB_USER,\n'
-            '\t\t\t\tpassword: process.env.PG_DB_PASSWORD,\n'
-            '\t\t\t}),\n'
-        )
-    else:
-        db_block = (
-            '\t\t\tdatabase: sqlite({\n'
-            '\t\t\t\turl: `file:${process.env.SQLITE_PATH}`,\n'
-            '\t\t\t}),\n'
-        )
-
-    if storage_driver == "s3":
-        storage_block = (
-            '\t\t\tstorage: s3({\n'
-            '\t\t\t\tendpoint: process.env.S3_ENDPOINT,\n'
-            '\t\t\t\tregion: process.env.S3_REGION,\n'
-            '\t\t\t\tbucket: process.env.S3_BUCKET,\n'
-            '\t\t\t\taccessKeyId: process.env.S3_ACCESS_KEY_ID,\n'
-            '\t\t\t\tsecretAccessKey: process.env.S3_SECRET_ACCESS_KEY,\n'
-            '\t\t\t\tpublicUrl: process.env.S3_PUBLIC_URL || undefined,\n'
-            '\t\t\t}),\n'
-        )
-    else:
-        storage_block = (
-            '\t\t\tstorage: local({\n'
-            '\t\t\t\tdirectory: process.env.UPLOADS_DIR,\n'
-            '\t\t\t\tbaseUrl: "/_emdash/api/media/file",\n'
-            '\t\t\t}),\n'
-        )
-
-    site_url_line = '\t\t\tsiteUrl: process.env.EMDASH_SITE_URL || process.env.SITE_URL || undefined,\n'
-    new_body = site_url_line + db_block + storage_block + body
-    replacement = f'emdash({{\n{new_body}\n\t\t}})'
-    return source[:match.start()] + replacement + source[match.end():]
-
-
-text = update_named_import(text, "astro/config", ["defineConfig"] + (["sessionDrivers"] if session_driver == "redis" else []))
-text = update_emdash_import(text)
-text = update_db_import(text)
-text = replace_session_block(text)
-text = replace_emdash_block(text)
-
-path.write_text(text)
-PY
+	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" \
+		python3 "${SCRIPT_DIR}/lib/astro-patch.py"
 }
 
 render_app_scripts() {
@@ -566,7 +418,7 @@ Description=EmDash App
 After=network-online.target
 Wants=network-online.target
 $( [[ "${DB_DRIVER}" == "postgres" ]] && printf 'After=%s.service\n' "${POSTGRES_SERVICE}" )
-$( [[ "${SESSION_DRIVER}" == "redis" ]] && printf 'After=%s\n' "${REDIS_SERVICE}" )
+$( [[ "${SESSION_DRIVER}" == "redis" ]] && printf 'After=%s.service\n' "${REDIS_SERVICE}" )
 
 [Service]
 Type=simple
@@ -590,6 +442,8 @@ EOF
 install_emdashctl_script() {
 	migrate_legacy_emdashctl_references
 	install -m 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
+	install -d -m 0755 "${ROOT_DIR}/lib"
+	install -m 0644 "${SCRIPT_DIR}/lib/astro-patch.py" "${ROOT_DIR}/lib/astro-patch.py"
 	remove_legacy_emdashctl_aliases
 }
 
