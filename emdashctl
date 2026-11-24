@@ -534,6 +534,7 @@ print(json.dumps({
     "pending_count": len(parsed.get("pending") or []),
     "unknown_applied_count": len(parsed.get("unknownApplied") or []),
     "known_applied_count": len(parsed.get("knownApplied") or []),
+    "target_fingerprint": (parsed.get("target") or {}).get("fingerprint") or "",
     "pending": parsed.get("pending") or [],
     "unknownApplied": parsed.get("unknownApplied") or [],
 }))
@@ -1318,6 +1319,8 @@ run_upgrade_migration_gate() {
 
 	unknown_count="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("unknown_applied_count", 0))' 2>/dev/null || echo 0)"
 	pending_count="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pending_count", 0))' 2>/dev/null || echo 0)"
+	local target_fp=""
+	target_fp="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target_fingerprint", ""))' 2>/dev/null || true)"
 
 	if (( unknown_count > 0 )); then
 		warn "Database contains ${unknown_count} unknown applied migrations (DB newer than target code). Aborting."
@@ -1327,7 +1330,11 @@ run_upgrade_migration_gate() {
 	if (( pending_count > 0 )); then
 		log "Applying ${pending_count} pending database migrations explicitly..."
 		UPGRADE_MIGRATION_ATTEMPTED="1"
-		run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate"
+		if [[ -n "${target_fp}" ]]; then
+			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --expected-target-fingerprint '${target_fp}'"
+		else
+			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate"
+		fi
 		return $?
 	fi
 

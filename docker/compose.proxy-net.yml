@@ -1,0 +1,19 @@
+# Optional overlay: attach EmDash to an existing external reverse-proxy Docker network
+# (e.g. Nginx Proxy Manager, Traefik, 1Panel OpenResty, or a shared Caddy container)
+# without exposing any host port.
+#
+# Usage:
+#   docker network create proxy   # once on host
+#   PROXY_NETWORK=proxy docker compose -f compose.yml -f compose.proxy-net.yml up -d
+
+services:
+  emdash:
+    ports: !reset []
+    networks:
+      - emdash_internal
+      - external_proxy
+
+networks:
+  external_proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

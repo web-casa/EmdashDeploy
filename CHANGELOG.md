@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.0-hi.2 - 2026-11-24
+
+Lightweight multi-service / multi-instance Docker Compose kit for EmDash `1.6.x` on `main`.
+
+### Added
+
+- Composable Docker Compose kit under [`docker/`](./docker/README.md):
+  - [`docker/Dockerfile`](./docker/Dockerfile): Node.js 24 image reusing `lib/site-common.sh` and `lib/astro-patch.py`, supporting EmDash `1.6.x`, `@emdash-cms/sandbox-workerd`, `HEALTHCHECK`, `tini`, and optional mainland China registry build args (`NPM_CONFIG_REGISTRY`, `COREPACK_NPM_REGISTRY`)
+  - [`docker/entrypoint.sh`](./docker/entrypoint.sh): non-root `PUID`/`PGID` alignment, persistent/validated `EMDASH_ENCRYPTION_KEY`, PostgreSQL readiness wait, explicit `emdash migrate` gate (`start`, `migrate`, `migrate-status`, `secrets-generate`, `doctor`)
+  - [`docker/compose.yml`](./docker/compose.yml): coexistence-first stack (binds `127.0.0.1:${APP_PORT:-3000}` only, no host `80/443` conflict) with optional `postgres` (PG 18), `valkey` (Valkey 8), and `caddy` profiles
+  - [`docker/compose.proxy-net.yml`](./docker/compose.proxy-net.yml): zero-host-port overlay for attaching to an existing reverse-proxy Docker network
+  - [`docker/.env.example`](./docker/.env.example) & [`docker/Caddyfile.example`](./docker/Caddyfile.example)
+- Compose regression test [`scripts/test-docker-compose-regression.sh`](./scripts/test-docker-compose-regression.sh) wired into `.github/workflows/ci.yml`
+
+### Changed
+
+- Updated [`lib/astro-patch.py`](./lib/astro-patch.py) PostgreSQL config fields to emit `|| undefined` when build-time env vars are absent so container images stay 100% secret-free and resolve `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD` purely at runtime
+- Replaced legacy `docker/base/Dockerfile` with the unified `docker/Dockerfile`
+
 ## 0.3.0-hi.1 - 2026-11-24
 
 EmDash `1.6.x` compatibility and lifecycle reliability release for the `HiEmdash` native deployment line.

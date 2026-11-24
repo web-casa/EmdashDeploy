@@ -18,12 +18,12 @@ jobs:
 
       - name: Shell syntax and Python compile checks
         run: |
-          bash -n bootstrap.sh install.sh install-emdash.sh emdashctl lib/*.sh scripts/test-*.sh linode-test.sh linode-test-matrix.sh
+          bash -n bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh lib/*.sh scripts/test-*.sh linode-test.sh linode-test-matrix.sh
           python3 -m py_compile lib/astro-patch.py
 
       - name: ShellCheck static analysis (error gate)
         run: |
-          shellcheck -S error bootstrap.sh install.sh install-emdash.sh emdashctl lib/*.sh scripts/test-*.sh
+          shellcheck -S error bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh lib/*.sh scripts/test-*.sh
 
       - name: Run offline regression test suites
         run: |
@@ -34,7 +34,8 @@ jobs:
             scripts/test-astro-patch-regression.sh \
             scripts/test-upgrade-regression.sh \
             scripts/test-backup-restore-regression.sh \
-            scripts/test-doctor-regression.sh; do
+            scripts/test-doctor-regression.sh \
+            scripts/test-docker-compose-regression.sh; do
             echo "=== Running $t ==="
             bash "$t"
           done

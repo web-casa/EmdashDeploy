@@ -54,7 +54,7 @@ sudo bash install.sh --lang=zh-CN --activate
 - local 或 S3-compatible storage
 - 备份、恢复、健康检查、升级
 
-旧的容器版已经归档到 `docker` 分支，`main` 现在只保留原生部署。
+旧的容器版 bash 安装脚本已经归档到 `docker` 分支。对于**一台服务器需要共存多个服务或多个 EmDash 站点**的用户，`main` 分支在 [`docker/`](./docker/README.md) 目录下额外提供了轻量的 Docker Compose 多服务套件（默认不占用宿主机 `80/443`，复用同一套 EmDash `1.6.x` 补丁与运行规范）。
 
 ## 支持平台
 

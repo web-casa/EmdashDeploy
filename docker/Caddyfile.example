@@ -1,0 +1,8 @@
+{
+	email you@example.com
+}
+
+example.com {
+	encode zstd gzip
+	reverse_proxy emdash:3000
+}

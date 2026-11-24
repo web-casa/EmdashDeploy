@@ -17,7 +17,7 @@ assert_contains() {
 
 test_parse_migrate_status_json_handles_prefix_lines() {
 	local out parsed
-	out=$'Migration target: sqlite /data/emdash/data/sqlite/data.db\nTarget fingerprint: abc123\n{"target":{"kind":"sqlite"},"knownApplied":["001"],"pending":["099_new"],"unknownApplied":[],"executed":[]}'
+	out=$'Migration target: sqlite /data/emdash/data/sqlite/data.db\nTarget fingerprint: abc123\n{"target":{"kind":"sqlite","fingerprint":"abc123"},"knownApplied":["001"],"pending":["099_new"],"unknownApplied":[],"executed":[]}'
 	parsed="$(printf '%s\n' "${out}" | parse_migrate_status_json)"
 	python3 - "${parsed}" <<'PY'
 import json, sys
@@ -25,6 +25,7 @@ d = json.loads(sys.argv[1])
 assert d["valid"] is True
 assert d["pending_count"] == 1
 assert d["unknown_applied_count"] == 0
+assert d["target_fingerprint"] == "abc123"
 PY
 	printf '[INFO] upgrade regression: parse_migrate_status_json passed\n'
 }

@@ -199,11 +199,11 @@ def replace_emdash_block(source: str, indent: str) -> str:
     if db_driver == "postgres":
         db_block = (
             f"{prop_indent}database: postgres({{\n"
-            f"{inner_indent}host: process.env.POSTGRES_HOST,\n"
-            f'{inner_indent}port: Number(process.env.POSTGRES_PORT || "5432"),\n'
-            f"{inner_indent}database: process.env.PG_DB_NAME,\n"
-            f"{inner_indent}user: process.env.PG_DB_USER,\n"
-            f"{inner_indent}password: process.env.PG_DB_PASSWORD,\n"
+            f"{inner_indent}host: process.env.POSTGRES_HOST || undefined,\n"
+            f"{inner_indent}port: process.env.POSTGRES_PORT ? Number(process.env.POSTGRES_PORT) : undefined,\n"
+            f"{inner_indent}database: process.env.PG_DB_NAME || undefined,\n"
+            f"{inner_indent}user: process.env.PG_DB_USER || undefined,\n"
+            f"{inner_indent}password: process.env.PG_DB_PASSWORD || undefined,\n"
             f"{prop_indent}}}),\n"
         )
     else:

@@ -66,7 +66,7 @@ It is designed for people who want:
 - local filesystem or S3-compatible object storage
 - backup, restore, health checks, and straightforward upgrade commands
 
-The container-based implementation has been archived to the `docker` branch. `main` is now native deployment only.
+The legacy container-based bash installer remains archived on the `docker` branch. For users running **multiple services or multiple EmDash sites on one server**, `main` also provides a lightweight, coexistence-first Docker Compose kit under [`docker/`](./docker/README.md) (does not bind ports `80/443` by default and reuses the same EmDash `1.6.x` config patcher).
 
 ## Supported Platforms
 
