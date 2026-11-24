@@ -14,7 +14,7 @@ Versioning for this project follows the `HiEmdash` line:
 - Git tag: `<emdash-version>-hi.<revision>`
 - Examples: `0.2.0-hi.1`, `0.2.0-hi.2`, `0.2.0-hi.3`
 - When upstream EmDash moves to a new base version, reset the revision:
-  `0.3.0-hi.1`
+  `1.6.0-hi.1`
 
 ## Quick Start
 

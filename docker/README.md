@@ -1,4 +1,4 @@
-# EmdashDeploy Docker Compose Kit (`0.3.0-hi.2`)
+# EmdashDeploy Docker Compose Kit (`1.6.0-hi.1`)
 
 A lightweight, composable Docker Compose kit for running **EmDash `1.6.x`** alongside other services (or multiple EmDash sites) on a single VPS.
 

@@ -2,28 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-## 0.3.0-hi.2 - 2026-11-24
+## 1.6.0-hi.1 - 2026-11-24
 
-Lightweight multi-service / multi-instance Docker Compose kit for EmDash `1.6.x` on `main`.
-
-### Added
-
-- Composable Docker Compose kit under [`docker/`](./docker/README.md):
-  - [`docker/Dockerfile`](./docker/Dockerfile): Node.js 24 image reusing `lib/site-common.sh` and `lib/astro-patch.py`, supporting EmDash `1.6.x`, `@emdash-cms/sandbox-workerd`, `HEALTHCHECK`, `tini`, and optional mainland China registry build args (`NPM_CONFIG_REGISTRY`, `COREPACK_NPM_REGISTRY`)
-  - [`docker/entrypoint.sh`](./docker/entrypoint.sh): non-root `PUID`/`PGID` alignment, persistent/validated `EMDASH_ENCRYPTION_KEY`, PostgreSQL readiness wait, explicit `emdash migrate` gate (`start`, `migrate`, `migrate-status`, `secrets-generate`, `doctor`)
-  - [`docker/compose.yml`](./docker/compose.yml): coexistence-first stack (binds `127.0.0.1:${APP_PORT:-3000}` only, no host `80/443` conflict) with optional `postgres` (PG 18), `valkey` (Valkey 8), and `caddy` profiles
-  - [`docker/compose.proxy-net.yml`](./docker/compose.proxy-net.yml): zero-host-port overlay for attaching to an existing reverse-proxy Docker network
-  - [`docker/.env.example`](./docker/.env.example) & [`docker/Caddyfile.example`](./docker/Caddyfile.example)
-- Compose regression test [`scripts/test-docker-compose-regression.sh`](./scripts/test-docker-compose-regression.sh) wired into `.github/workflows/ci.yml`
-
-### Changed
-
-- Updated [`lib/astro-patch.py`](./lib/astro-patch.py) PostgreSQL config fields to emit `|| undefined` when build-time env vars are absent so container images stay 100% secret-free and resolve `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD` purely at runtime
-- Replaced legacy `docker/base/Dockerfile` with the unified `docker/Dockerfile`
-
-## 0.3.0-hi.1 - 2026-11-24
-
-EmDash `1.6.x` compatibility and lifecycle reliability release for the `HiEmdash` native deployment line.
+EmDash `1.6.x` compatibility, lifecycle reliability, and multi-service Docker Compose release for the `HiEmdash` line.
 
 ### Added
 
@@ -31,20 +12,27 @@ EmDash `1.6.x` compatibility and lifecycle reliability release for the `HiEmdash
 - EmDash `1.6.x` native security and plugin isolation:
   - `EMDASH_ENCRYPTION_KEY` generation via `pnpm exec emdash secrets generate` with `fingerprint` verification
   - `@emdash-cms/sandbox-workerd` + `workerd` plugin sandbox support (enabled by default, configurable via `EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX`)
-- Non-destructive `emdashctl upgrade app` workflow (`--dry-run`, `--target`, `--skip-backup`, `--yes`) with `flock` locking, pre-upgrade verified backup, explicit `emdash migrate --status --json` / `emdash migrate` gate, and pre/post-migration rollback separation
+- Non-destructive `emdashctl upgrade app` workflow (`--dry-run`, `--target`, `--skip-backup`, `--yes`) with `flock` locking, pre-upgrade verified backup, explicit `emdash migrate --status --json` / `emdash migrate --expected-target-fingerprint` gate, and pre/post-migration rollback separation
 - Read-only `emdashctl template diff [--stat]` to compare upstream template updates without overwriting user code
 - Enhanced `emdashctl backup [--full] [--encrypt]` with `0600` permissions, `manifest.json` + SHA256 checksums, lightweight site source snapshot (excluding `node_modules`/`dist`/`.astro`/`.git`), SQLite `PRAGMA integrity_check`, PostgreSQL custom dump (`pg_dump -Fc`) + `pg_restore --list` verification, and optional AES-256-CBC PBKDF2 encryption
 - Safe `emdashctl restore <archive> [--with-site] [--with-secrets]` with cross-driver guard and portable-secret-only merge (never overwrites host domain, ports, or DB credentials)
 - Full-stack redacted diagnostics via `emdashctl doctor --deep --json` (`schema_version: 1`)
 - Mainland China mirror acceleration preset (`EMDASH_MIRROR_PRESET=cn`, application/registry layer only without modifying host APT/DNF system repositories)
-- GitHub Actions CI (`.github/workflows/ci.yml` and `.github/workflows/upstream-compat.yml`) and 4 new offline regression test suites
+- Lightweight multi-service / multi-instance Docker Compose kit under [`docker/`](./docker/README.md):
+  - [`docker/Dockerfile`](./docker/Dockerfile): Node.js 24 image reusing `lib/site-common.sh` and `lib/astro-patch.py`, supporting EmDash `1.6.x`, `@emdash-cms/sandbox-workerd`, `tini`, `HEALTHCHECK`, and optional mainland China registry build args
+  - [`docker/entrypoint.sh`](./docker/entrypoint.sh): non-root `PUID`/`PGID` alignment, persistent/validated `EMDASH_ENCRYPTION_KEY`, PostgreSQL readiness wait, explicit `emdash migrate` gate (`start`, `migrate`, `migrate-status`, `secrets-generate`, `doctor`)
+  - [`docker/compose.yml`](./docker/compose.yml): coexistence-first stack (binds `127.0.0.1:${APP_PORT:-3000}` only, no host `80/443` conflict) with optional `postgres` (PG 18), `valkey` (Valkey 8), and `caddy` profiles
+  - [`docker/compose.proxy-net.yml`](./docker/compose.proxy-net.yml): zero-host-port overlay for attaching to an existing reverse-proxy Docker network
+  - [`docker/.env.example`](./docker/.env.example) & [`docker/Caddyfile.example`](./docker/Caddyfile.example)
+- GitHub Actions CI (`.github/workflows/ci.yml` and `.github/workflows/upstream-compat.yml`) and 5 new offline regression test suites
 
 ### Changed
 
 - Removed discontinued `blank` template option (`blog`, `marketing`, `portfolio` supported; existing legacy instances preserved with migration notice)
 - Stopped hardcoding `pnpm@10.28.0` and `kysely@^0.27.6`; Corepack now respects each site's `packageManager` field with `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`
-- Hardened `lib/astro-patch.py` to support tab/space indentation, `sandboxRunner` injection, and strict idempotency
+- Hardened `lib/astro-patch.py` to support tab/space indentation, `sandboxRunner` injection, strict idempotency, and secret-free PostgreSQL runtime env resolution (`|| undefined`)
 - Updated `emdashctl reset-db-password` to preserve user `astro.config.mjs` and validate the real DB-backed `/_emdash/api/setup/status` endpoint
+- Replaced legacy `docker/base/Dockerfile` with the unified `docker/Dockerfile`
 
 ### Fixed
 
@@ -54,8 +42,9 @@ EmDash `1.6.x` compatibility and lifecycle reliability release for the `HiEmdash
 
 ### Validation Summary
 
-- All 7 offline regression suites + `bash -n` + `py_compile` pass
+- All 8 offline regression suites + `bash -n` + `py_compile` pass
 - Real PVE AlmaLinux 10.2 (SELinux enforcing, mainland China network with `EMDASH_MIRROR_PRESET=cn`) E2E verification passed across fresh install (PG 18 + Valkey + `sandbox-workerd`), `doctor --deep --json`, non-destructive `upgrade app`, `template diff`, encrypted `--full` backup & `--with-site --with-secrets` restore, and `reset-db-password`
+- Dual-instance Docker Compose E2E verification passed (PostgreSQL 18 + Valkey 8 + `sandbox-workerd` secret-free image coexisting with SQLite instance on the same host)
 
 ## 0.2.0-hi.2 - 2026-04-09
 

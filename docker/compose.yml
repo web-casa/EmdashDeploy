@@ -1,4 +1,4 @@
-# EmdashDeploy 0.3.0-hi.2 — Multi-service / Multi-instance Docker Compose Stack
+# EmdashDeploy 1.6.0-hi.1 — Multi-service / Multi-instance Docker Compose Stack
 #
 # Designed to coexist cleanly with other services on the same host:
 #   - Does NOT bind host 80/443 by default (only binds ${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000})
@@ -22,7 +22,7 @@ services:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-}
         COREPACK_NPM_REGISTRY: ${COREPACK_NPM_REGISTRY:-}
         APP_NODE_MAX_OLD_SPACE_SIZE: ${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}
-    image: ${EMDASH_IMAGE:-emdash-deploy:0.3.0-hi.2-${EMDASH_TEMPLATE:-blog}-${DB_DRIVER:-sqlite}-${SESSION_DRIVER:-file}-${STORAGE_DRIVER:-local}}
+    image: ${EMDASH_IMAGE:-emdash-deploy:1.6.0-hi.1-${EMDASH_TEMPLATE:-blog}-${DB_DRIVER:-sqlite}-${SESSION_DRIVER:-file}-${STORAGE_DRIVER:-local}}
     restart: unless-stopped
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000}:3000"
