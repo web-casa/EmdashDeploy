@@ -1,371 +1,224 @@
 # EmdashDeploy
 
-![License](https://img.shields.io/github/license/web-casa/EmdashDeploy)
-![OS](https://img.shields.io/badge/OS-Debian%2013%20%7C%20Ubuntu%2024.04%2F26.04%20%7C%20EL%209%2F10-blue)
-![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-blue)
-![Mode](https://img.shields.io/badge/Mode-Native%20%2B%20Docker%20Compose-2ea44f)
-![Stack](https://img.shields.io/badge/Stack-Node.js%2024%20%2B%20Caddy%20%2B%20PostgreSQL%2018%20%2F%20SQLite%20%2B%20Valkey-2ea44f)
+[![Release](https://img.shields.io/github/v/release/web-casa/EmdashDeploy?label=Release)](https://github.com/web-casa/EmdashDeploy/releases)
+[![CI](https://github.com/web-casa/EmdashDeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/web-casa/EmdashDeploy/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/web-casa/EmdashDeploy)](./LICENSE)
+[![OS](https://img.shields.io/badge/OS-Debian%2013%20%7C%20Ubuntu%2024.04%2F26.04%20%7C%20EL%209%2F10-blue)](#supported-platforms--verified-matrix)
+[![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-blue)](#supported-platforms--verified-matrix)
+[![Mode](https://img.shields.io/badge/Mode-Native%20systemd%20%2B%20Docker%20Compose-2ea44f)](#choose-your-deployment-mode)
 
-Native VPS installer and operations toolkit for EmDash with Node.js, systemd, optional Caddy HTTPS, backup, restore, and health checks.
+Production-ready **native VPS installer**, **operations CLI (`emdashctl`)**, and **coexistence-first multi-arch Docker Compose kit** for [EmDash](https://github.com/emdash-cms/emdash) `1.6.x`.
 
-Languages: **English** | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
+**Languages**: **English** | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
-Versioning for this project follows the `HiEmdash` line:
+---
 
-- Git tag: `<emdash-version>-hi.<revision>`
-- Examples: `0.2.0-hi.1`, `0.2.0-hi.2`, `0.2.0-hi.3`
-- When upstream EmDash moves to a new base version, reset the revision:
-  `1.6.0-hi.1`
+## Choose Your Deployment Mode
+
+Both modes live on `main` and share the exact same EmDash `1.6.x` config patcher ([`lib/site-common.sh`](./lib/site-common.sh) & [`lib/astro-patch.py`](./lib/astro-patch.py)), plugin sandbox support (`@emdash-cms/sandbox-workerd`), encryption key validation, and migration safety rules.
+
+| Dimension | Native VPS Installer (`install.sh` + `emdashctl`) | Docker Compose Kit ([`docker/`](./docker/README.md)) |
+| --- | --- | --- |
+| **Best for** | Dedicated VPS, lowest RAM overhead, direct `systemd` + host Caddy | Shared VPS alongside Nginx/Traefik/1Panel/other containers |
+| **Runtime** | Host Node.js 24, `systemd`, Caddy, SQLite / PostgreSQL 18, Valkey | Prebuilt multi-arch GHCR images (`linux/amd64` + `linux/arm64`) |
+| **Host ports** | Optional host Caddy (`80/443`) or direct `APP_PORT` | Does **not** bind `80/443` by default (`127.0.0.1:3000` only) |
+| **Multi-site on 1 host** | Native `--instance <name>` + modular `/etc/emdash/caddy/sites.d/` | Separate `COMPOSE_PROJECT_NAME` + `APP_PORT` (or `compose.proxy-net.yml`) |
+| **Custom / AI-modified site** | Preserves user code in `/data/emdash/app/site` (`preserve` mode) | Immutable build via [`docker/Dockerfile.custom`](./docker/Dockerfile.custom) |
+| **Backup & Restore** | `emdashctl backup/restore` (local + S3 retention/list/restore) | [`docker/backup.sh`](./docker/backup.sh) + [`docker/restore.sh`](./docker/restore.sh) |
+| **Cross-mode migration** | [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh) (`native-to-docker` ↔ `docker-to-native`) | Same |
+
+> Looking for the archived legacy bash container installer? It remains preserved on the `docker` branch.
+
+---
 
 ## Quick Start
 
-Interactive install:
+### Option 1: Native VPS Install (Interactive)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en
 ```
 
-Generate config only:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en --write-only
-```
-
-Non-interactive install:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --lang=en --non-interactive --activate
-```
-
-Local checkout:
-
-```bash
-git clone https://github.com/web-casa/EmdashDeploy.git
-cd EmdashDeploy
-chmod +x bootstrap.sh install.sh emdashctl linode-test.sh
-sudo bash install.sh --lang=en --activate
-```
-
-Unified command style:
-
-- `bootstrap.sh --lang=<code>`
-- `install.sh --lang=<code>`
-- `emdashctl --lang=<code>`
-
-## What This Repository Does
-
-This repository installs and operates [EmDash](https://github.com/emdash-cms/emdash) directly on a VPS.
-
-It is designed for people who want:
-
-- an interactive installer
-- non-interactive installs with environment variables
-- native Node.js deployment with `systemd`
-- optional Caddy with automatic HTTPS
-- SQLite or PostgreSQL 18
-- file sessions or Redis
-- local filesystem or S3-compatible object storage
-- backup, restore, health checks, and straightforward upgrade commands
-
-The legacy container-based bash installer remains archived on the `docker` branch. For users running **multiple services or multiple EmDash sites on one server**, `main` also provides a lightweight, coexistence-first Docker Compose kit under [`docker/`](./docker/README.md) (does not bind ports `80/443` by default and reuses the same EmDash `1.6.x` config patcher).
-
-## Supported Platforms
-
-| OS family | Versions | Architectures | Notes |
-| --- | --- | --- | --- |
-| Debian | 13 (`trixie`) | `x86_64`, `aarch64` | Native install |
-| Ubuntu | 24.04 LTS (`noble`), 26.04 LTS (`resolute`) | `x86_64`, `aarch64` | Native install |
-| EL-like | 9, 10 | `x86_64`, `aarch64` | Native install |
-
-Notes:
-
-- EL-like means Rocky Linux, AlmaLinux, RHEL-like variants, Oracle Linux, CentOS Stream, and similar systems handled by the installer.
-- Node.js 24 is installed from `NodeSource` with Corepack respecting each project's `packageManager` field (e.g. `pnpm@11.9.0`).
-- PostgreSQL 18 is installed from `PGDG` across all supported platforms (EL automatically selects `x86_64` or `aarch64` via `uname -m`).
-- Session caching uses `Valkey` across all supported platforms with automatic systemd unit detection (`valkey-server` or `valkey`).
-- EmDash `1.6.x` native features are supported out of the box, including `EMDASH_ENCRYPTION_KEY` generation and two-stage rotation, `@emdash-cms/sandbox-workerd` plugin isolation, and explicit `emdash migrate` checks.
-- Validation boundary: Debian 13, Ubuntu 24.04, Ubuntu 26.04, EL9, and EL10 have been verified on real `x86_64` VMs (PVE/Linode); `ARM64` (`linux/arm64`) multi-arch container images and `workerd` runtime are natively verified on GitHub Actions `ubuntu-24.04-arm` runners.
-
-## Features
-
-- Interactive installer: [`install.sh`](./install.sh)
-- Operations CLI: [`emdashctl`](./emdashctl)
-- Real VPS smoke test helper: [`linode-test.sh`](./linode-test.sh)
-- Native `systemd` service for the EmDash app
-- Native Caddy install on the host
-- SQLite or PostgreSQL 18
-- File-based sessions or Redis
-- Local filesystem or S3-compatible object storage
-- S3-compatible backups
-- JSON output for `status`, `doctor`, and `smoke`
-- Multi-language installer and operator CLI
-- Generated layout under `/data/emdash`
-- Generated config under `/etc/emdash`
-
-## Default Layout
-
-Default runtime paths:
-
-- Root: `/data/emdash`
-- Site: `/data/emdash/app/site`
-- Data: `/data/emdash/data`
-- Backups: `/data/emdash/backups`
-- Logs: `/data/emdash/logs`
-- Config: `/etc/emdash`
-- CLI: `/usr/local/bin/emdashctl`
-
-Important generated files:
-
-- `/etc/emdash/install.yml`
-- `/etc/emdash/emdash.env`
-- `/etc/systemd/system/emdash-app.service`
-- `/data/emdash/scripts/emdash-build.sh`
-- `/data/emdash/scripts/emdash-start.sh`
-- `/data/emdash/lib/site-common.sh`
-- `/data/emdash/lib/astro-patch.py`
-
-## Non-Interactive Examples
-
-SQLite with local storage:
-
-```bash
-EMDASH_INSTALL_DB_DRIVER=sqlite \
-EMDASH_INSTALL_SESSION_DRIVER=file \
-EMDASH_INSTALL_STORAGE_DRIVER=local \
-sudo bash install.sh --lang=en --non-interactive --activate
-```
-
-PostgreSQL with Redis:
-
-```bash
-EMDASH_INSTALL_DB_DRIVER=postgres \
-EMDASH_INSTALL_PG_PASSWORD='change-me-now' \
-EMDASH_INSTALL_SESSION_DRIVER=redis \
-EMDASH_INSTALL_REDIS_PASSWORD='change-me-too' \
-sudo bash install.sh --lang=en --non-interactive --activate
-```
-
-Caddy with HTTPS:
+Non-interactive SQLite + Caddy HTTPS install:
 
 ```bash
 EMDASH_INSTALL_USE_CADDY=1 \
 EMDASH_INSTALL_ENABLE_HTTPS=1 \
-EMDASH_INSTALL_DOMAIN=example.com \
-EMDASH_INSTALL_ADMIN_EMAIL=you@example.com \
-sudo bash install.sh --lang=en --non-interactive --activate
+EMDASH_INSTALL_DOMAIN=blog.example.com \
+EMDASH_INSTALL_ADMIN_EMAIL=ops@example.com \
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh \
+  | sudo -E bash -s -- --lang=en --non-interactive --activate
 ```
 
-S3-compatible media storage:
+Mainland China accelerated install (uses `npmmirror` for Corepack & `pnpm 11` + automatic Google Fonts build-time fast-fail, without mutating host APT/DNF repos):
 
 ```bash
-EMDASH_INSTALL_STORAGE_DRIVER=s3 \
-EMDASH_INSTALL_S3_ENDPOINT='https://s3.example.com' \
-EMDASH_INSTALL_S3_REGION='auto' \
-EMDASH_INSTALL_S3_BUCKET='emdash-media' \
-EMDASH_INSTALL_S3_ACCESS_KEY_ID='...' \
-EMDASH_INSTALL_S3_SECRET_ACCESS_KEY='...' \
-sudo bash install.sh --lang=en --non-interactive --activate
+EMDASH_MIRROR_PRESET=cn \
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh \
+  | sudo -E bash -s -- --lang=zh-CN --non-interactive --activate
 ```
 
-## Main Commands
-
-Installer:
+Install a second isolated native site on the same server:
 
 ```bash
-sudo bash install.sh --lang=en
-sudo bash install.sh --lang=en --activate
-sudo bash install.sh --lang=en --write-only
 sudo bash install.sh --lang=en --instance site2 --activate
-sudo bash install.sh --update-cli
 ```
 
-Operations:
+Update `emdashctl` and shared libraries on an existing host with **zero downtime** (no rebuild or restart):
 
 ```bash
-emdashctl --lang=en instances [--json]
-emdashctl --lang=en [--instance <name>] status [--json]
-emdashctl --lang=en [--instance <name>] doctor [--deep] [--json]
-emdashctl --lang=en [--instance <name>] diagnose --json --out /tmp/emdash-diag.json
-emdashctl --lang=en [--instance <name>] smoke [--json]
-emdashctl --lang=en [--instance <name>] logs app
-emdashctl --lang=en [--instance <name>] restart app
-emdashctl --lang=en [--instance <name>] backup [--full] [--encrypt] [--list-s3 [--json]]
-emdashctl --lang=en [--instance <name>] restore <backup.tar.gz | --from-s3 <key|latest>> [--with-site] [--with-secrets]
-emdashctl --lang=en [--instance <name>] upgrade app [--dry-run] [--target <version|latest>]
-emdashctl --lang=en [--instance <name>] template diff [--stat]
-emdashctl --lang=en [--instance <name>] upgrade caddy-config
-emdashctl --lang=en [--instance <name>] rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
-emdashctl --lang=en [--instance <name>] migrate-db sqlite-to-postgres [--dry-run] [--yes]
-emdashctl --lang=en [--instance <name>] reset-db-password
-emdashctl --lang=en [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]
+curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstrap.sh | sudo bash -s -- --update-cli
 ```
 
-Key operational tools:
-- `install.sh --update-cli`: atomically updates `/usr/local/bin/emdashctl` and `${ROOT_DIR}/lib/` across installed instances with zero downtime (no service restart or rebuild).
-- `install.sh --instance <name>` & `emdashctl instances`: run multiple isolated native EmDash sites on a single host (`/etc/emdash/instances/<name>`, `/data/emdash-<name>`, `emdash-app-<name>.service`, auto-allocated port, modular `/etc/emdash/caddy/sites.d/*.caddy` + preserved user `/etc/emdash/caddy/conf.d/*.caddy`).
-- `emdashctl diagnose --json`: generates an AI-friendly diagnostic bundle with recursive redaction for secrets, cookies, Bearer/JWT tokens, sensitive URL query params, and client IPs (`--out` rejects symlinks and writes atomically with `0600`).
-- `emdashctl rotate-encryption-key`: performs safe two-stage `EMDASH_ENCRYPTION_KEY` rotation (Stage 1 prepends a new key while preserving decryption; Stage 2 scans DB encrypted envelopes for legacy `kid` references and requires explicit `--confirm-prune-kid <kid>`).
-- `emdashctl migrate-db sqlite-to-postgres` & [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh): migrate data from SQLite to PostgreSQL 18 (FK topological sort, sequence resets, exact row-count verification, automatic rollback) or move between Docker Compose and native systemd.
-- `emdashctl backup --list-s3` / `restore --from-s3 <key|latest>` & `BACKUP_KEEP_S3`: complete remote S3 backup retention, listing, and one-command restore loop.
-- `emdashctl uninstall`: cleanly removes systemd unit, backup cron, Caddy site snippet, and config (destructive `--purge-data` / `--drop-db` require explicit `--confirm-instance <name>`).
-
-## Upgrade Model
-
-Native upgrades preserve all user-customized pages, themes, styles, and `astro.config.mjs`:
-
-1. run preflight and resolve target `emdash` / `@emdash-cms/*` versions (`--dry-run` previews without mutating anything)
-2. acquire exclusive lock (`flock`) and create a verified pre-upgrade backup (database + site source + manifest)
-3. stop `emdash-app.service`, update only EmDash dependencies in `package.json`, run `pnpm install` + `pnpm build`
-4. run explicit database migration gate (`emdash migrate --status --json` & `emdash migrate`)
-5. restart `emdash-app.service` and verify health (auto-rollback if failure happens before migration; explicit restore instructions if failure happens after forward-only migration)
-
-To inspect upstream template changes without overwriting your site:
+### Option 2: Docker Compose Kit (Prebuilt Multi-Arch GHCR)
 
 ```bash
-emdashctl --lang=en template diff --stat
+git clone https://github.com/web-casa/EmdashDeploy.git && cd EmdashDeploy/docker
+cp .env.example .env
+# Edit .env: set EMDASH_SITE_URL=https://blog.example.com and APP_PORT=3001
+docker compose run --rm emdash secrets-generate
+# Paste the generated key into EMDASH_ENCRYPTION_KEY in .env, then start:
+docker compose up -d
 ```
 
-Optional mainland China mirror acceleration (application/registry layer only, does not mutate host APT/DNF system repos):
+For PostgreSQL 18 + Valkey 8 profiles, local China mirror builds (`compose.build.yml`), custom site repos (`compose.custom-site.yml`), external proxy networks (`compose.proxy-net.yml`), and container backup/restore, see [`docker/README.md`](./docker/README.md).
 
-```bash
-EMDASH_MIRROR_PRESET=cn sudo bash install.sh --lang=zh-CN --non-interactive --activate
-```
+---
 
-## Caddy and HTTPS
+## Key Features (`1.6.0-hi.4`)
 
-If you enable Caddy, the installer will:
+- **Full EmDash `1.6.x` Native Support**:
+  - `EMDASH_ENCRYPTION_KEY` generation via `emdash secrets generate`, format/fingerprint verification, and safe **two-stage key rotation** (`emdashctl rotate-encryption-key`) with database encrypted-envelope `kid` scanning before pruning legacy keys.
+  - `@emdash-cms/sandbox-workerd` + `workerd` plugin isolation enabled by default (configurable via `EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX`).
+  - Explicit `emdash migrate --status --json` / `--expected-target-fingerprint` migration gate.
+  - Reliable WebAuthn / Passkey origin propagation (`APP_PUBLIC_URL`, `EMDASH_SITE_URL`, `SITE_URL`).
+- **Native Multi-Instance & Modular Caddy**:
+  - Default single-instance paths (`/etc/emdash`, `/data/emdash`, `emdash-app.service`, port `3000`) stay 100% backward-compatible.
+  - Named instances (`--instance <name>`) are fully isolated (`/etc/emdash/instances/<name>`, `/data/emdash-<name>`, `emdash-app-<name>.service`, `/etc/cron.d/emdash-backup-<name>`, auto-allocated free `APP_PORT` starting at `3001`, isolated `HOME=${ROOT_DIR}`, independent `flock`, and `emdash_<name>` PostgreSQL DB/role).
+  - Modular `/etc/emdash/caddy/Caddyfile` with a single global `email` block, managed `sites.d/*.caddy`, and user-owned `conf.d/*.caddy` preserved across upgrades and uninstalls (legacy single-file Caddyfiles are automatically migrated on multi-instance expansion).
+- **Non-Destructive Upgrades & Template Diff**:
+  - `emdashctl upgrade app` updates only `emdash` / `@emdash-cms/*` dependencies, runs an exclusive `flock`, creates a verified pre-upgrade backup, builds, enforces the explicit migration gate, and preserves all custom pages, themes, styles, and `astro.config.mjs`.
+  - `emdashctl template diff [--stat]` inspects upstream template changes read-only without touching your site.
+- **AI-Friendly Redacted Diagnostics**:
+  - `emdashctl diagnose --json [--out <file>]` (`schema_version: 1`) bundles host metadata, non-secret config summary (`encryption_key_kids`), `doctor --deep` (including upstream SQLite `emdash doctor` aggregation), migration status, service states, bounded `journalctl -o json` logs, and `suggested_next_steps`.
+  - Recursively redacts passwords, DB/Redis URLs, `emdash_enc_v1_*`, Bearer/Basic auth headers, cookies, JWTs, sensitive query parameters, and client IPs (`--out` rejects symlinks and writes atomically with `0600`).
+- **Complete Backup, S3 Retention & Restore Loop**:
+  - Consistent SQLite `sqlite3.backup()` + `PRAGMA integrity_check`, PostgreSQL `pg_dump -Fc` + `pg_restore --list`, `manifest.json` + SHA-256 checksums, `0600` permissions, and AES-256-CBC PBKDF2 encryption (`--encrypt`).
+  - Remote S3 retention pruning (`BACKUP_KEEP_S3`, default `14`, strictly matching managed backup filenames), `backup --list-s3 [--json]`, and one-command `restore --from-s3 <key|latest>`.
+- **Database & Runtime Migration Assistants**:
+  - `emdashctl migrate-db sqlite-to-postgres`: zero-dependency Python migrator ([`lib/migrate-sqlite-to-pg.py`](./lib/migrate-sqlite-to-pg.py)) with non-superuser FK topological sort, PG column type coercion (preserving `$emdash` encrypted envelopes verbatim), SQLite FTS5 shadow-table skipping, automatic PG DDL provisioning for dynamic `ec_*` collection tables (`ec_posts`, `ec_pages`, etc.), sequence resets, exact per-table row-count verification, and automatic rollback on failure.
+  - [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh): `native-to-docker` and `docker-to-native` migration preserving `EMDASH_ENCRYPTION_KEY` with `0600` `.env` output.
+- **Mainland China Build Acceleration**:
+  - `EMDASH_MIRROR_PRESET=cn` sets `npmmirror` for Corepack & `pnpm 11` (both `NPM_CONFIG_REGISTRY` and lowercase `npm_config_registry` + `--registry=`) and enables [`lib/fast-fail-google-fonts.mjs`](./lib/fast-fail-google-fonts.mjs) when no proxy is configured, cutting Astro build times from ~120s font timeouts down to **~16–19s**.
+- **Safe Uninstaller**:
+  - `emdashctl uninstall` cleanly removes systemd unit, backup cron, Caddy snippet, and instance config while protecting sibling instances and `conf.d/*.caddy`. Destructive `--purge-data` / `--drop-db` require explicit `--confirm-instance <name>` (plain `--yes` is never accepted).
 
-- detect public IPs from multiple providers
-- show the detected public IPv4 and IPv6
-- ask you to finish DNS resolution before continuing
-- validate DNS and port `80/443` before activation
-- install native Caddy on the host
-- configure HTTPS
+---
 
-Firewall handling:
+## Operations CLI (`emdashctl`) Reference
 
-- On EL systems, the installer automatically opens `80/tcp` and `443/tcp` with `firewalld` when Caddy is enabled.
-- On Debian/Ubuntu, the installer opens `80/tcp` and `443/tcp` if `ufw` is enabled.
+All instance-scoped commands accept `[--lang <code>]` and `[--instance <name>]` (defaulting to the primary instance when omitted).
 
-Without Caddy, the app binds directly to `0.0.0.0:${APP_PORT}` and the installer publishes a public `http://<server-ip>:3000` URL.
+| Command | Purpose |
+| --- | --- |
+| `emdashctl instances [--json]` | List all native instances on the host with running status, port, DB driver, and URL |
+| `emdashctl status [--json]` | Show runtime, app health, setup status, database, session, and Caddy state |
+| `emdashctl doctor [--deep] [--json]` | Run health, permission, ownership, migration, and upstream `emdash doctor` checks |
+| `emdashctl diagnose [--json] [--lines N] [--out FILE]` | Export a fully redacted AI-friendly diagnostic bundle (`0600`, no symlinks) |
+| `emdashctl smoke [--json]` | Run end-to-end local HTTP + setup API smoke check |
+| `emdashctl logs [app\|postgres\|redis\|caddy] [-f]` | Inspect systemd service logs |
+| `emdashctl restart [app\|postgres\|redis\|caddy\|all]` | Restart one or all stack services |
+| `emdashctl backup [--full] [--encrypt] [--list-s3 [--json]]` | Create verified local/S3 backup (with retention pruning) or list remote S3 backups |
+| `emdashctl restore <file \| --from-s3 <key\|latest>> [--with-site] [--with-secrets] [--yes]` | Verify checksums/driver and safely restore database, uploads, and optional site/secrets |
+| `emdashctl upgrade app [--target <ver\|latest>] [--dry-run] [--skip-backup] [--yes]` | Non-destructive dependency upgrade with pre-upgrade backup and explicit migration gate |
+| `emdashctl upgrade caddy-config` | Re-render and validate modular Caddy config without touching user `conf.d/*.caddy` |
+| `emdashctl template diff [--stat]` | Compare upstream template changes read-only |
+| `emdashctl rotate-encryption-key [--status \| --dry-run \| --prune-old --confirm-prune-kid <kid>]` | Two-stage zero-loss `EMDASH_ENCRYPTION_KEY` rotation |
+| `emdashctl migrate-db sqlite-to-postgres [--dry-run] [--yes]` | Migrate an instance from SQLite to PostgreSQL 18 with exact row-count verification |
+| `emdashctl reset-db-password` | Rotate native PostgreSQL role password atomically with health-check rollback |
+| `emdashctl uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]` | Safely remove an instance without harming sibling instances |
 
-## Backup and Restore
+<details>
+<summary><strong>Common Installer Environment Variables (click to expand)</strong></summary>
 
-Supported backup targets:
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EMDASH_INSTALL_LANG` | `en` | Installer UI language (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `es`, `de`, `fr`, `pt`) |
+| `EMDASH_INSTALL_INSTANCE` | *(empty = default)* | Named instance slug (`^[a-z][a-z0-9-]{0,31}$`) for multi-instance hosting |
+| `EMDASH_INSTALL_TEMPLATE` | `blog` | Upstream EmDash template (`blog`, `marketing`, `portfolio`) |
+| `EMDASH_INSTALL_ROOT_DIR` | `/data/emdash` (or `/data/emdash-<name>`) | Instance root directory |
+| `EMDASH_INSTALL_APP_PORT` | `3000` (or auto `3001+`) | Internal Node.js listen port |
+| `EMDASH_INSTALL_USE_CADDY` | `1` | Install and configure host Caddy reverse proxy (`1` or `0`) |
+| `EMDASH_INSTALL_ENABLE_HTTPS` | `1` | Enable automatic Let's Encrypt HTTPS (`0` for HTTP-only behind CDN/Tunnel/LAN) |
+| `EMDASH_INSTALL_DOMAIN` | *(prompted)* | Public site domain when Caddy is enabled |
+| `EMDASH_INSTALL_ADMIN_EMAIL` | *(prompted)* | ACME / Caddy global email |
+| `EMDASH_INSTALL_DB_DRIVER` | `sqlite` | Database backend (`sqlite` or `postgres` for PostgreSQL 18) |
+| `EMDASH_INSTALL_PG_PASSWORD` | *(generated/prompted)* | PostgreSQL role password |
+| `EMDASH_INSTALL_SESSION_DRIVER` | `file` | Session store (`file` or `redis` for Valkey 8) |
+| `EMDASH_INSTALL_REDIS_PASSWORD` | *(generated/prompted)* | Valkey authentication password |
+| `EMDASH_INSTALL_STORAGE_DRIVER` | `local` | Media storage (`local` or `s3`) |
+| `EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX` | `1` | Enable `@emdash-cms/sandbox-workerd` plugin sandbox (`1` or `0`) |
+| `EMDASH_INSTALL_ENCRYPTION_KEY` | *(auto-generated)* | Explicit `emdash_enc_v1_...` key for deterministic/DR installs |
+| `EMDASH_INSTALL_BACKUP_TARGET` | `local` | Backup destination (`local` or `s3`) |
+| `EMDASH_INSTALL_BACKUP_KEEP_S3` | `14` | Number of remote S3 backups retained per prefix |
+| `EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE` | *(empty)* | Dedicated passphrase for `--encrypt` archives (must differ from `EMDASH_ENCRYPTION_KEY`) |
+| `EMDASH_MIRROR_PRESET` | *(empty)* | Set to `cn` for mainland China `npmmirror` + Google Fonts fast-fail acceleration |
+| `EMDASH_FAST_FAIL_GOOGLE_FONTS` | `1` under `cn`, else `0` | Fast-fail unreachable Google Fonts metadata requests during build (`0` to disable) |
+| `EMDASH_INSTALL_FORCE_SYNC_TEMPLATE` | `0` | Set to `1` to explicitly overwrite an existing `SITE_DIR` with fresh template files |
 
-- `local`
-- `s3`
+</details>
 
-What is included:
+<details>
+<summary><strong>Native Filesystem Layout (default vs. named instance)</strong></summary>
 
-- install snapshot
-- runtime env file
-- SQLite database or PostgreSQL dump
-- local uploads
-- file sessions
+| Component | Default Instance | Named Instance (`--instance site2`) |
+| --- | --- | --- |
+| Env & Install Metadata | `/etc/emdash/emdash.env`, `install.yml` | `/etc/emdash/instances/site2/emdash.env`, `install.yml` |
+| Data & Site Root | `/data/emdash` (`app/site`, `data/`, `backups/`, `scripts/`, `lib/`) | `/data/emdash-site2` |
+| systemd Unit | `/etc/systemd/system/emdash-app.service` | `/etc/systemd/system/emdash-app-site2.service` |
+| Backup Cron | `/etc/cron.d/emdash-backup` | `/etc/cron.d/emdash-backup-site2` |
+| Caddy Site Snippet | `/etc/emdash/caddy/sites.d/default.caddy` | `/etc/emdash/caddy/sites.d/site2.caddy` |
+| User Caddy Snippets | `/etc/emdash/caddy/conf.d/*.caddy` (shared, preserved) | Same |
+| PostgreSQL DB / User | `emdash` / `emdash` | `emdash_site2` / `emdash_site2` |
+| Global Operations CLI | `/usr/local/bin/emdashctl` | Same |
 
-For S3-compatible storage and backups, the native path now uses Python `boto3` rather than a containerized AWS CLI helper.
+</details>
 
-## Operator Examples
+---
 
-Restore the latest backup:
+## Supported Platforms & Verified Matrix
 
-```bash
-latest="$(ls -1 /data/emdash/backups/emdash-backup-*.tar.gz | tail -n1)"
-emdashctl --lang=en restore "$latest"
-```
+| OS Family | Supported Versions | Architectures | Runtime Stack | Verification Coverage |
+| --- | --- | --- | --- | --- |
+| **Debian** | 13 (`trixie`) | `x86_64`, `aarch64` | Node 24, PG 18 (PGDG), Valkey, Caddy | Real PVE VM (`x86_64`, 2 GiB RAM + swap + PG 18 + multi-instance + SQLite→PG) |
+| **Ubuntu** | 24.04 LTS (`noble`), 26.04 LTS (`resolute`) | `x86_64`, `aarch64` | Node 24, PG 18 (PGDG), Valkey, Caddy | Real PVE/Linode VMs (`x86_64`) + native CI runners |
+| **EL-like** (Rocky, Alma, RHEL, OL, CentOS Stream) | 9, 10 | `x86_64`, `aarch64` | Node 24, PG 18 (PGDG dynamic arch), Valkey, Caddy, SELinux Enforcing | Real PVE VMs (`x86_64` Rocky 9.9 / Rocky 10.3 / Alma 10.3 SELinux Enforcing) |
+| **Docker / GHCR** | Multi-arch OCI images | `linux/amd64`, `linux/arm64` | Node 24 + `workerd` + optional PG 18 / Valkey 8 / Caddy 2 | Native GitHub Actions `ubuntu-24.04` & `ubuntu-24.04-arm` + local ARM64 E2E |
 
-Rotate the PostgreSQL password:
+Detailed verification procedures and the generic remote E2E verifier ([`scripts/remote-e2e-verify.sh`](./scripts/remote-e2e-verify.sh)) are documented in [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
 
-```bash
-emdashctl --lang=en reset-db-password
-```
+---
 
-Refresh the template, rebuild, and restart:
+## Versioning & Compatibility
 
-```bash
-emdashctl --lang=en upgrade app
-```
+This repository follows the **`HiEmdash`** version line: `<emdash-version>-hi.<revision>` (e.g. `1.6.0-hi.1` → `1.6.0-hi.4`). When upstream EmDash bumps its base version, the `-hi.<revision>` suffix resets to `1`.
 
-## Compatibility
+- Unified command interface across all 9 languages: `bootstrap.sh --lang=<code>`, `install.sh --lang=<code>`, `emdashctl --lang=<code>`.
+- Legacy language-suffixed alias scripts (`emdashctl.<lang>.sh`) were retired; see [`COMPATIBILITY.md`](./COMPATIBILITY.md) for migration details.
 
-Repository-level language alias files have been removed.
+---
 
-Current supported entrypoints:
+## Repository Map
 
-- `bootstrap.sh --lang=<code>`
-- `install.sh --lang=<code>`
-- `emdashctl --lang=<code>`
-
-During install or upgrade, the installer rewrites recognized system-level cron entries and systemd `Exec*` lines that still call the old `emdashctl.<lang>.sh` form, then removes stale alias files from `/usr/local/bin`.
-
-Not migrated automatically:
-
-- arbitrary user scripts
-- user crontabs
-- shell history
-- bookmarked raw GitHub URLs for removed alias files
-
-See [`COMPATIBILITY.md`](./COMPATIBILITY.md).
-
-## Migration from `docker` Branch
-
-If you were using the previous container-based implementation:
-
-1. keep using the `docker` branch if you want Docker/Podman deployment
-2. use `main` only for the native installer
-3. expect a different runtime model:
-   - no `compose.yml`
-   - no container runtime requirement
-   - app managed by `systemd`
-   - services installed directly on the host
-4. review native paths before migrating:
-   - `/etc/emdash/emdash.env`
-   - `/etc/systemd/system/emdash-app.service`
-   - `/data/emdash/app/site`
-5. if you migrate an existing host, take a fresh backup first
-
-The archived container implementation remains on the `docker` branch.
-
-## Known Limits
-
-- `main` no longer provides Docker/Podman deployment
-- supported systems are limited to Debian 13, Ubuntu 24.04, EL9, and EL10
-- PostgreSQL password reset support is for native PostgreSQL installs only
-- `upgrade` currently supports `app` and `caddy-config`
-- user crontabs and arbitrary user scripts are not automatically rewritten during command-interface migration
-- template, plugin, and build-time config changes still require `pnpm build`
-
-## Tested Native Matrix
-
-Real VPS verification on `main` currently includes:
-
-- Debian 13 + SQLite + file
-- Ubuntu 24.04 + SQLite + file
-- EL9 + SQLite + Redis
-- EL10 + SQLite + Redis
-- EL9 + Caddy + HTTPS
-- Debian 13 + Caddy + HTTPS
-- Ubuntu 24.04 + Caddy + HTTPS
-- Ubuntu 24.04 + PostgreSQL + file
-- Ubuntu 24.04 + PostgreSQL + Redis + Caddy
-- EL9 + PostgreSQL + Redis + Caddy
-- EL10 + PostgreSQL + Redis + Caddy
-- Debian 13 + S3-compatible media storage
-- Ubuntu 24.04 + S3 backup
-
-Detailed scenarios and operator checks are documented in [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
-
-## Repository Guide
-
-Key files:
-
-- [`install.sh`](./install.sh): unified installer entry
-- [`install-emdash.sh`](./install-emdash.sh): main native installer
-- [`emdashctl`](./emdashctl): native operator CLI
-- [`linode-test.sh`](./linode-test.sh): Linode real-VPS test helper
-- [`lib/os.sh`](./lib/os.sh): OS packages, NodeSource, PGDG, Redis, Caddy
-- [`lib/render.sh`](./lib/render.sh): native env, systemd, site rendering
-- [`lib/network.sh`](./lib/network.sh): public IP detection and S3 checks
-
-Historical container release material remains under `release-assets/` and the archived implementation remains on the `docker` branch.
+- [`bootstrap.sh`](./bootstrap.sh) — Remote one-liner bootstrapper (passes `--lang`, `--instance`, `--update-cli`, `--non-interactive`, `--write-only`, `--activate`)
+- [`install.sh`](./install.sh) / [`install-emdash.sh`](./install-emdash.sh) — Native VPS installer and zero-downtime `--update-cli` updater
+- [`emdashctl`](./emdashctl) — Full lifecycle operations CLI (single- and multi-instance)
+- [`lib/`](./lib/) — Modular installer & runtime libraries:
+  - [`lib/site-common.sh`](./lib/site-common.sh) & [`lib/astro-patch.py`](./lib/astro-patch.py) — Shared single source of truth for Native & Docker
+  - [`lib/migrate-sqlite-to-pg.py`](./lib/migrate-sqlite-to-pg.py) — Zero-dependency SQLite → PostgreSQL 18 migrator
+  - [`lib/fast-fail-google-fonts.mjs`](./lib/fast-fail-google-fonts.mjs) — Non-invasive Node `--import` font fast-fail hook
+  - [`lib/config.sh`](./lib/config.sh), [`lib/os.sh`](./lib/os.sh), [`lib/render.sh`](./lib/render.sh), [`lib/network.sh`](./lib/network.sh), [`lib/i18n.sh`](./lib/i18n.sh), [`lib/prompt.sh`](./lib/prompt.sh), [`lib/common.sh`](./lib/common.sh)
+- [`docker/`](./docker/README.md) — Coexistence-first Docker Compose kit, overlays, `Dockerfile`, `Dockerfile.custom`, `backup.sh`, `restore.sh`
+- [`scripts/`](./scripts/) — Runtime migration helper (`migrate-runtime.sh`), remote E2E verifier (`remote-e2e-verify.sh`), and 13 offline regression test suites
+- [`AGENTS.md`](./AGENTS.md) — Engineering handbook, invariants, pitfalls, and verification gates for AI coding agents & contributors
+- [`CHANGELOG.md`](./CHANGELOG.md) — Complete release history and validation evidence
