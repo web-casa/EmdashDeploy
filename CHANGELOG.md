@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0-hi.4 - 2026-11-24
+
+Post-release real-VM hardening hotfix discovered during cross-distro Proxmox VE verification (Rocky Linux 10.3 SELinux Enforcing + Debian 13 `trixie` + ARM64 GHCR).
+
+### Fixed
+
+- **`pnpm 11` mainland China mirror registry**: exported lowercase `npm_config_registry` and passed `--registry=` explicitly in [`lib/site-common.sh`](./lib/site-common.sh), [`lib/config.sh`](./lib/config.sh), [`docker/Dockerfile`](./docker/Dockerfile), and [`docker/Dockerfile.custom`](./docker/Dockerfile.custom) so `EMDASH_MIRROR_PRESET=cn` no longer falls back to `registry.npmjs.org` on Linux (cut Rocky Linux 10 full multi-instance install down to ~53s)
+- **`build_site()` error propagation**: added explicit `|| return 1` guards inside `build_site()` in [`lib/render.sh`](./lib/render.sh) so `if ! build_site` rollback wrappers never swallow `emdash-build.sh` failures
+- **Seamless legacy Caddyfile upgrade & safe uninstall**: automatically migrates pre-`1.6.0-hi.3` single-file `/etc/emdash/caddy/Caddyfile` into `/etc/emdash/caddy/sites.d/default.caddy` when installing a second named instance ([`lib/render.sh`](./lib/render.sh)), and preserves running Caddy during `emdashctl uninstall` whenever any `sites.d/*.caddy` or `conf.d/*.caddy` snippet remains ([`emdashctl`](./emdashctl))
+- **SQLite → PostgreSQL 18 dynamic content tables & FTS5 shadow tables**: updated [`lib/migrate-sqlite-to-pg.py`](./lib/migrate-sqlite-to-pg.py) to skip SQLite-only `_emdash_fts_*` virtual shadow tables and automatically provision missing EmDash dynamic collection tables (`ec_*`, e.g. `ec_posts`, `ec_pages`) in PostgreSQL before data transfer and row-count verification
+- **Runtime migration archive extraction**: scoped [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh) extraction strictly to `meta/` and `data/` (with full symlink/path-traversal checks) so upstream template relative symlinks under `site/` (e.g. `site/.claude/skills -> ../.agents/skills`) do not block `native-to-docker` migration
+
+### Validation Summary
+
+- All 13 offline regression suites (including new legacy Caddyfile migration, `_emdash_fts_*` skip, dynamic `ec_posts` DDL provisioning, and `site/.claude/skills` symlink handling assertions) + GitHub Actions CI (`lint-and-regression`, `template-build-smoke`, `docker-kit-smoke`) pass
+- **PVE VM 982 (Rocky Linux 10.3 `x86_64`, SELinux Enforcing)**: zero-downtime `--update-cli` (`MainPID 968 -> 968`), 53s `--instance el10-site2` install (`portfolio`, CN mirror + fast-fail `18.02s`), `doctor --deep` (19 checks / 0 fail), `diagnose --out` (`0600`), clean `uninstall --purge-data`
+- **PVE VM 983 (Debian 13 `trixie`, `x86_64`, 2 GiB RAM + PG 18)**: zero-downtime `--update-cli` across 2 instances, `migrate-db sqlite-to-postgres` migrating 74 tables / 75 PG tables (`missing_in_pg: []`, preserving both `$emdash` encrypted canary and `ec_posts` blog post row), encrypted backup -> `scripts/migrate-runtime.sh native-to-docker` (`0600` `.env`), clean `uninstall --purge-data --drop-db`
+- **ARM64 GHCR verification**: pulled `ghcr.io/web-casa/emdash-deploy:1.6.0-hi.3-blog-sqlite` (`aarch64`) and verified full encrypted `docker/backup.sh` -> `docker/restore.sh --yes` loop
+
 ## 1.6.0-hi.3 - 2026-11-24
 
 Native multi-instance hosting, modular Caddy layout, zero-downtime CLI updates, clean instance uninstallation, full S3 backup/restore loop, SQLite-to-PostgreSQL and Docker/Native migration assistants, mainland China Google Fonts fast-fail build acceleration, Docker restore parity, and Node 24 CI/GHCR hardening for the `HiEmdash` line.

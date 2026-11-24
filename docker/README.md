@@ -1,4 +1,4 @@
-# EmdashDeploy Docker Compose Kit (`1.6.0-hi.3`)
+# EmdashDeploy Docker Compose Kit (`1.6.0-hi.4`)
 
 A lightweight, composable Docker Compose kit for running **EmDash `1.6.x`** alongside other services (or multiple EmDash sites) on a single VPS.
 
@@ -31,7 +31,7 @@ Point your existing Nginx / Caddy / Traefik / 1Panel site to `http://127.0.0.1:3
 In `.env`:
 
 ```dotenv
-EMDASH_IMAGE=ghcr.io/web-casa/emdash-deploy:1.6.0-hi.3-blog-pg-valkey
+EMDASH_IMAGE=ghcr.io/web-casa/emdash-deploy:1.6.0-hi.4-blog-pg-valkey
 DB_DRIVER=postgres
 SESSION_DRIVER=redis
 PG_DB_PASSWORD=replace-with-strong-pg-password
