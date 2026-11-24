@@ -116,7 +116,10 @@ jobs:
 
           git clone --depth 1 --branch main https://github.com/emdash-cms/templates.git "${WORK_DIR}/templates"
           cp -a "${WORK_DIR}/templates/blog" "${WORK_DIR}/custom-site"
-          # Simulate a custom site configured for /data persistence (without mutating inside Dockerfile.custom)
+          # Simulate a custom site configured for /data persistence + plugin sandbox (without mutating inside Dockerfile.custom)
+          source lib/site-common.sh
+          patch_site_package_json_common "${WORK_DIR}/custom-site" "ci-custom-blog" "sqlite" "file" "local" "1"
+          rm -f "${WORK_DIR}/custom-site/pnpm-lock.yaml"
           SITE_DIR="${WORK_DIR}/custom-site" DB_DRIVER="sqlite" SESSION_DRIVER="file" STORAGE_DRIVER="local" ENABLE_PLUGIN_SANDBOX="1" \
             python3 lib/astro-patch.py
           mkdir -p "${WORK_DIR}/backups"
