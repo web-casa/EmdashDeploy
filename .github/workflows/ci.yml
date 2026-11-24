@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Shell syntax and Python compile checks
+        run: |
+          bash -n bootstrap.sh install.sh install-emdash.sh emdashctl lib/*.sh scripts/test-*.sh linode-test.sh linode-test-matrix.sh
+          python3 -m py_compile lib/astro-patch.py
+
+      - name: ShellCheck static analysis (error gate)
+        run: |
+          shellcheck -S error bootstrap.sh install.sh install-emdash.sh emdashctl lib/*.sh scripts/test-*.sh
+
+      - name: Run offline regression test suites
+        run: |
+          for t in \
+            scripts/test-passkey-origin-regression.sh \
+            scripts/test-template-sync-regression.sh \
+            scripts/test-emdashctl-regression.sh \
+            scripts/test-astro-patch-regression.sh \
+            scripts/test-upgrade-regression.sh \
+            scripts/test-backup-restore-regression.sh \
+            scripts/test-doctor-regression.sh; do
+            echo "=== Running $t ==="
+            bash "$t"
+          done
+
+  template-build-smoke:
+    runs-on: ubuntu-24.04
+    needs: lint-and-regression
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+
+      - name: Patch and build upstream EmDash blog template
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: |
+          set -Eeuo pipefail
+          WORK_DIR="$(mktemp -d)"
+          git clone --depth 1 --branch main https://github.com/emdash-cms/templates.git "${WORK_DIR}/templates"
+          mkdir -p "${WORK_DIR}/site" "${WORK_DIR}/data/uploads"
+          cp -a "${WORK_DIR}/templates/blog/." "${WORK_DIR}/site/"
+
+          source lib/site-common.sh
+          patch_site_package_json_common "${WORK_DIR}/site" "ci-blog" "sqlite" "file" "local" "1"
+          SITE_DIR="${WORK_DIR}/site" DB_DRIVER="sqlite" SESSION_DRIVER="file" STORAGE_DRIVER="local" ENABLE_PLUGIN_SANDBOX="1" \
+            python3 lib/astro-patch.py
+
+          mkdir -p "${WORK_DIR}/site/src/pages"
+          printf 'export const GET = () => new Response("OK", { status: 200 });\n' > "${WORK_DIR}/site/src/pages/healthz.ts"
+
+          ensure_site_pnpm "${WORK_DIR}/site"
+          cd "${WORK_DIR}/site"
+          pnpm install --no-frozen-lockfile
+          SQLITE_PATH="${WORK_DIR}/data/data.db" \
+          UPLOADS_DIR="${WORK_DIR}/data/uploads" \
+          EMDASH_SITE_URL="http://127.0.0.1:3000" \
+          SITE_URL="http://127.0.0.1:3000" \
+            pnpm build
+          test -f ".emdash/migrations.json"
+          pnpm exec emdash init --database "${WORK_DIR}/data/data.db"
+          SQLITE_PATH="${WORK_DIR}/data/data.db" pnpm exec emdash migrate --status --json

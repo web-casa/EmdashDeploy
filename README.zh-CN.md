@@ -66,10 +66,11 @@ sudo bash install.sh --lang=zh-CN --activate
 
 补充：
 
-- Node.js 来自 `NodeSource`
-- PostgreSQL 18 来自 `PGDG`
-- Redis 使用系统包
-- EL10 上如果系统提供的是 `valkey`，安装器会自动适配
+- Node.js 24 来自 `NodeSource`，Corepack 自动尊重项目 `packageManager` 字段（如 `pnpm@11.9.0`）
+- PostgreSQL 18 全平台统一来自 `PGDG`
+- Session 缓存全平台统一使用 `Valkey`（Debian/Ubuntu 为 `valkey-server`，EL9/10 为 `valkey`）
+- 完整适配 EmDash `1.6.x`：`EMDASH_ENCRYPTION_KEY` 生成与指纹校验、`@emdash-cms/sandbox-workerd` 插件沙箱、显式 `emdash migrate` 迁移门禁
+- 大陆网络可设置 `EMDASH_MIRROR_PRESET=cn` 加速 npm/Corepack 下载（不改写宿主机全局 APT/DNF 源）
 
 ## 主要功能
 
@@ -119,14 +120,17 @@ sudo bash install.sh --lang=zh-CN --non-interactive --activate
 
 ```bash
 emdashctl --lang=zh-CN status
-emdashctl --lang=zh-CN doctor
+emdashctl --lang=zh-CN doctor --deep --json
 emdashctl --lang=zh-CN smoke
 emdashctl --lang=zh-CN logs app
-emdashctl --lang=zh-CN backup
-emdashctl --lang=zh-CN restore /path/to/backup.tar.gz
-emdashctl --lang=zh-CN upgrade app
+emdashctl --lang=zh-CN backup [--full] [--encrypt]
+emdashctl --lang=zh-CN restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
+emdashctl --lang=zh-CN upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=zh-CN template diff [--stat]
 emdashctl --lang=zh-CN reset-db-password
 ```
+
+说明：`upgrade app` 仅无损升级 `emdash` / `@emdash-cms/*` 依赖并在构建后执行显式数据库迁移门禁，**不再覆盖用户自定义的页面、样式与 `astro.config.mjs`**；如需对照官方模板更新，使用只读命令 `emdashctl template diff`。
 
 ## 运维示例
 

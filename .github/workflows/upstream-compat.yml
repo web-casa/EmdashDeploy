@@ -1,0 +1,54 @@
+name: Upstream EmDash Compatibility
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-templates:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [blog, marketing, portfolio]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Verify upstream template patch and build (${{ matrix.template }})
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+          TEMPLATE_NAME: ${{ matrix.template }}
+        run: |
+          set -Eeuo pipefail
+          WORK_DIR="$(mktemp -d)"
+          git clone --depth 1 --branch main https://github.com/emdash-cms/templates.git "${WORK_DIR}/templates"
+          mkdir -p "${WORK_DIR}/site" "${WORK_DIR}/data/uploads"
+          cp -a "${WORK_DIR}/templates/${TEMPLATE_NAME}/." "${WORK_DIR}/site/"
+
+          source lib/site-common.sh
+          patch_site_package_json_common "${WORK_DIR}/site" "compat-${TEMPLATE_NAME}" "sqlite" "file" "local" "1"
+          SITE_DIR="${WORK_DIR}/site" DB_DRIVER="sqlite" SESSION_DRIVER="file" STORAGE_DRIVER="local" ENABLE_PLUGIN_SANDBOX="1" \
+            python3 lib/astro-patch.py
+
+          ensure_site_pnpm "${WORK_DIR}/site"
+          cd "${WORK_DIR}/site"
+          pnpm install --no-frozen-lockfile
+          SQLITE_PATH="${WORK_DIR}/data/data.db" \
+          UPLOADS_DIR="${WORK_DIR}/data/uploads" \
+          EMDASH_SITE_URL="http://127.0.0.1:3000" \
+          SITE_URL="http://127.0.0.1:3000" \
+            pnpm build
+          test -f ".emdash/migrations.json"

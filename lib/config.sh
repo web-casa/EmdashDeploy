@@ -17,6 +17,11 @@ init_defaults() {
 	FORCE_SYNC_TEMPLATE="0"
 	USE_CADDY="1"
 	ENABLE_HTTPS="1"
+	ENABLE_PLUGIN_SANDBOX="1"
+
+	MIRROR_PRESET=""
+	NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-}"
+	COREPACK_NPM_REGISTRY="${COREPACK_NPM_REGISTRY:-}"
 
 	DB_DRIVER="sqlite"
 	PG_VERSION="18"
@@ -41,6 +46,7 @@ init_defaults() {
 	BACKUP_SCHEDULE="0 3 * * *"
 	BACKUP_KEEP_LOCAL="7"
 	BACKUP_TARGET_TYPE="local"
+	BACKUP_ENCRYPTION_PASSPHRASE=""
 	BACKUP_S3_ENDPOINT=""
 	BACKUP_S3_REGION="auto"
 	BACKUP_S3_BUCKET=""
@@ -65,6 +71,13 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_INSTALL_DOMAIN:-}" ]] && DOMAIN="${EMDASH_INSTALL_DOMAIN}"
 	[[ -n "${EMDASH_INSTALL_ADMIN_EMAIL:-}" ]] && ADMIN_EMAIL="${EMDASH_INSTALL_ADMIN_EMAIL}"
 	[[ -n "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE:-}" ]] && FORCE_SYNC_TEMPLATE="$(normalize_bool "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE}")"
+	[[ -n "${EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX:-}" ]] && ENABLE_PLUGIN_SANDBOX="$(normalize_bool "${EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX}")"
+	[[ -n "${EMDASH_INSTALL_ENCRYPTION_KEY:-}" ]] && EMDASH_ENCRYPTION_KEY="${EMDASH_INSTALL_ENCRYPTION_KEY}"
+	[[ -n "${EMDASH_MIRROR_PRESET:-}" ]] && MIRROR_PRESET="${EMDASH_MIRROR_PRESET}"
+	[[ -n "${EMDASH_NPM_REGISTRY:-}" ]] && NPM_CONFIG_REGISTRY="${EMDASH_NPM_REGISTRY}"
+	[[ -n "${EMDASH_COREPACK_NPM_REGISTRY:-}" ]] && COREPACK_NPM_REGISTRY="${EMDASH_COREPACK_NPM_REGISTRY}"
+	[[ -n "${EMDASH_TEMPLATES_REPO:-}" ]] && TEMPLATES_REPO="${EMDASH_TEMPLATES_REPO}"
+	[[ -n "${EMDASH_TEMPLATES_REF:-}" ]] && TEMPLATES_REF="${EMDASH_TEMPLATES_REF}"
 	[[ -n "${EMDASH_INSTALL_DB_DRIVER:-}" ]] && DB_DRIVER="${EMDASH_INSTALL_DB_DRIVER}"
 	[[ -n "${EMDASH_INSTALL_SESSION_DRIVER:-}" ]] && SESSION_DRIVER="${EMDASH_INSTALL_SESSION_DRIVER}"
 	[[ -n "${EMDASH_INSTALL_STORAGE_DRIVER:-}" ]] && STORAGE_DRIVER="${EMDASH_INSTALL_STORAGE_DRIVER}"
@@ -79,13 +92,27 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_INSTALL_S3_ACCESS_KEY_ID:-}" ]] && S3_ACCESS_KEY_ID="${EMDASH_INSTALL_S3_ACCESS_KEY_ID}"
 	[[ -n "${EMDASH_INSTALL_S3_SECRET_ACCESS_KEY:-}" ]] && S3_SECRET_ACCESS_KEY="${EMDASH_INSTALL_S3_SECRET_ACCESS_KEY}"
 	[[ -n "${EMDASH_INSTALL_S3_PUBLIC_URL:-}" ]] && S3_PUBLIC_URL="${EMDASH_INSTALL_S3_PUBLIC_URL}"
+	[[ -n "${EMDASH_INSTALL_BACKUP_ENABLED:-}" ]] && BACKUP_ENABLED="$(normalize_bool "${EMDASH_INSTALL_BACKUP_ENABLED}")"
 	[[ -n "${EMDASH_INSTALL_BACKUP_TARGET:-}" ]] && BACKUP_TARGET_TYPE="${EMDASH_INSTALL_BACKUP_TARGET}"
+	[[ -n "${EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] && BACKUP_ENCRYPTION_PASSPHRASE="${EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_ENDPOINT:-}" ]] && BACKUP_S3_ENDPOINT="${EMDASH_INSTALL_BACKUP_S3_ENDPOINT}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_REGION:-}" ]] && BACKUP_S3_REGION="${EMDASH_INSTALL_BACKUP_S3_REGION}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_BUCKET:-}" ]] && BACKUP_S3_BUCKET="${EMDASH_INSTALL_BACKUP_S3_BUCKET}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID:-}" ]] && BACKUP_S3_ACCESS_KEY_ID="${EMDASH_INSTALL_BACKUP_S3_ACCESS_KEY_ID}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY:-}" ]] && BACKUP_S3_SECRET_ACCESS_KEY="${EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_PREFIX:-}" ]] && BACKUP_S3_PREFIX="${EMDASH_INSTALL_BACKUP_S3_PREFIX}"
+
+	if [[ "${MIRROR_PRESET,,}" == "cn" ]]; then
+		[[ -n "${NPM_CONFIG_REGISTRY}" ]] || NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
+		[[ -n "${COREPACK_NPM_REGISTRY}" ]] || COREPACK_NPM_REGISTRY="https://registry.npmmirror.com"
+	fi
+	if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then
+		export NPM_CONFIG_REGISTRY
+	fi
+	if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then
+		export COREPACK_NPM_REGISTRY
+	fi
+	export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 	return 0
 }
 
@@ -127,12 +154,14 @@ derive_paths() {
 	APP_START_SCRIPT="${SCRIPTS_DIR}/emdash-start.sh"
 	SITE_SYNC_MODE="sync"
 	ACTIVATION_ROLLBACK_ACTIVE="0"
+	ACTIVATION_ROLLBACK_DONE="0"
 	ACTIVATION_ROLLBACK_DIR=""
 	POSTGRES_HOST="127.0.0.1"
 	POSTGRES_PORT="5432"
 	REDIS_HOST="127.0.0.1"
 	REDIS_PORT="6379"
 
+	EMDASH_ENCRYPTION_KEY="${EMDASH_ENCRYPTION_KEY:-}"
 	EMDASH_AUTH_SECRET="${EMDASH_AUTH_SECRET:-}"
 	EMDASH_PREVIEW_SECRET="${EMDASH_PREVIEW_SECRET:-}"
 	refresh_app_public_url
@@ -172,13 +201,17 @@ load_existing_install_state() {
 
 	local existing_pg_password=""
 	local existing_redis_password=""
+	local existing_encryption_key=""
 	local existing_auth_secret=""
 	local existing_preview_secret=""
+	local existing_backup_passphrase=""
 
 	existing_pg_password="$(read_existing_env_value "${APP_ENV_FILE}" PG_DB_PASSWORD || true)"
 	existing_redis_password="$(read_existing_env_value "${APP_ENV_FILE}" REDIS_PASSWORD || true)"
+	existing_encryption_key="$(read_existing_env_value "${APP_ENV_FILE}" EMDASH_ENCRYPTION_KEY || true)"
 	existing_auth_secret="$(read_existing_env_value "${APP_ENV_FILE}" EMDASH_AUTH_SECRET || true)"
 	existing_preview_secret="$(read_existing_env_value "${APP_ENV_FILE}" EMDASH_PREVIEW_SECRET || true)"
+	existing_backup_passphrase="$(read_existing_env_value "${APP_ENV_FILE}" BACKUP_ENCRYPTION_PASSPHRASE || true)"
 
 	if [[ -z "${EMDASH_INSTALL_PG_PASSWORD:-}" && -z "${PG_DB_PASSWORD}" && -n "${existing_pg_password}" ]]; then
 		PG_DB_PASSWORD="${existing_pg_password}"
@@ -186,11 +219,17 @@ load_existing_install_state() {
 	if [[ -z "${EMDASH_INSTALL_REDIS_PASSWORD:-}" && -z "${REDIS_PASSWORD}" && -n "${existing_redis_password}" ]]; then
 		REDIS_PASSWORD="${existing_redis_password}"
 	fi
+	if [[ -z "${EMDASH_INSTALL_ENCRYPTION_KEY:-}" && -z "${EMDASH_ENCRYPTION_KEY}" && -n "${existing_encryption_key}" ]]; then
+		EMDASH_ENCRYPTION_KEY="${existing_encryption_key}"
+	fi
 	if [[ -z "${EMDASH_AUTH_SECRET:-}" && -n "${existing_auth_secret}" ]]; then
 		EMDASH_AUTH_SECRET="${existing_auth_secret}"
 	fi
 	if [[ -z "${EMDASH_PREVIEW_SECRET:-}" && -n "${existing_preview_secret}" ]]; then
 		EMDASH_PREVIEW_SECRET="${existing_preview_secret}"
+	fi
+	if [[ -z "${EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE:-}" && -z "${BACKUP_ENCRYPTION_PASSPHRASE}" && -n "${existing_backup_passphrase}" ]]; then
+		BACKUP_ENCRYPTION_PASSPHRASE="${existing_backup_passphrase}"
 	fi
 }
 
@@ -226,7 +265,7 @@ refresh_app_public_url() {
 
 validate_config() {
 	case " ${TEMPLATE} " in
-	" blog " | " marketing " | " portfolio " | " blank ") ;;
+	" blog " | " marketing " | " portfolio ") ;;
 	*) fail "$(printf "$(ti unsupported_template)" "${TEMPLATE}")" ;;
 	esac
 
@@ -252,6 +291,7 @@ validate_config() {
 
 	USE_CADDY="$(normalize_bool "${USE_CADDY}")"
 	ENABLE_HTTPS="$(normalize_bool "${ENABLE_HTTPS}")"
+	ENABLE_PLUGIN_SANDBOX="$(normalize_bool "${ENABLE_PLUGIN_SANDBOX}")"
 	BACKUP_ENABLED="$(normalize_bool "${BACKUP_ENABLED}")"
 	OPTIMIZATION_ENABLED="$(normalize_bool "${OPTIMIZATION_ENABLED}")"
 
@@ -267,8 +307,14 @@ validate_config() {
 		REDIS_PASSWORD="$(random_hex 16)"
 		warn "未提供 Redis 密码，已自动生成。"
 	fi
-	if [[ -z "${EMDASH_AUTH_SECRET}" ]]; then
-		EMDASH_AUTH_SECRET="$(random_hex 32)"
+	if [[ -n "${EMDASH_ENCRYPTION_KEY}" ]]; then
+		if declare -F validate_emdash_encryption_key >/dev/null 2>&1; then
+			validate_emdash_encryption_key "${EMDASH_ENCRYPTION_KEY}" || fail "$(ti invalid_encryption_key)"
+		fi
+	elif [[ "${WRITE_ONLY}" == "1" || "${ACTIVATE_STACK}" != "1" ]]; then
+		if declare -F generate_emdash_encryption_key_spec >/dev/null 2>&1; then
+			EMDASH_ENCRYPTION_KEY="$(generate_emdash_encryption_key_spec)"
+		fi
 	fi
 	if [[ -z "${EMDASH_PREVIEW_SECRET}" ]]; then
 		EMDASH_PREVIEW_SECRET="$(random_hex 32)"

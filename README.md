@@ -79,9 +79,10 @@ The container-based implementation has been archived to the `docker` branch. `ma
 Notes:
 
 - EL-like means Rocky Linux, AlmaLinux, RHEL-like variants, Oracle Linux, CentOS Stream, and similar systems handled by the installer.
-- Node.js is installed from `NodeSource`.
-- PostgreSQL 18 is installed from `PGDG`.
-- Redis uses the system package. On EL10 the installer automatically uses `valkey` when that is the packaged service.
+- Node.js 24 is installed from `NodeSource` with Corepack respecting each project's `packageManager` field (e.g. `pnpm@11.9.0`).
+- PostgreSQL 18 is installed from `PGDG` across all supported platforms.
+- Session caching uses `Valkey` across all supported platforms (`valkey-server` on Debian/Ubuntu, `valkey` on EL 9/10).
+- EmDash `1.6.x` native features are supported out of the box, including `EMDASH_ENCRYPTION_KEY` generation/fingerprinting, `@emdash-cms/sandbox-workerd` plugin isolation, and explicit `emdash migrate` checks.
 
 ## Features
 
@@ -116,8 +117,10 @@ Important generated files:
 - `/etc/emdash/install.yml`
 - `/etc/emdash/emdash.env`
 - `/etc/systemd/system/emdash-app.service`
-- `/data/emdash/app/emdash-build.sh`
-- `/data/emdash/app/emdash-start.sh`
+- `/data/emdash/scripts/emdash-build.sh`
+- `/data/emdash/scripts/emdash-start.sh`
+- `/data/emdash/lib/site-common.sh`
+- `/data/emdash/lib/astro-patch.py`
 
 ## Non-Interactive Examples
 
@@ -178,32 +181,39 @@ Operations:
 emdashctl --lang=en status
 emdashctl --lang=en status --json
 emdashctl --lang=en doctor
-emdashctl --lang=en doctor --json
+emdashctl --lang=en doctor --deep --json
 emdashctl --lang=en smoke
 emdashctl --lang=en smoke --json
 emdashctl --lang=en logs app
 emdashctl --lang=en restart app
-emdashctl --lang=en backup
-emdashctl --lang=en restore /path/to/backup.tar.gz
-emdashctl --lang=en upgrade app
+emdashctl --lang=en backup [--full] [--encrypt]
+emdashctl --lang=en restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
+emdashctl --lang=en upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=en template diff [--stat]
 emdashctl --lang=en upgrade caddy-config
 emdashctl --lang=en reset-db-password
 ```
 
 ## Upgrade Model
 
-Native upgrades follow the host-side workflow:
+Native upgrades preserve all user-customized pages, themes, styles, and `astro.config.mjs`:
 
-1. refresh template source
-2. sync the selected template into the live site tree
-3. run `pnpm install`
-4. run `pnpm build`
-5. restart `emdash-app.service`
+1. run preflight and resolve target `emdash` / `@emdash-cms/*` versions (`--dry-run` previews without mutating anything)
+2. acquire exclusive lock (`flock`) and create a verified pre-upgrade backup (database + site source + manifest)
+3. stop `emdash-app.service`, update only EmDash dependencies in `package.json`, run `pnpm install` + `pnpm build`
+4. run explicit database migration gate (`emdash migrate --status --json` & `emdash migrate`)
+5. restart `emdash-app.service` and verify health (auto-rollback if failure happens before migration; explicit restore instructions if failure happens after forward-only migration)
 
-This is implemented by:
+To inspect upstream template changes without overwriting your site:
 
 ```bash
-emdashctl --lang=en upgrade app
+emdashctl --lang=en template diff --stat
+```
+
+Optional mainland China mirror acceleration (application/registry layer only, does not mutate host APT/DNF system repos):
+
+```bash
+EMDASH_MIRROR_PRESET=cn sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```
 
 ## Caddy and HTTPS

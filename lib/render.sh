@@ -94,7 +94,12 @@ prepare_site_directory() {
 	fi
 
 	if [[ -n "${existing_template}" && "${existing_template}" != "${TEMPLATE}" ]]; then
-		fail "$(printf "$(ti existing_site_template_mismatch)" "${existing_template}" "${TEMPLATE}")"
+		if [[ "${existing_template}" == "starter" || "${existing_template}" == "blank" ]]; then
+			warn "现有站点使用已下线的旧模板 ${existing_template}，本次按 preserve 模式保留现有站点源码（如需切换至 ${TEMPLATE} 模板，请备份后显式设置 EMDASH_INSTALL_FORCE_SYNC_TEMPLATE=1）。"
+			TEMPLATE="${existing_template}"
+		else
+			fail "$(printf "$(ti existing_site_template_mismatch)" "${existing_template}" "${TEMPLATE}")"
+		fi
 	fi
 	if [[ -n "${existing_db_driver}" && "${existing_db_driver}" != "${DB_DRIVER}" ]]; then
 		fail "$(printf "$(ti existing_site_db_mismatch)" "${existing_db_driver}" "${DB_DRIVER}")"
@@ -116,36 +121,13 @@ patch_template_package_json() {
 		return
 	fi
 
-	local redis_snippet='{"ioredis":"^5.7.0"}'
-	local pg_snippet='{"pg":"^8.16.3"}'
-	local s3_snippet='{"@aws-sdk/client-s3":"^3.879.0","@aws-sdk/s3-request-presigner":"^3.879.0"}'
-	local common_runtime_snippet='{"kysely":"^0.27.6"}'
-	PROJECT_NAME="${PROJECT_NAME}" SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" REDIS_SNIPPET="${redis_snippet}" PG_SNIPPET="${pg_snippet}" S3_SNIPPET="${s3_snippet}" COMMON_RUNTIME_SNIPPET="${common_runtime_snippet}" python3 <<'PY'
-import json
-import os
-from pathlib import Path
-
-site_dir = Path(os.environ["SITE_DIR"])
-pkg_path = site_dir / "package.json"
-pkg = json.loads(pkg_path.read_text())
-
-pkg["name"] = os.environ["PROJECT_NAME"]
-pkg["packageManager"] = "pnpm@10.28.0"
-pkg.setdefault("emdash", {})
-if (site_dir / "seed" / "seed.json").exists():
-    pkg["emdash"]["seed"] = "seed/seed.json"
-
-deps = pkg.setdefault("dependencies", {})
-deps.update(json.loads(os.environ["COMMON_RUNTIME_SNIPPET"]))
-if os.environ["DB_DRIVER"] == "postgres":
-    deps.update(json.loads(os.environ["PG_SNIPPET"]))
-if os.environ["SESSION_DRIVER"] == "redis":
-    deps.update(json.loads(os.environ["REDIS_SNIPPET"]))
-if os.environ["STORAGE_DRIVER"] == "s3":
-    deps.update(json.loads(os.environ["S3_SNIPPET"]))
-
-pkg_path.write_text(json.dumps(pkg, indent=2) + "\n")
-PY
+	patch_site_package_json_common \
+		"${SITE_DIR}" \
+		"${PROJECT_NAME}" \
+		"${DB_DRIVER}" \
+		"${SESSION_DRIVER}" \
+		"${STORAGE_DRIVER}" \
+		"${ENABLE_PLUGIN_SANDBOX:-1}"
 }
 
 render_astro_config() {
@@ -154,49 +136,11 @@ render_astro_config() {
 		return
 	fi
 
-	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" \
-		python3 "${SCRIPT_DIR}/lib/astro-patch.py"
+	render_site_astro_config_common
 }
 
 render_app_scripts() {
-	cat >"${APP_BUILD_SCRIPT}" <<EOF
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
-export NODE_OPTIONS="--max-old-space-size=${APP_NODE_MAX_OLD_SPACE_SIZE}"
-if [[ -f "${APP_ENV_FILE}" ]]; then
-	set -a
-	. "${APP_ENV_FILE}"
-	set +a
-fi
-cd "${SITE_DIR}"
-corepack enable || true
-corepack prepare pnpm@10.28.0 --activate
-pnpm install --no-frozen-lockfile
-pnpm build
-EOF
-	chmod 0755 "${APP_BUILD_SCRIPT}"
-
-	cat >"${APP_START_SCRIPT}" <<EOF
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
-export NODE_OPTIONS="--max-old-space-size=${APP_NODE_MAX_OLD_SPACE_SIZE}"
-cd "${SITE_DIR}"
-corepack enable || true
-corepack prepare pnpm@10.28.0 --activate
-if [[ "\${DB_DRIVER:-sqlite}" == "sqlite" ]]; then
-	mkdir -p "${SQLITE_DIR}"
-	if [[ ! -f "${SQLITE_PATH}" ]]; then
-		pnpm exec emdash init --database "${SQLITE_PATH}"
-	fi
-fi
-exec pnpm start
-EOF
-	chmod 0755 "${APP_START_SCRIPT}"
-	if id "${APP_RUN_USER}" >/dev/null 2>&1; then
-		chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${APP_BUILD_SCRIPT}" "${APP_START_SCRIPT}"
-	fi
+	render_site_app_scripts_common
 }
 
 render_health_endpoint() {
@@ -205,12 +149,7 @@ render_health_endpoint() {
 		return
 	fi
 
-	ensure_dir "${SITE_DIR}/src/pages"
-	cat >"${SITE_DIR}/src/pages/healthz.ts" <<'EOF'
-export const GET = () => {
-	return new Response("OK", { status: 200 });
-};
-EOF
+	render_site_health_endpoint_common
 }
 
 render_app_env() {
@@ -259,9 +198,15 @@ render_app_env() {
 		append_env_line STORAGE_DRIVER "${STORAGE_DRIVER}"
 		append_env_line USE_CADDY "${USE_CADDY}"
 		append_env_line ENABLE_HTTPS "${ENABLE_HTTPS}"
+		append_env_line ENABLE_PLUGIN_SANDBOX "${ENABLE_PLUGIN_SANDBOX:-1}"
+		append_env_line LIB_SCHEMA_VERSION "${EMDASH_LIB_SCHEMA_VERSION:-1}"
+		append_env_line MIRROR_PRESET "${MIRROR_PRESET:-}"
+		[[ -n "${NPM_CONFIG_REGISTRY:-}" ]] && append_env_line NPM_CONFIG_REGISTRY "${NPM_CONFIG_REGISTRY}"
+		[[ -n "${COREPACK_NPM_REGISTRY:-}" ]] && append_env_line COREPACK_NPM_REGISTRY "${COREPACK_NPM_REGISTRY}"
 		append_env_line DOMAIN "${DOMAIN}"
 		append_env_line ADMIN_EMAIL "${ADMIN_EMAIL}"
-		append_env_line EMDASH_AUTH_SECRET "${EMDASH_AUTH_SECRET}"
+		append_env_line EMDASH_ENCRYPTION_KEY "${EMDASH_ENCRYPTION_KEY:-}"
+		[[ -n "${EMDASH_AUTH_SECRET:-}" ]] && append_env_line EMDASH_AUTH_SECRET "${EMDASH_AUTH_SECRET}"
 		append_env_line EMDASH_PREVIEW_SECRET "${EMDASH_PREVIEW_SECRET}"
 		append_env_line SQLITE_PATH "${SQLITE_PATH}"
 		append_env_line UPLOADS_DIR "${UPLOADS_DIR}"
@@ -293,6 +238,7 @@ render_app_env() {
 			append_env_line BACKUP_KEEP_LOCAL "${BACKUP_KEEP_LOCAL}"
 			append_env_line BACKUP_DIR "${BACKUP_DIR}"
 			append_env_line BACKUP_TARGET_TYPE "${BACKUP_TARGET_TYPE}"
+			[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] && append_env_line BACKUP_ENCRYPTION_PASSPHRASE "${BACKUP_ENCRYPTION_PASSPHRASE}"
 		append_env_line BACKUP_S3_ENDPOINT "${BACKUP_S3_ENDPOINT}"
 		append_env_line BACKUP_S3_REGION "${BACKUP_S3_REGION}"
 		append_env_line BACKUP_S3_BUCKET "${BACKUP_S3_BUCKET}"
@@ -307,6 +253,10 @@ render_app_env() {
 }
 
 render_install_yaml() {
+	local key_kid=""
+	if [[ -n "${EMDASH_ENCRYPTION_KEY:-}" ]] && declare -F emdash_encryption_key_fingerprint >/dev/null 2>&1; then
+		key_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
+	fi
 	cat >"${INSTALL_YAML}" <<EOF
 version: 1
 project:
@@ -319,6 +269,11 @@ project:
 platform:
   os_label: ${OS_LABEL}
   service_mode: native
+  mirror_preset: ${MIRROR_PRESET:-}
+plugins:
+  sandbox: ${ENABLE_PLUGIN_SANDBOX:-1}
+secrets:
+  encryption_key_kid: ${key_kid}
 network:
   public_ipv4: ${PUBLIC_IPV4}
   public_ipv6: ${PUBLIC_IPV6}
@@ -441,9 +396,10 @@ EOF
 
 install_emdashctl_script() {
 	migrate_legacy_emdashctl_references
-	install -m 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
+	atomic_install_file 0755 "${SCRIPT_DIR}/emdashctl" /usr/local/bin/emdashctl
 	install -d -m 0755 "${ROOT_DIR}/lib"
-	install -m 0644 "${SCRIPT_DIR}/lib/astro-patch.py" "${ROOT_DIR}/lib/astro-patch.py"
+	atomic_install_file 0644 "${SCRIPT_DIR}/lib/site-common.sh" "${ROOT_DIR}/lib/site-common.sh"
+	atomic_install_file 0644 "${SCRIPT_DIR}/lib/astro-patch.py" "${ROOT_DIR}/lib/astro-patch.py"
 	remove_legacy_emdashctl_aliases
 }
 
@@ -586,14 +542,50 @@ $(ti first_run_ops_commands)
 EOF
 }
 
+ensure_site_encryption_key_after_build() {
+	local generated_raw=""
+	local generated_key=""
+	local verified_kid=""
+
+	if [[ -z "${EMDASH_ENCRYPTION_KEY:-}" ]]; then
+		log "使用上游 EmDash CLI 生成 EMDASH_ENCRYPTION_KEY"
+		generated_raw="$(runuser -u "${APP_RUN_USER}" -- bash -lc "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash secrets generate" 2>&1 || true)"
+		generated_key="$(printf '%s\n' "${generated_raw}" | grep -oE 'emdash_enc_v1_[A-Za-z0-9_-]{43}' | head -n1 || true)"
+		if [[ -z "${generated_key}" ]]; then
+			warn "未能通过 emdash secrets generate 生成密钥，回退到规范生成器。"
+			generated_key="$(generate_emdash_encryption_key_spec)"
+		fi
+		EMDASH_ENCRYPTION_KEY="${generated_key}"
+		update_env_file_value "EMDASH_ENCRYPTION_KEY" "${EMDASH_ENCRYPTION_KEY}" "${APP_ENV_FILE}"
+		chmod 0640 "${APP_ENV_FILE}"
+		if getent group "${APP_RUN_GROUP}" >/dev/null 2>&1; then
+			chown root:"${APP_RUN_GROUP}" "${APP_ENV_FILE}"
+		fi
+		render_install_yaml
+	fi
+
+	verified_kid="$(runuser -u "${APP_RUN_USER}" -- bash -lc "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash secrets fingerprint '${EMDASH_ENCRYPTION_KEY%%,*}'" 2>/dev/null | grep -oE '^[0-9a-f]{8}$' | head -n1 || true)"
+	if [[ -z "${verified_kid}" ]]; then
+		verified_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
+	fi
+	if [[ -n "${verified_kid}" ]]; then
+		log "EMDASH_ENCRYPTION_KEY 已就绪（kid=${verified_kid}），请务必妥善备份 ${APP_ENV_FILE}，密钥丢失将导致已加密插件配置无法恢复。"
+	fi
+}
+
 build_site() {
+	local allow_lockfile_update="0"
+	if [[ "${SITE_SYNC_MODE:-sync}" == "sync" || ! -f "${SITE_DIR}/pnpm-lock.yaml" ]]; then
+		allow_lockfile_update="1"
+	fi
 	log "构建 EmDash 站点"
 	install -d -o "${APP_RUN_USER}" -g "${APP_RUN_GROUP}" \
 		"${APP_DIR}" "${SITE_DIR}" "${DATA_DIR}" "${TMP_DIR}" \
 		"${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}"
 	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" \
 		"${SITE_DIR}" "${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}" "${TMP_DIR}"
-	runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
+	runuser -u "${APP_RUN_USER}" -- bash -lc "EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=${allow_lockfile_update} '${APP_BUILD_SCRIPT}'"
+	ensure_site_encryption_key_after_build
 }
 
 create_site_rollback() {
@@ -607,6 +599,10 @@ create_site_rollback() {
 	if [[ -d "${SCRIPTS_DIR}" ]]; then
 		mkdir -p "${rollback_dir}/scripts"
 		cp -a "${SCRIPTS_DIR}/." "${rollback_dir}/scripts/"
+	fi
+	if [[ -d "${ROOT_DIR}/lib" ]]; then
+		mkdir -p "${rollback_dir}/lib"
+		cp -a "${ROOT_DIR}/lib/." "${rollback_dir}/lib/"
 	fi
 	printf '%s\n' "${rollback_dir}"
 }
@@ -686,6 +682,11 @@ restore_site_rollback() {
 		mkdir -p "${SCRIPTS_DIR}"
 		cp -a "${rollback_dir}/scripts/." "${SCRIPTS_DIR}/"
 		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}"
+	fi
+	if [[ -d "${rollback_dir}/lib" ]]; then
+		rm -rf "${ROOT_DIR}/lib"
+		mkdir -p "${ROOT_DIR}/lib"
+		cp -a "${rollback_dir}/lib/." "${ROOT_DIR}/lib/"
 	fi
 }
 

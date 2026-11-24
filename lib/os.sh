@@ -112,12 +112,18 @@ PY
 
 install_nodesource_node() {
 	local node_major=""
+	local node_minor=""
+	export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 	if command_exists node; then
 		node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+		node_minor="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || true)"
 	fi
-	if [[ "${node_major}" == "24" ]] && command_exists pnpm; then
-		log "Node.js 24 和 pnpm 已安装"
-		return
+	if [[ -n "${node_major}" ]] && (( node_major > 22 || (node_major == 22 && node_minor >= 16) )); then
+		if command_exists corepack; then
+			corepack enable >/dev/null 2>&1 || true
+			log "Node.js ${node_major}.${node_minor} 和 corepack 已安装"
+			return
+		fi
 	fi
 
 	log "安装 Node.js 24 (NodeSource)"
@@ -129,7 +135,11 @@ install_nodesource_node() {
 		dnf -y install nodejs
 	fi
 	corepack enable || true
-	corepack prepare pnpm@10.28.0 --activate
+	if declare -F ensure_site_pnpm >/dev/null 2>&1; then
+		ensure_site_pnpm "${SITE_DIR:-}" || true
+	else
+		corepack prepare pnpm@11.9.0 --activate || true
+	fi
 }
 
 install_postgres_server() {
@@ -428,8 +438,17 @@ install_runtime_stack() {
 }
 
 ensure_runtime_present() {
+	local node_major=""
+	local node_minor=""
 	command_exists node || fail "未检测到 node。"
-	command_exists pnpm || fail "未检测到 pnpm。"
+	node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+	node_minor="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+	if (( node_major < 22 || (node_major == 22 && node_minor < 16) )); then
+		fail "EmDash 1.6+ 需要 Node.js >= 22.16，当前为 ${node_major}.${node_minor}。"
+	fi
+	if ! command_exists pnpm && ! command_exists corepack; then
+		fail "未检测到 pnpm 或 corepack。"
+	fi
 	if [[ "${DB_DRIVER}" == "postgres" ]]; then
 		systemctl is-enabled "${POSTGRES_SERVICE}" >/dev/null 2>&1 \
 			|| warn "PostgreSQL 服务 ${POSTGRES_SERVICE} 未启用。"

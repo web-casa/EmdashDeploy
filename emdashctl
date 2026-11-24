@@ -3,9 +3,11 @@ set -Eeuo pipefail
 
 IFS=$'\n\t'
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 ENV_FILE="${EMDASH_INSTALL_ENV_FILE:-/etc/emdash/emdash.env}"
 EMDASH_INSTALL_LANG="${EMDASH_INSTALL_LANG:-en}"
+EMDASHCTL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 normalize_ctl_lang() {
 	local input="${1:-en}"
@@ -35,11 +37,11 @@ ct() {
 	restore_complete) case "${lang}" in en) printf 'Restore complete' ;; ja) printf '復元完了' ;; ko) printf '복원 완료' ;; es) printf 'Restauración completa' ;; de) printf 'Wiederherstellung abgeschlossen' ;; fr) printf 'Restauration terminée' ;; zh-CN) printf '恢复完成' ;; zh-TW) printf '還原完成' ;; pt) printf 'Restauração concluída' ;; esac ;;
 	reset_only_postgres) case "${lang}" in en) printf 'reset-db-password is only supported for PostgreSQL' ;; ja) printf 'reset-db-password は PostgreSQL のみ対応です' ;; ko) printf 'reset-db-password는 PostgreSQL만 지원합니다' ;; es) printf 'reset-db-password solo es compatible con PostgreSQL' ;; de) printf 'reset-db-password wird nur für PostgreSQL unterstützt' ;; fr) printf 'reset-db-password est pris en charge uniquement pour PostgreSQL' ;; zh-CN) printf '当前仅 PostgreSQL 支持 reset-db-password' ;; zh-TW) printf '目前僅 PostgreSQL 支援 reset-db-password' ;; pt) printf 'reset-db-password só é compatível com PostgreSQL' ;; esac ;;
 	upgrade_supported) case "${lang}" in en) printf 'Supported upgrade targets: app | caddy-config' ;; ja) printf '対応する upgrade 対象: app | caddy-config' ;; ko) printf '지원되는 upgrade 대상: app | caddy-config' ;; es) printf 'Objetivos compatibles: app | caddy-config' ;; de) printf 'Unterstützte Upgrade-Ziele: app | caddy-config' ;; fr) printf 'Cibles prises en charge : app | caddy-config' ;; zh-CN) printf '支持的 upgrade 目标: app | caddy-config' ;; zh-TW) printf '支援的 upgrade 目標: app | caddy-config' ;; pt) printf 'Alvos suportados: app | caddy-config' ;; esac ;;
-	runtime_label) case "${lang}" in en) printf 'Runtime' ;; ja) printf '运行方式' ;; ko) printf '런타임' ;; es) printf 'Modo' ;; de) printf 'Laufzeit' ;; fr) printf 'Runtime' ;; zh-CN) printf '运行方式' ;; zh-TW) printf '執行方式' ;; pt) printf 'Runtime' ;; esac ;;
+	runtime_label) case "${lang}" in en) printf 'Runtime' ;; ja) printf '実行方式' ;; ko) printf '런타임' ;; es) printf 'Modo' ;; de) printf 'Laufzeit' ;; fr) printf 'Runtime' ;; zh-CN) printf '运行方式' ;; zh-TW) printf '執行方式' ;; pt) printf 'Runtime' ;; esac ;;
 	url_label) case "${lang}" in en) printf 'URL' ;; ja) printf 'URL' ;; ko) printf 'URL' ;; es) printf 'URL' ;; de) printf 'URL' ;; fr) printf 'URL' ;; zh-CN) printf 'URL' ;; zh-TW) printf 'URL' ;; pt) printf 'URL' ;; esac ;;
-	app_running_label) case "${lang}" in en) printf 'App running' ;; ja) printf '应用运行' ;; ko) printf '앱 실행 상태' ;; es) printf 'App activa' ;; de) printf 'App läuft' ;; fr) printf 'App active' ;; zh-CN) printf '应用运行' ;; zh-TW) printf '應用執行中' ;; pt) printf 'App em execução' ;; esac ;;
-	app_health_label) case "${lang}" in en) printf 'App health' ;; ja) printf '应用健康' ;; ko) printf '앱 상태' ;; es) printf 'Salud de la app' ;; de) printf 'App-Status' ;; fr) printf 'Santé de l’app' ;; zh-CN) printf '应用健康' ;; zh-TW) printf '應用健康' ;; pt) printf 'Saúde da app' ;; esac ;;
-	setup_status_label) case "${lang}" in en) printf 'Setup status' ;; ja) printf '设置状态' ;; ko) printf '설정 상태' ;; es) printf 'Estado de setup' ;; de) printf 'Setup-Status' ;; fr) printf 'État du setup' ;; zh-CN) printf 'Setup 状态' ;; zh-TW) printf 'Setup 狀態' ;; pt) printf 'Status do setup' ;; esac ;;
+	app_running_label) case "${lang}" in en) printf 'App running' ;; ja) printf 'アプリ稼働' ;; ko) printf '앱 실행 상태' ;; es) printf 'App activa' ;; de) printf 'App läuft' ;; fr) printf 'App active' ;; zh-CN) printf '应用运行' ;; zh-TW) printf '應用執行中' ;; pt) printf 'App em execução' ;; esac ;;
+	app_health_label) case "${lang}" in en) printf 'App health' ;; ja) printf 'アプリ状態' ;; ko) printf '앱 상태' ;; es) printf 'Salud de la app' ;; de) printf 'App-Status' ;; fr) printf 'Santé de l’app' ;; zh-CN) printf '应用健康' ;; zh-TW) printf '應用健康' ;; pt) printf 'Saúde da app' ;; esac ;;
+	setup_status_label) case "${lang}" in en) printf 'Setup status' ;; ja) printf 'セットアップ状態' ;; ko) printf '설정 상태' ;; es) printf 'Estado de setup' ;; de) printf 'Setup-Status' ;; fr) printf 'État du setup' ;; zh-CN) printf 'Setup 状态' ;; zh-TW) printf 'Setup 狀態' ;; pt) printf 'Status do setup' ;; esac ;;
 	caddy_label) case "${lang}" in en) printf 'Caddy' ;; ja) printf 'Caddy' ;; ko) printf 'Caddy' ;; es) printf 'Caddy' ;; de) printf 'Caddy' ;; fr) printf 'Caddy' ;; zh-CN) printf 'Caddy' ;; zh-TW) printf 'Caddy' ;; pt) printf 'Caddy' ;; esac ;;
 	esac
 }
@@ -54,14 +56,15 @@ emdashctl
 
 $(ct usage_title)
   emdashctl [--lang <code>] status [--json]
-  emdashctl [--lang <code>] doctor [--json]
+  emdashctl [--lang <code>] doctor [--deep] [--json]
   emdashctl [--lang <code>] smoke [--json]
   emdashctl [--lang <code>] logs [app|postgres|redis|caddy] [-f]
   emdashctl [--lang <code>] restart [app|postgres|redis|all|caddy]
-  emdashctl [--lang <code>] backup
-  emdashctl [--lang <code>] restore <backup-file>
-  emdashctl [--lang <code>] upgrade app
+  emdashctl [--lang <code>] backup [--full] [--encrypt]
+  emdashctl [--lang <code>] restore <backup-file> [--with-site] [--with-secrets] [--yes]
+  emdashctl [--lang <code>] upgrade app [--target <version|latest>] [--dry-run] [--skip-backup] [--yes]
   emdashctl [--lang <code>] upgrade caddy-config
+  emdashctl [--lang <code>] template diff [--stat]
   emdashctl [--lang <code>] reset-db-password
 EOF
 }
@@ -87,6 +90,20 @@ parse_lang_args() {
 	printf '%s\n' "${remaining[@]}"
 }
 
+load_site_common() {
+	local candidate=""
+	for candidate in \
+		"${ROOT_DIR:-}/lib/site-common.sh" \
+		"${EMDASHCTL_SCRIPT_DIR}/lib/site-common.sh"; do
+		if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+			# shellcheck disable=SC1090
+			source "${candidate}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 load_env() {
 	[[ -f "${ENV_FILE}" ]] || fail "$(ct missing_env): ${ENV_FILE}"
 	set -a
@@ -108,10 +125,35 @@ load_env() {
 	APP_SYSTEMD_UNIT="${APP_SYSTEMD_UNIT:-/etc/systemd/system/${APP_SYSTEMD_SERVICE}.service}"
 	APP_BUILD_SCRIPT="${APP_BUILD_SCRIPT:-${SCRIPTS_DIR}/emdash-build.sh}"
 	APP_START_SCRIPT="${APP_START_SCRIPT:-${SCRIPTS_DIR}/emdash-start.sh}"
+	CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/emdash/caddy/Caddyfile}"
+	ENABLE_PLUGIN_SANDBOX="${ENABLE_PLUGIN_SANDBOX:-1}"
+	BACKUP_ENABLED="${BACKUP_ENABLED:-1}"
+	BACKUP_TARGET_TYPE="${BACKUP_TARGET_TYPE:-local}"
+	USE_CADDY="${USE_CADDY:-0}"
+	ENABLE_HTTPS="${ENABLE_HTTPS:-0}"
+	DB_DRIVER="${DB_DRIVER:-sqlite}"
+	SESSION_DRIVER="${SESSION_DRIVER:-file}"
+	STORAGE_DRIVER="${STORAGE_DRIVER:-local}"
+	APP_PORT="${APP_PORT:-3000}"
+	APP_RUN_USER="${APP_RUN_USER:-emdash}"
+	APP_RUN_GROUP="${APP_RUN_GROUP:-emdash}"
+	load_site_common || true
+}
+
+acquire_op_lock() {
+	local lock_file="/run/lock/emdashctl.lock"
+	if [[ ! -d /run/lock || ! -w /run/lock ]]; then
+		mkdir -p "${TMP_DIR}"
+		lock_file="${TMP_DIR}/emdashctl.lock"
+	fi
+	exec 9>"${lock_file}"
+	if ! flock -n 9; then
+		fail "Another emdashctl operation is currently running (lock: ${lock_file})."
+	fi
 }
 
 bool_active() {
-	systemctl is-active --quiet "$1"
+	systemctl is-active --quiet "$1" 2>/dev/null
 }
 
 service_name_for() {
@@ -125,11 +167,11 @@ service_name_for() {
 }
 
 local_health_url() {
-	printf 'http://127.0.0.1:%s/healthz\n' "${APP_PORT}"
+	printf 'http://127.0.0.1:%s/healthz\n' "${APP_PORT:-3000}"
 }
 
 local_setup_url() {
-	printf 'http://127.0.0.1:%s/_emdash/api/setup/status\n' "${APP_PORT}"
+	printf 'http://127.0.0.1:%s/_emdash/api/setup/status\n' "${APP_PORT:-3000}"
 }
 
 wait_http_ok() {
@@ -143,10 +185,23 @@ wait_http_ok() {
 	return 1
 }
 
+run_as_app_user() {
+	local cmd="$1"
+	if [[ "$(id -un)" == "${APP_RUN_USER}" ]]; then
+		bash -lc "${cmd}"
+		return
+	fi
+	runuser -u "${APP_RUN_USER}" -- bash -lc "${cmd}"
+}
+
 update_env_value() {
 	local key="$1"
 	local value="$2"
 	local file="${3:-${APP_ENV_FILE}}"
+	if declare -F update_env_file_value >/dev/null 2>&1; then
+		update_env_file_value "${key}" "${value}" "${file}"
+		return
+	fi
 	KEY="${key}" VALUE="${value}" TARGET_FILE="${file}" python3 <<'PY'
 from pathlib import Path
 import os
@@ -173,6 +228,37 @@ path.write_text("\n".join(lines) + "\n")
 PY
 }
 
+redact_sensitive_text() {
+	PG_DB_PASSWORD="${PG_DB_PASSWORD:-}" \
+	REDIS_PASSWORD="${REDIS_PASSWORD:-}" \
+	EMDASH_ENCRYPTION_KEY="${EMDASH_ENCRYPTION_KEY:-}" \
+	EMDASH_AUTH_SECRET="${EMDASH_AUTH_SECRET:-}" \
+	EMDASH_PREVIEW_SECRET="${EMDASH_PREVIEW_SECRET:-}" \
+	S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-}" \
+	BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+	BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}" \
+	python3 -c '
+import os, re, sys
+text = sys.stdin.read()
+text = re.sub(r"emdash_enc_v1_[A-Za-z0-9_-]{43}", "emdash_enc_v1_[REDACTED]", text)
+text = re.sub(r"(postgres|postgresql|redis|rediss)://([^:@/\s]*):([^@/\s]+)@", r"\1://\2:[REDACTED]@", text)
+for env_name in (
+    "PG_DB_PASSWORD",
+    "REDIS_PASSWORD",
+    "EMDASH_ENCRYPTION_KEY",
+    "EMDASH_AUTH_SECRET",
+    "EMDASH_PREVIEW_SECRET",
+    "S3_SECRET_ACCESS_KEY",
+    "BACKUP_S3_SECRET_ACCESS_KEY",
+    "BACKUP_ENCRYPTION_PASSPHRASE",
+):
+    secret = os.environ.get(env_name, "")
+    if secret and len(secret) >= 4:
+        text = text.replace(secret, "[REDACTED]")
+sys.stdout.write(text)
+'
+}
+
 create_site_rollback() {
 	local rollback_dir
 	mkdir -p "${TMP_DIR}"
@@ -184,6 +270,10 @@ create_site_rollback() {
 	if [[ -d "${SCRIPTS_DIR}" ]]; then
 		mkdir -p "${rollback_dir}/scripts"
 		cp -a "${SCRIPTS_DIR}/." "${rollback_dir}/scripts/"
+	fi
+	if [[ -d "${ROOT_DIR}/lib" ]]; then
+		mkdir -p "${rollback_dir}/lib"
+		cp -a "${ROOT_DIR}/lib/." "${rollback_dir}/lib/"
 	fi
 	if [[ -f "${APP_ENV_FILE}" ]]; then
 		mkdir -p "${rollback_dir}/app-env"
@@ -208,13 +298,18 @@ restore_site_rollback() {
 		rm -rf "${SITE_DIR}"
 		mkdir -p "${SITE_DIR}"
 		cp -a "${rollback_dir}/site/." "${SITE_DIR}/"
-		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}" 2>/dev/null || true
 	fi
 	if [[ -d "${rollback_dir}/scripts" ]]; then
 		rm -rf "${SCRIPTS_DIR}"
 		mkdir -p "${SCRIPTS_DIR}"
 		cp -a "${rollback_dir}/scripts/." "${SCRIPTS_DIR}/"
-		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}" 2>/dev/null || true
+	fi
+	if [[ -d "${rollback_dir}/lib" ]]; then
+		rm -rf "${ROOT_DIR}/lib"
+		mkdir -p "${ROOT_DIR}/lib"
+		cp -a "${rollback_dir}/lib/." "${ROOT_DIR}/lib/"
 	fi
 	if [[ -f "${rollback_dir}/app-env/content" ]]; then
 		mkdir -p "$(dirname "${APP_ENV_FILE}")"
@@ -232,13 +327,13 @@ restore_site_rollback() {
 }
 
 migrate_managed_script_paths_if_legacy() {
-	local old_build_script="${APP_BUILD_SCRIPT}"
-	local old_start_script="${APP_START_SCRIPT}"
-	local new_build_script="${APP_BUILD_SCRIPT}"
-	local new_start_script="${APP_START_SCRIPT}"
+	local old_build_script="${APP_BUILD_SCRIPT:-}"
+	local old_start_script="${APP_START_SCRIPT:-}"
+	local new_build_script="${APP_BUILD_SCRIPT:-}"
+	local new_start_script="${APP_START_SCRIPT:-}"
 	local migrated="0"
 
-	if [[ "${APP_BUILD_SCRIPT}" != "${SITE_DIR}/"* && "${APP_START_SCRIPT}" != "${SITE_DIR}/"* ]]; then
+	if [[ "${old_build_script}" != "${SITE_DIR}/"* && "${old_start_script}" != "${SITE_DIR}/"* ]]; then
 		return 0
 	fi
 
@@ -282,7 +377,7 @@ PY
 	fi
 
 	if id "${APP_RUN_USER}" >/dev/null 2>&1; then
-		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SCRIPTS_DIR}" 2>/dev/null || true
 	fi
 	if [[ "${migrated}" == "1" ]]; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
@@ -317,113 +412,28 @@ ensure_template_source_checkout() {
 	git clone --depth 1 --branch "${TEMPLATES_REF}" "${TEMPLATES_REPO}" "${TEMPLATE_SOURCE_DIR}"
 }
 
-sync_template_site_tree() {
-	[[ -n "${TEMPLATE:-}" ]] || fail "TEMPLATE is not configured"
-	local template_path="${TEMPLATE_SOURCE_DIR}/${TEMPLATE}"
-	[[ -d "${template_path}" ]] || fail "Template directory not found: ${template_path}"
-	rm -rf "${SITE_DIR}"
-	mkdir -p "${SITE_DIR}"
-	cp -a "${template_path}/." "${SITE_DIR}/"
-}
-
-patch_site_package_json() {
-	PROJECT_NAME="${PROJECT_NAME:-emdash}" \
-	SITE_DIR="${SITE_DIR}" \
-	DB_DRIVER="${DB_DRIVER}" \
-	SESSION_DRIVER="${SESSION_DRIVER}" \
-	STORAGE_DRIVER="${STORAGE_DRIVER}" \
-	python3 <<'PY'
-import json
-import os
-from pathlib import Path
-
-pkg_path = Path(os.environ["SITE_DIR"]) / "package.json"
-pkg = json.loads(pkg_path.read_text())
-pkg["name"] = os.environ.get("PROJECT_NAME", "emdash")
-pkg["packageManager"] = "pnpm@10.28.0"
-pkg.setdefault("emdash", {})
-if (pkg_path.parent / "seed" / "seed.json").exists():
-    pkg["emdash"]["seed"] = "seed/seed.json"
-
-deps = pkg.setdefault("dependencies", {})
-deps["kysely"] = "^0.27.6"
-if os.environ["DB_DRIVER"] == "postgres":
-    deps["pg"] = "^8.16.3"
-if os.environ["SESSION_DRIVER"] == "redis":
-    deps["ioredis"] = "^5.7.0"
-if os.environ["STORAGE_DRIVER"] == "s3":
-    deps["@aws-sdk/client-s3"] = "^3.879.0"
-    deps["@aws-sdk/s3-request-presigner"] = "^3.879.0"
-
-pkg_path.write_text(json.dumps(pkg, indent=2) + "\n")
-PY
-}
-
 render_site_astro_config() {
+	load_site_common || true
+	if declare -F render_site_astro_config_common >/dev/null 2>&1; then
+		render_site_astro_config_common
+		return
+	fi
 	local patch_script="${ROOT_DIR:-}/lib/astro-patch.py"
 	if [[ ! -f "${patch_script}" ]]; then
-		patch_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/astro-patch.py"
+		patch_script="${EMDASHCTL_SCRIPT_DIR}/lib/astro-patch.py"
 	fi
 	[[ -f "${patch_script}" ]] || fail "astro-patch.py not found"
-	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" \
+	SITE_DIR="${SITE_DIR}" DB_DRIVER="${DB_DRIVER}" SESSION_DRIVER="${SESSION_DRIVER}" STORAGE_DRIVER="${STORAGE_DRIVER}" ENABLE_PLUGIN_SANDBOX="${ENABLE_PLUGIN_SANDBOX:-1}" \
 		python3 "${patch_script}"
 }
 
 render_site_app_scripts() {
-	local node_heap="${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}"
-	mkdir -p "${SCRIPTS_DIR}"
-cat >"${APP_BUILD_SCRIPT}" <<EOF
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
-export NODE_OPTIONS="--max-old-space-size=${node_heap}"
-if [[ -f "${APP_ENV_FILE}" ]]; then
-	set -a
-	. "${APP_ENV_FILE}"
-	set +a
-fi
-cd "${SITE_DIR}"
-corepack enable || true
-corepack prepare pnpm@10.28.0 --activate
-pnpm install --no-frozen-lockfile
-pnpm build
-EOF
-	chmod 0755 "${APP_BUILD_SCRIPT}"
-
-	cat >"${APP_START_SCRIPT}" <<EOF
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
-export NODE_OPTIONS="--max-old-space-size=${node_heap}"
-cd "${SITE_DIR}"
-corepack enable || true
-corepack prepare pnpm@10.28.0 --activate
-if [[ "\${DB_DRIVER:-sqlite}" == "sqlite" ]]; then
-	mkdir -p "${SQLITE_DIR}"
-	if [[ ! -f "${SQLITE_PATH}" ]]; then
-		pnpm exec emdash init --database "${SQLITE_PATH}"
+	load_site_common || true
+	if declare -F render_site_app_scripts_common >/dev/null 2>&1; then
+		render_site_app_scripts_common
+		return
 	fi
-fi
-exec pnpm start
-EOF
-	chmod 0755 "${APP_BUILD_SCRIPT}" "${APP_START_SCRIPT}"
-}
-
-render_site_health_endpoint() {
-	mkdir -p "${SITE_DIR}/src/pages"
-	cat >"${SITE_DIR}/src/pages/healthz.ts" <<'EOF'
-export const GET = () => {
-	return new Response("OK", { status: 200 });
-};
-EOF
-}
-
-refresh_managed_site_files() {
-	patch_site_package_json
-	render_site_astro_config
-	render_site_app_scripts
-	render_site_health_endpoint
-	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}" "${SCRIPTS_DIR}"
+	fail "site-common.sh not found"
 }
 
 status_command() {
@@ -474,7 +484,7 @@ def as_bool(name):
 print(json.dumps({
   "runtime": "native",
   "app_env_file": "${ENV_FILE}",
-  "app_url": "${APP_PUBLIC_URL}",
+  "app_url": "${APP_PUBLIC_URL:-}",
   "app": {
     "running": as_bool("APP_RUNNING"),
     "health": os.environ["APP_HEALTH"],
@@ -493,50 +503,338 @@ PY
 	fi
 
 	printf '%s: native\n' "$(ct runtime_label)"
-	printf '%s: %s\n' "$(ct url_label)" "${APP_PUBLIC_URL}"
+	printf '%s: %s\n' "$(ct url_label)" "${APP_PUBLIC_URL:-}"
 	printf '%s: %s\n' "$(ct app_running_label)" "${app_running}"
 	printf '%s: %s\n' "$(ct app_health_label)" "${app_health}"
 	printf '%s: %s\n' "$(ct setup_status_label)" "${setup_status}"
 	printf '%s: %s\n' "$(ct caddy_label)" "${caddy_state}"
 }
 
+parse_migrate_status_json() {
+	python3 -c '
+import json, sys
+raw = sys.stdin.read()
+parsed = None
+for line in reversed(raw.splitlines()):
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        candidate = json.loads(line)
+        if isinstance(candidate, dict) and "pending" in candidate and "unknownApplied" in candidate:
+            parsed = candidate
+            break
+    except Exception:
+        continue
+if parsed is None:
+    print(json.dumps({"valid": False}))
+    sys.exit(1)
+print(json.dumps({
+    "valid": True,
+    "pending_count": len(parsed.get("pending") or []),
+    "unknown_applied_count": len(parsed.get("unknownApplied") or []),
+    "known_applied_count": len(parsed.get("knownApplied") or []),
+    "pending": parsed.get("pending") or [],
+    "unknownApplied": parsed.get("unknownApplied") or [],
+}))
+'
+}
+
+probe_emdash_migrations() {
+	local out="" rc=0
+	if [[ ! -d "${SITE_DIR}/node_modules" ]]; then
+		printf '{"supported":false,"reason":"node_modules missing"}\n'
+		return 0
+	fi
+	if ! run_as_app_user "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --help >/dev/null 2>&1"; then
+		printf '{"supported":false,"reason":"emdash migrate CLI unavailable"}\n'
+		return 0
+	fi
+	set +e
+	out="$(run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --status --json" 2>&1)"
+	rc=$?
+	set -e
+	local parsed=""
+	parsed="$(printf '%s\n' "${out}" | parse_migrate_status_json 2>/dev/null || printf '{"valid":false}')"
+	PARSED="${parsed}" RC="${rc}" python3 - <<'PY'
+import json
+import os
+
+data = json.loads(os.environ["PARSED"])
+data["supported"] = True
+data["exit_code"] = int(os.environ["RC"])
+print(json.dumps(data))
+PY
+}
+
 doctor_command() {
 	local as_json="${1:-0}"
-	local app_health_status="fail"
-	local setup_api_status="fail"
-	local healthy="false"
-	local app_service_status="fail"
+	local deep="${2:-0}"
+	local checks_file=""
+	checks_file="$(mktemp)"
+	DOCTOR_CHECKS_FILE="${checks_file}"
+	trap 'rm -f "${DOCTOR_CHECKS_FILE:-}"' RETURN
 
+	add_check() {
+		local name="$1" status="$2" detail="$3" remediation="${4:-}"
+		local safe_detail=""
+		safe_detail="$(printf '%s' "${detail}" | redact_sensitive_text)"
+		NAME="${name}" STATUS="${status}" DETAIL="${safe_detail}" REMEDIATION="${remediation}" python3 - <<'PY' >>"${checks_file}"
+import json, os
+print(json.dumps({
+    "name": os.environ["NAME"],
+    "status": os.environ["STATUS"],
+    "detail": os.environ["DETAIL"],
+    "remediation": os.environ["REMEDIATION"],
+}, ensure_ascii=False))
+PY
+	}
+
+	local app_health_status="fail" setup_api_status="fail" app_service_status="fail"
 	curl -fsS --max-time 5 "$(local_health_url)" >/dev/null 2>&1 && app_health_status="ok"
 	curl -fsS --max-time 5 "$(local_setup_url)" >/dev/null 2>&1 && setup_api_status="ok"
 	bool_active "${APP_SYSTEMD_SERVICE}" && app_service_status="ok"
-	if [[ "${app_health_status}" == "ok" ]]; then
-		healthy="true"
+
+	[[ -f "${ENV_FILE}" ]] && add_check "env file" "ok" "${ENV_FILE}" "" || add_check "env file" "fail" "${ENV_FILE}" "Run install.sh to regenerate ${ENV_FILE}"
+	[[ -d "${SITE_DIR}" ]] && add_check "site dir" "ok" "${SITE_DIR}" "" || add_check "site dir" "fail" "${SITE_DIR}" "Verify SITE_DIR exists"
+
+	if command -v node >/dev/null 2>&1; then
+		local node_ver node_major node_minor
+		node_ver="$(node --version 2>/dev/null || echo unknown)"
+		node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+		node_minor="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+		if (( node_major > 22 || (node_major == 22 && node_minor >= 16) )); then
+			add_check "node" "ok" "${node_ver} ($(command -v node))" ""
+		else
+			add_check "node" "fail" "${node_ver} (< 22.16 required by EmDash 1.6+)" "Upgrade Node.js to 24.x via NodeSource"
+		fi
+	else
+		add_check "node" "fail" "node not found" "Install Node.js 24"
 	fi
 
-	if [[ "${as_json}" == "1" ]]; then
-		HEALTHY="${healthy}" python3 <<PY
-import json, os
+	if command -v pnpm >/dev/null 2>&1 || command -v corepack >/dev/null 2>&1; then
+		add_check "pnpm" "ok" "$(command -v pnpm 2>/dev/null || command -v corepack)" ""
+	else
+		add_check "pnpm" "fail" "pnpm/corepack not found" "Run corepack enable"
+	fi
 
-def as_bool(name):
-    return os.environ[name] == "true"
+	add_check "app service" "${app_service_status}" "${APP_SYSTEMD_SERVICE}" "$([[ "${app_service_status}" == "ok" ]] && echo "" || echo "Check journalctl -u ${APP_SYSTEMD_SERVICE}")"
+	add_check "app health" "${app_health_status}" "${APP_PUBLIC_URL:-http://127.0.0.1:${APP_PORT}}/healthz" "$([[ "${app_health_status}" == "ok" ]] && echo "" || echo "Inspect app logs via emdashctl logs app")"
+	add_check "setup api" "${setup_api_status}" "${APP_PUBLIC_URL:-http://127.0.0.1:${APP_PORT}}/_emdash/api/setup/status" "$([[ "${setup_api_status}" == "ok" ]] && echo "" || echo "Check EmDash backend readiness")"
 
-checks = [
-  {"name": "env file", "status": "ok" if os.path.exists("${ENV_FILE}") else "fail", "detail": "${ENV_FILE}"},
-  {"name": "site dir", "status": "ok" if os.path.isdir("${SITE_DIR}") else "fail", "detail": "${SITE_DIR}"},
-  {"name": "node", "status": "ok" if os.path.exists("/usr/bin/node") else "fail", "detail": "/usr/bin/node"},
-  {"name": "pnpm", "status": "ok" if os.path.exists("/usr/bin/pnpm") or os.path.exists("/usr/local/bin/pnpm") else "fail", "detail": "pnpm"},
-  {"name": "app service", "status": "${app_service_status}", "detail": "${APP_SYSTEMD_SERVICE}"},
-  {"name": "app health", "status": "${app_health_status}", "detail": "${APP_PUBLIC_URL}/healthz"},
-  {"name": "setup api", "status": "${setup_api_status}", "detail": "${APP_PUBLIC_URL}/_emdash/api/setup/status"},
-  {"name": "backup schedule", "status": "ok" if os.path.exists("/etc/cron.d/emdash-backup") else "fail", "detail": "/etc/cron.d/emdash-backup"},
-]
-print(json.dumps({"checks": checks, "healthy": as_bool("HEALTHY")}, ensure_ascii=False, indent=2))
+	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
+		if [[ -f "/etc/cron.d/emdash-backup" ]]; then
+			add_check "backup schedule" "ok" "/etc/cron.d/emdash-backup" ""
+		else
+			add_check "backup schedule" "fail" "/etc/cron.d/emdash-backup missing" "Re-run installer or create /etc/cron.d/emdash-backup"
+		fi
+	else
+		add_check "backup schedule" "skipped" "BACKUP_ENABLED=0" ""
+	fi
+
+	if [[ "${deep}" == "1" ]]; then
+		# Disk space check
+		local avail_mb
+		avail_mb="$(df -Pm "${ROOT_DIR}" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
+		if [[ "${avail_mb}" =~ ^[0-9]+$ ]] && (( avail_mb >= 1024 )); then
+			add_check "disk space" "ok" "${avail_mb} MiB available on ${ROOT_DIR}" ""
+		elif [[ "${avail_mb}" =~ ^[0-9]+$ ]] && (( avail_mb >= 256 )); then
+			add_check "disk space" "warn" "${avail_mb} MiB available on ${ROOT_DIR}" "Free disk space or prune old backups"
+		else
+			add_check "disk space" "fail" "${avail_mb} MiB available on ${ROOT_DIR}" "Free disk space immediately"
+		fi
+
+		# Encryption key check (never expose plaintext)
+		if [[ -n "${EMDASH_ENCRYPTION_KEY:-}" ]]; then
+			local key_kid=""
+			if declare -F emdash_encryption_key_fingerprint >/dev/null 2>&1; then
+				key_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
+			fi
+			if [[ -n "${key_kid}" ]]; then
+				add_check "encryption key" "ok" "configured (kid=${key_kid})" ""
+			else
+				add_check "encryption key" "fail" "EMDASH_ENCRYPTION_KEY format invalid" "Regenerate with pnpm exec emdash secrets generate"
+			fi
+		else
+			add_check "encryption key" "warn" "EMDASH_ENCRYPTION_KEY is not set" "Set EMDASH_ENCRYPTION_KEY via emdash secrets generate to enable encrypted plugin settings"
+		fi
+
+		# Database connectivity & integrity
+		if [[ "${DB_DRIVER}" == "sqlite" ]]; then
+			if [[ -f "${SQLITE_PATH}" ]]; then
+				local integrity
+				integrity="$(python3 - "${SQLITE_PATH}" <<'PY' 2>&1 || true
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+res = conn.execute("PRAGMA integrity_check;").fetchone()
+conn.close()
+print(res[0] if res else "unknown")
 PY
+)"
+				if [[ "${integrity}" == "ok" ]]; then
+					add_check "database" "ok" "sqlite integrity ok (${SQLITE_PATH})" ""
+				else
+					add_check "database" "fail" "sqlite integrity check: ${integrity}" "Restore from verified backup"
+				fi
+			else
+				add_check "database" "warn" "sqlite file not yet initialized (${SQLITE_PATH})" "Start app service to initialize SQLite database"
+			fi
+		else
+			if bool_active "${POSTGRES_SERVICE:-postgresql}" && PGPASSWORD="${PG_DB_PASSWORD:-}" psql -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" -U "${PG_DB_USER:-emdash}" -d "${PG_DB_NAME:-emdash}" -tAc "SELECT 1" >/dev/null 2>&1; then
+				add_check "database" "ok" "postgres connected (${POSTGRES_SERVICE:-postgresql})" ""
+			else
+				add_check "database" "fail" "postgres connection failed (${POSTGRES_SERVICE:-postgresql})" "Check systemctl status ${POSTGRES_SERVICE:-postgresql} and credentials"
+			fi
+		fi
+
+		# Session backend check
+		if [[ "${SESSION_DRIVER}" == "redis" ]]; then
+			local cli_bin=""
+			command -v valkey-cli >/dev/null 2>&1 && cli_bin="valkey-cli"
+			[[ -z "${cli_bin}" ]] && command -v redis-cli >/dev/null 2>&1 && cli_bin="redis-cli"
+			if bool_active "${REDIS_SERVICE:-valkey}" && [[ -n "${cli_bin}" ]] && REDISCLI_AUTH="${REDIS_PASSWORD:-}" "${cli_bin}" -h "${REDIS_HOST:-127.0.0.1}" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -qx "PONG"; then
+				add_check "session store" "ok" "valkey/redis PONG (${REDIS_SERVICE:-valkey})" ""
+			else
+				add_check "session store" "fail" "valkey/redis ping failed (${REDIS_SERVICE:-valkey})" "Check systemctl status ${REDIS_SERVICE:-valkey}"
+			fi
+		else
+			[[ -d "${SESSIONS_DIR}" ]] && add_check "session store" "ok" "file sessions dir present (${SESSIONS_DIR})" "" || add_check "session store" "fail" "sessions dir missing (${SESSIONS_DIR})" "Create ${SESSIONS_DIR}"
+		fi
+
+		# Migration status probe
+		local mig_json mig_supported mig_valid mig_pending mig_unknown
+		mig_json="$(probe_emdash_migrations)"
+		mig_supported="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("supported", False))' 2>/dev/null || echo False)"
+		if [[ "${mig_supported}" == "True" ]]; then
+			mig_valid="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("valid", False))' 2>/dev/null || echo False)"
+			mig_pending="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pending_count", 0))' 2>/dev/null || echo 0)"
+			mig_unknown="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("unknown_applied_count", 0))' 2>/dev/null || echo 0)"
+			if [[ "${mig_valid}" != "True" ]]; then
+				add_check "migrations" "warn" "emdash migrate --status returned unparseable output" "Run pnpm exec emdash migrate --status manually"
+			elif (( mig_unknown > 0 )); then
+				add_check "migrations" "fail" "${mig_unknown} unknown applied migrations detected (code older than DB)" "Upgrade app or inspect database migration history"
+			elif (( mig_pending > 0 )); then
+				add_check "migrations" "warn" "${mig_pending} pending migrations" "Run pnpm exec emdash migrate"
+			else
+				add_check "migrations" "ok" "all migrations applied (0 pending)" ""
+			fi
+		else
+			add_check "migrations" "skipped" "emdash migrate CLI not available in current site" ""
+		fi
+
+		# Plugin sandbox (workerd) check
+		if [[ "${ENABLE_PLUGIN_SANDBOX:-1}" == "1" ]]; then
+			local workerd_ok="0"
+			if run_as_app_user "cd '${SITE_DIR}' && node -e 'import(\"@emdash-cms/sandbox-workerd/sandbox\").then(() => process.exit(0)).catch(() => process.exit(1))'" >/dev/null 2>&1; then
+				workerd_ok="1"
+			fi
+			if [[ "${workerd_ok}" == "1" ]]; then
+				add_check "plugin sandbox" "ok" "@emdash-cms/sandbox-workerd importable by ${APP_RUN_USER}" ""
+			else
+				add_check "plugin sandbox" "warn" "@emdash-cms/sandbox-workerd not importable in ${SITE_DIR}" "Install @emdash-cms/sandbox-workerd and workerd or disable ENABLE_PLUGIN_SANDBOX"
+			fi
+		else
+			add_check "plugin sandbox" "skipped" "ENABLE_PLUGIN_SANDBOX=0" ""
+		fi
+
+		# Caddy / TLS check
+		if [[ "${USE_CADDY}" == "1" ]]; then
+			if bool_active caddy && caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+				add_check "caddy" "ok" "caddy active and Caddyfile valid" ""
+			else
+				add_check "caddy" "fail" "caddy inactive or invalid Caddyfile" "Run caddy validate --config /etc/caddy/Caddyfile"
+			fi
+			if [[ "${ENABLE_HTTPS}" == "1" && -n "${DOMAIN:-}" ]] && command -v openssl >/dev/null 2>&1; then
+				local cert_end=""
+				cert_end="$(timeout 5 openssl s_client -servername "${DOMAIN}" -connect "127.0.0.1:443" </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)"
+				if [[ -n "${cert_end}" ]]; then
+					add_check "tls cert" "ok" "expires ${cert_end}" ""
+				else
+					add_check "tls cert" "warn" "unable to read local TLS cert for ${DOMAIN}:443" "Check journalctl -u caddy for ACME status"
+				fi
+			fi
+		else
+			add_check "caddy" "skipped" "USE_CADDY=0" ""
+		fi
+
+		# S3 connectivity check (storage or backup)
+		if [[ "${STORAGE_DRIVER}" == "s3" || "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
+			local s3_ep s3_reg s3_bkt s3_ak s3_sk
+			if [[ "${STORAGE_DRIVER}" == "s3" ]]; then
+				s3_ep="${S3_ENDPOINT:-}"; s3_reg="${S3_REGION:-auto}"; s3_bkt="${S3_BUCKET:-}"; s3_ak="${S3_ACCESS_KEY_ID:-}"; s3_sk="${S3_SECRET_ACCESS_KEY:-}"
+			else
+				s3_ep="${BACKUP_S3_ENDPOINT:-}"; s3_reg="${BACKUP_S3_REGION:-auto}"; s3_bkt="${BACKUP_S3_BUCKET:-}"; s3_ak="${BACKUP_S3_ACCESS_KEY_ID:-}"; s3_sk="${BACKUP_S3_SECRET_ACCESS_KEY:-}"
+			fi
+			local s3_check_out=""
+			if s3_check_out="$(python3 - "${s3_ep}" "${s3_reg}" "${s3_bkt}" "${s3_ak}" "${s3_sk}" <<'PY' 2>&1
+import sys
+try:
+    import boto3
+    from botocore.config import Config
+except ImportError:
+    print("boto3 missing")
+    sys.exit(2)
+ep, reg, bkt, ak, sk = sys.argv[1:]
+client = boto3.client("s3", endpoint_url=ep, region_name=reg, aws_access_key_id=ak, aws_secret_access_key=sk, config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=5))
+client.head_bucket(Bucket=bkt)
+print("head_bucket ok")
+PY
+)"; then
+				add_check "s3 storage" "ok" "bucket ${s3_bkt} reachable" ""
+			else
+				add_check "s3 storage" "fail" "s3 check failed: ${s3_check_out}" "Verify python3-boto3 and S3 credentials"
+			fi
+		fi
+	fi
+
+	local report_json=""
+	report_json="$(CHECKS_FILE="${checks_file}" DEEP_MODE="${deep}" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+checks = [json.loads(line) for line in Path(os.environ["CHECKS_FILE"]).read_text().splitlines() if line.strip()]
+fail_count = sum(1 for c in checks if c["status"] == "fail")
+warn_count = sum(1 for c in checks if c["status"] == "warn")
+ok_count = sum(1 for c in checks if c["status"] == "ok")
+skipped_count = sum(1 for c in checks if c["status"] == "skipped")
+
+print(json.dumps({
+    "schema_version": 1,
+    "mode": "deep" if os.environ["DEEP_MODE"] == "1" else "standard",
+    "healthy": fail_count == 0,
+    "summary": {
+        "ok": ok_count,
+        "warn": warn_count,
+        "fail": fail_count,
+        "skipped": skipped_count,
+    },
+    "checks": checks,
+}, ensure_ascii=False, indent=2))
+PY
+)"
+
+	rm -f "${checks_file}"
+	DOCTOR_CHECKS_FILE=""
+	trap - RETURN
+
+	if [[ "${as_json}" == "1" ]]; then
+		printf '%s\n' "${report_json}"
 		return
 	fi
 
-	status_command 0
+	printf '%s\n' "${report_json}" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for c in data["checks"]:
+    tag = c["status"].upper()
+    name = c["name"]
+    detail = c["detail"]
+    print(f"[{tag}] {name}: {detail}")
+    if c["status"] in ("fail", "warn") and c.get("remediation"):
+        rem = c["remediation"]
+        print(f"       -> {rem}")
+'
 }
 
 smoke_command() {
@@ -561,8 +859,8 @@ def as_bool(name):
 print(json.dumps({
   "checks": [
     {"name": "app service", "status": "${app_running}", "detail": "${APP_SYSTEMD_SERVICE}"},
-    {"name": "app health", "status": "${app_health}", "detail": "${APP_PUBLIC_URL}/healthz"},
-    {"name": "setup api", "status": "${setup_api}", "detail": "${APP_PUBLIC_URL}/_emdash/api/setup/status"},
+    {"name": "app health", "status": "${app_health}", "detail": "${APP_PUBLIC_URL:-}/healthz"},
+    {"name": "setup api", "status": "${setup_api}", "detail": "${APP_PUBLIC_URL:-}/_emdash/api/setup/status"},
   ],
   "passed": as_bool("PASSED")
 }, ensure_ascii=False, indent=2))
@@ -599,7 +897,7 @@ restart_command() {
 
 prune_local_backups() {
 	local keep="${BACKUP_KEEP_LOCAL:-7}"
-	mapfile -t backups < <(ls -1t "${BACKUP_DIR}"/emdash-backup-*.tar.gz 2>/dev/null || true)
+	mapfile -t backups < <(ls -1t "${BACKUP_DIR}"/emdash-backup-*.tar.gz* 2>/dev/null || true)
 	if (( ${#backups[@]} <= keep )); then
 		return
 	fi
@@ -608,27 +906,54 @@ prune_local_backups() {
 	done
 }
 
-backup_command() {
-	local ts archive tmpdir
+create_backup_archive() {
+	local full_mode="${1:-0}"
+	local encrypt_mode="${2:-0}"
+	local ts archive tmpdir plain_archive avail_mb emdash_ver key_kid=""
+
+	if [[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]]; then
+		encrypt_mode="1"
+	fi
+	if [[ "${encrypt_mode}" == "1" && -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]]; then
+		fail "Backup encryption requested (--encrypt), but BACKUP_ENCRYPTION_PASSPHRASE is not set."
+	fi
+
+	mkdir -p "${BACKUP_DIR}"
+	avail_mb="$(df -Pm "${BACKUP_DIR}" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
+	if [[ "${avail_mb}" =~ ^[0-9]+$ ]] && (( avail_mb < 128 )); then
+		fail "Insufficient disk space in ${BACKUP_DIR}: only ${avail_mb} MiB available."
+	fi
+
+	umask 0077
 	ts="$(date +%Y%m%d-%H%M%S)"
-	archive="${BACKUP_DIR}/emdash-backup-${ts}.tar.gz"
+	plain_archive="${BACKUP_DIR}/emdash-backup-${ts}.tar.gz"
+	archive="${plain_archive}"
 	tmpdir="$(mktemp -d)"
+	BACKUP_TMP_DIR="${tmpdir}"
+	trap 'rm -rf "${BACKUP_TMP_DIR:-}"' RETURN
 	mkdir -p "${tmpdir}/meta" "${tmpdir}/data"
+
 	cp -a "${INSTALL_YAML}" "${APP_ENV_FILE}" "${tmpdir}/meta/" 2>/dev/null || true
 
 	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
 		mkdir -p "${tmpdir}/data/sqlite"
-		python3 - "${SQLITE_PATH}" "${tmpdir}/data/sqlite/data.db" <<'PY'
+		if [[ -f "${SQLITE_PATH}" ]]; then
+			python3 - "${SQLITE_PATH}" "${tmpdir}/data/sqlite/data.db" <<'PY'
 import sqlite3, sys
 src, dst = sys.argv[1], sys.argv[2]
 src_db = sqlite3.connect(src)
 dst_db = sqlite3.connect(dst)
 src_db.backup(dst_db)
+integrity = dst_db.execute("PRAGMA integrity_check;").fetchone()
 dst_db.close()
 src_db.close()
+if not integrity or integrity[0] != "ok":
+    raise SystemExit(f"SQLite backup integrity_check failed: {integrity}")
 PY
+		fi
 	else
-		PGPASSWORD="${PG_DB_PASSWORD}" pg_dump -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${PG_DB_USER}" -d "${PG_DB_NAME}" >"${tmpdir}/data/postgres.sql"
+		PGPASSWORD="${PG_DB_PASSWORD}" pg_dump -Fc -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" -U "${PG_DB_USER}" -d "${PG_DB_NAME}" -f "${tmpdir}/data/postgres.dump"
+		pg_restore --list "${tmpdir}/data/postgres.dump" >/dev/null || fail "PostgreSQL backup verification (pg_restore --list) failed."
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "local" && -d "${UPLOADS_DIR}" ]]; then
@@ -638,10 +963,104 @@ PY
 		cp -a "${SESSIONS_DIR}" "${tmpdir}/data/sessions"
 	fi
 
-	tar -C "${tmpdir}" -czf "${archive}" .
+	# Always include lightweight site source tree (excluding node_modules/dist/.astro/.git)
+	if [[ -d "${SITE_DIR}" ]]; then
+		mkdir -p "${tmpdir}/site"
+		tar -C "${SITE_DIR}" \
+			--exclude='./node_modules' \
+			--exclude='./dist' \
+			--exclude='./.astro' \
+			--exclude='./.git' \
+			--exclude='./.emdash' \
+			-cf - . | tar -C "${tmpdir}/site" -xf -
+	fi
+
+	if [[ "${full_mode}" == "1" ]]; then
+		if [[ -d "${SCRIPTS_DIR}" ]]; then
+			cp -a "${SCRIPTS_DIR}" "${tmpdir}/scripts"
+		fi
+		[[ -f "${CADDYFILE_PATH}" ]] && cp -a "${CADDYFILE_PATH}" "${tmpdir}/meta/Caddyfile"
+		[[ -f "${APP_SYSTEMD_UNIT}" ]] && cp -a "${APP_SYSTEMD_UNIT}" "${tmpdir}/meta/emdash-app.service"
+	fi
+
+	emdash_ver="$(python3 - "${SITE_DIR}/package.json" <<'PY' 2>/dev/null || echo unknown
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+if p.exists():
+    pkg = json.loads(p.read_text())
+    print(pkg.get("dependencies", {}).get("emdash", "unknown"))
+else:
+    print("unknown")
+PY
+)"
+	if [[ -n "${EMDASH_ENCRYPTION_KEY:-}" ]] && declare -F emdash_encryption_key_fingerprint >/dev/null 2>&1; then
+		key_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
+	fi
+
+	BACKUP_DIR_TMP="${tmpdir}" \
+	BACKUP_TS="${ts}" \
+	BACKUP_MODE="$([[ "${full_mode}" == "1" ]] && echo full || echo standard)" \
+	EMDASH_VER="${emdash_ver}" \
+	KEY_KID="${key_kid}" \
+	DB_DRIVER="${DB_DRIVER}" \
+	SESSION_DRIVER="${SESSION_DRIVER}" \
+	STORAGE_DRIVER="${STORAGE_DRIVER}" \
+	TEMPLATE="${TEMPLATE:-blog}" \
+	python3 - <<'PY'
+import hashlib, json, os
+from pathlib import Path
+
+root = Path(os.environ["BACKUP_DIR_TMP"])
+checksums = {}
+for p in sorted(root.rglob("*")):
+    if p.is_file():
+        rel = p.relative_to(root).as_posix()
+        if rel == "meta/manifest.json":
+            continue
+        h = hashlib.sha256()
+        with p.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        checksums[rel] = h.hexdigest()
+
+manifest = {
+    "schema_version": 1,
+    "created_at": os.environ["BACKUP_TS"],
+    "backup_mode": os.environ["BACKUP_MODE"],
+    "template": os.environ["TEMPLATE"],
+    "emdash_dependency": os.environ["EMDASH_VER"],
+    "db_driver": os.environ["DB_DRIVER"],
+    "session_driver": os.environ["SESSION_DRIVER"],
+    "storage_driver": os.environ["STORAGE_DRIVER"],
+    "encryption_key_kid": os.environ["KEY_KID"],
+    "contains_site_source": (root / "site").is_dir(),
+    "files": checksums,
+}
+(root / "meta" / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+PY
+
+	tar -C "${tmpdir}" -czf "${plain_archive}" .
+	chmod 0600 "${plain_archive}"
+	tar -tzf "${plain_archive}" >/dev/null || fail "Backup archive verification (tar -tzf) failed."
+
+	if [[ "${encrypt_mode}" == "1" ]]; then
+		archive="${plain_archive}.enc"
+		BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE}" openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+			-pass env:BACKUP_ENCRYPTION_PASSPHRASE \
+			-in "${plain_archive}" -out "${archive}"
+		chmod 0600 "${archive}"
+		rm -f "${plain_archive}"
+	fi
+
 	rm -rf "${tmpdir}"
+	BACKUP_TMP_DIR=""
+	trap - RETURN
 
 	if [[ "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
+		if [[ "${encrypt_mode}" != "1" ]]; then
+			warn "Uploading unencrypted backup containing emdash.env to S3. Set BACKUP_ENCRYPTION_PASSPHRASE to encrypt backups."
+		fi
 		python3 - "${BACKUP_S3_ENDPOINT}" "${BACKUP_S3_REGION}" "${BACKUP_S3_BUCKET}" "${BACKUP_S3_ACCESS_KEY_ID}" "${BACKUP_S3_SECRET_ACCESS_KEY}" "${BACKUP_S3_PREFIX%/}/$(basename "${archive}")" "${archive}" <<'PY'
 import sys
 import boto3
@@ -662,21 +1081,79 @@ PY
 	fi
 
 	prune_local_backups
+	printf '%s\n' "${archive}"
+}
+
+backup_command() {
+	local full_mode="0" encrypt_mode="0" archive=""
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--full) full_mode="1" ;;
+		--encrypt) encrypt_mode="1" ;;
+		*) fail "Unknown backup option: $1" ;;
+		esac
+		shift
+	done
+	acquire_op_lock
+	archive="$(create_backup_archive "${full_mode}" "${encrypt_mode}")"
 	log "$(ct backup_complete): ${archive}"
 }
 
 restore_command() {
-	local archive="$1"
-	local tmpdir ts tmp_db old_db
-	[[ -f "${archive}" ]] || fail "Backup file not found: ${archive}"
+	local archive="" with_site="0" with_secrets="0" assume_yes="0"
+	local tmpdir decrypted_tar ts tmp_db old_db manifest_db_driver=""
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--with-site) with_site="1" ;;
+		--with-secrets) with_secrets="1" ;;
+		--yes | -y) assume_yes="1" ;;
+		-*) fail "Unknown restore option: $1" ;;
+		*)
+			[[ -z "${archive}" ]] || fail "Unexpected extra argument: $1"
+			archive="$1"
+			;;
+		esac
+		shift
+	done
+
+	[[ -n "${archive}" && -f "${archive}" ]] || fail "Backup file not found: ${archive:-<empty>}"
+	acquire_op_lock
+
+	umask 0077
 	tmpdir="$(mktemp -d)"
-	tar -C "${tmpdir}" -xzf "${archive}"
-	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		# PostgreSQL restore is executed as the postgres OS user, so the extracted
-		# dump must be readable outside the root-only mktemp directory.
-		chmod 0755 "${tmpdir}" "${tmpdir}/data" 2>/dev/null || true
-		chmod 0644 "${tmpdir}/data/postgres.sql" 2>/dev/null || true
+	BACKUP_TMP_DIR="${tmpdir}"
+	trap 'rm -rf "${BACKUP_TMP_DIR:-}"' RETURN
+
+	if [[ "${archive}" == *.enc ]]; then
+		[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] || fail "Encrypted backup requires BACKUP_ENCRYPTION_PASSPHRASE."
+		decrypted_tar="${tmpdir}/decrypted.tar.gz"
+		BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE}" openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \
+			-pass env:BACKUP_ENCRYPTION_PASSPHRASE \
+			-in "${archive}" -out "${decrypted_tar}" \
+			|| fail "Failed to decrypt backup archive."
+		tar -C "${tmpdir}" -xzf "${decrypted_tar}"
+		rm -f "${decrypted_tar}"
+	else
+		tar -C "${tmpdir}" -xzf "${archive}"
 	fi
+
+	# Validate manifest driver compatibility when present
+	if [[ -f "${tmpdir}/meta/manifest.json" ]]; then
+		manifest_db_driver="$(python3 - "${tmpdir}/meta/manifest.json" <<'PY' 2>/dev/null || true
+import json, sys
+print(json.load(open(sys.argv[1])).get("db_driver", ""))
+PY
+)"
+		if [[ -n "${manifest_db_driver}" && "${manifest_db_driver}" != "${DB_DRIVER}" ]]; then
+			fail "Backup DB driver (${manifest_db_driver}) does not match host DB driver (${DB_DRIVER})."
+		fi
+	fi
+
+	if [[ "${DB_DRIVER}" == "postgres" ]]; then
+		chmod 0755 "${tmpdir}" "${tmpdir}/data" 2>/dev/null || true
+		chmod 0644 "${tmpdir}/data/postgres.dump" "${tmpdir}/data/postgres.sql" 2>/dev/null || true
+	fi
+
 	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
 
 	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
@@ -685,12 +1162,19 @@ restore_command() {
 		rm -f "${SQLITE_PATH}" "${SQLITE_PATH}-wal" "${SQLITE_PATH}-shm"
 		install -m 0640 -o "${APP_RUN_USER}" -g "${APP_RUN_GROUP}" "${tmpdir}/data/sqlite/data.db" "${SQLITE_PATH}"
 	else
-		[[ -f "${tmpdir}/data/postgres.sql" ]] || fail "PostgreSQL dump not found in archive"
 		ts="$(date +%s)"
 		tmp_db="${PG_DB_NAME}_restore_${ts}"
 		old_db="${PG_DB_NAME}_pre_restore_${ts}"
-		runuser -u postgres -- createdb -O "${PG_DB_USER}" "${tmp_db}"
-		runuser -u postgres -- psql -d "${tmp_db}" -f "${tmpdir}/data/postgres.sql" >/dev/null
+		if [[ -f "${tmpdir}/data/postgres.dump" ]]; then
+			pg_restore --list "${tmpdir}/data/postgres.dump" >/dev/null || fail "Invalid PostgreSQL custom dump archive"
+			runuser -u postgres -- createdb -O "${PG_DB_USER}" "${tmp_db}"
+			runuser -u postgres -- pg_restore --no-owner --role="${PG_DB_USER}" -d "${tmp_db}" "${tmpdir}/data/postgres.dump"
+		elif [[ -f "${tmpdir}/data/postgres.sql" ]]; then
+			runuser -u postgres -- createdb -O "${PG_DB_USER}" "${tmp_db}"
+			runuser -u postgres -- psql -d "${tmp_db}" -f "${tmpdir}/data/postgres.sql" >/dev/null
+		else
+			fail "PostgreSQL dump not found in archive"
+		fi
 		runuser -u postgres -- psql postgres <<EOF
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${PG_DB_NAME}', '${tmp_db}');
 ALTER DATABASE ${PG_DB_NAME} RENAME TO ${old_db};
@@ -702,51 +1186,272 @@ EOF
 		mkdir -p "${UPLOADS_DIR}"
 		rm -rf "${UPLOADS_DIR:?}/"*
 		cp -a "${tmpdir}/data/uploads/." "${UPLOADS_DIR}/"
-		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${UPLOADS_DIR}"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${UPLOADS_DIR}" 2>/dev/null || true
 	fi
 	if [[ -d "${tmpdir}/data/sessions" ]]; then
 		mkdir -p "${SESSIONS_DIR}"
 		rm -rf "${SESSIONS_DIR:?}/"*
 		cp -a "${tmpdir}/data/sessions/." "${SESSIONS_DIR}/"
-		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SESSIONS_DIR}"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SESSIONS_DIR}" 2>/dev/null || true
 	fi
+
+	# Merge ONLY portable cryptographic secrets (never overwrite host domain/ports/db passwords)
+	if [[ "${with_secrets}" == "1" && -f "${tmpdir}/meta/emdash.env" ]]; then
+		local src_enc src_auth src_prev cur_kid new_kid
+		src_enc="$(set +u; set -a; . "${tmpdir}/meta/emdash.env" 2>/dev/null; set +a; printf '%s' "${EMDASH_ENCRYPTION_KEY:-}")"
+		src_auth="$(set +u; set -a; . "${tmpdir}/meta/emdash.env" 2>/dev/null; set +a; printf '%s' "${EMDASH_AUTH_SECRET:-}")"
+		src_prev="$(set +u; set -a; . "${tmpdir}/meta/emdash.env" 2>/dev/null; set +a; printf '%s' "${EMDASH_PREVIEW_SECRET:-}")"
+		cur_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY:-}" 2>/dev/null || echo none)"
+		new_kid="$(emdash_encryption_key_fingerprint "${src_enc}" 2>/dev/null || echo none)"
+		log "Secret merge diff: EMDASH_ENCRYPTION_KEY kid ${cur_kid} -> ${new_kid} (host domain/ports/DB credentials unchanged)"
+		if [[ "${assume_yes}" != "1" && -t 0 ]]; then
+			local ans=""
+			read -r -p "Merge portable secrets from backup into ${APP_ENV_FILE}? [y/N]: " ans
+			[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] || fail "Restore aborted before secret merge."
+		fi
+		[[ -n "${src_enc}" ]] && update_env_value "EMDASH_ENCRYPTION_KEY" "${src_enc}" "${APP_ENV_FILE}"
+		[[ -n "${src_auth}" ]] && update_env_value "EMDASH_AUTH_SECRET" "${src_auth}" "${APP_ENV_FILE}"
+		[[ -n "${src_prev}" ]] && update_env_value "EMDASH_PREVIEW_SECRET" "${src_prev}" "${APP_ENV_FILE}"
+	fi
+
+	if [[ "${with_site}" == "1" ]]; then
+		[[ -d "${tmpdir}/site" ]] || fail "Backup archive does not contain site source (--with-site)."
+		rm -rf "${SITE_DIR}"
+		mkdir -p "${SITE_DIR}"
+		cp -a "${tmpdir}/site/." "${SITE_DIR}/"
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}" 2>/dev/null || true
+		run_as_app_user "'${APP_BUILD_SCRIPT}'"
+	fi
+
 	rm -rf "${tmpdir}"
+	BACKUP_TMP_DIR=""
+	trap - RETURN
 
 	systemctl start "${APP_SYSTEMD_SERVICE}"
 	wait_http_ok "$(local_health_url)" 60 || fail "Application did not become healthy after restore"
 	log "$(ct restore_complete)"
 }
 
+plan_emdash_dependency_upgrade() {
+	local target_version="${1:-latest}"
+	SITE_DIR="${SITE_DIR}" TARGET_VERSION="${target_version}" NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-}" python3 - <<'PY'
+import json
+import os
+import urllib.request
+from pathlib import Path
+
+pkg_path = Path(os.environ["SITE_DIR"]) / "package.json"
+if not pkg_path.is_file():
+    raise SystemExit(f"package.json not found in {pkg_path}")
+
+pkg = json.loads(pkg_path.read_text())
+target = os.environ["TARGET_VERSION"]
+registry = (os.environ.get("NPM_CONFIG_REGISTRY") or "https://registry.npmjs.org").rstrip("/")
+
+def resolve_version(pkg_name: str, requested: str) -> str:
+    if requested != "latest" and pkg_name == "emdash":
+        return requested
+    url = f"{registry}/{pkg_name.replace('/', '%2F')}/latest"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        return data["version"]
+
+changes = []
+for section in ("dependencies", "devDependencies"):
+    deps = pkg.get(section) or {}
+    for name, current in sorted(deps.items()):
+        if name == "emdash" or name.startswith("@emdash-cms/"):
+            next_ver = resolve_version(name, target if name == "emdash" else "latest")
+            next_spec = f"^{next_ver}"
+            changes.append({
+                "section": section,
+                "name": name,
+                "from": current,
+                "to": next_spec,
+                "changed": current != next_spec,
+            })
+
+print(json.dumps({"changes": changes}, indent=2))
+PY
+}
+
+apply_emdash_dependency_upgrade() {
+	local plan_json="$1"
+	SITE_DIR="${SITE_DIR}" PLAN_JSON="${plan_json}" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+pkg_path = Path(os.environ["SITE_DIR"]) / "package.json"
+pkg = json.loads(pkg_path.read_text())
+plan = json.loads(os.environ["PLAN_JSON"])
+
+for item in plan.get("changes", []):
+    section = pkg.setdefault(item["section"], {})
+    section[item["name"]] = item["to"]
+
+pkg_path.write_text(json.dumps(pkg, indent=2) + "\n")
+PY
+}
+
+run_upgrade_migration_gate() {
+	local assume_yes="${1:-0}"
+	local mig_json="" supported="" valid="" pending_count="0" unknown_count="0"
+
+	mig_json="$(probe_emdash_migrations)"
+	supported="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("supported", False))' 2>/dev/null || echo False)"
+	if [[ "${supported}" != "True" ]]; then
+		warn "Current EmDash CLI does not expose 'emdash migrate'."
+		if [[ "${assume_yes}" != "1" ]]; then
+			warn "Pass --yes to continue upgrading legacy EmDash without explicit migration gate."
+			return 1
+		fi
+		return 0
+	fi
+
+	valid="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("valid", False))' 2>/dev/null || echo False)"
+	if [[ "${valid}" != "True" ]]; then
+		warn "Unable to parse JSON from 'emdash migrate --status --json'; refusing to apply migrations blindly."
+		return 1
+	fi
+
+	unknown_count="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("unknown_applied_count", 0))' 2>/dev/null || echo 0)"
+	pending_count="$(printf '%s' "${mig_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pending_count", 0))' 2>/dev/null || echo 0)"
+
+	if (( unknown_count > 0 )); then
+		warn "Database contains ${unknown_count} unknown applied migrations (DB newer than target code). Aborting."
+		return 1
+	fi
+
+	if (( pending_count > 0 )); then
+		log "Applying ${pending_count} pending database migrations explicitly..."
+		UPGRADE_MIGRATION_ATTEMPTED="1"
+		run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate"
+		return $?
+	fi
+
+	log "Database migrations are already up to date (0 pending)."
+	return 0
+}
+
+upgrade_app_command() {
+	local target_version="latest" dry_run="0" skip_backup="0" assume_yes="0"
+	local plan_json="" rollback_dir="" pre_upgrade_backup=""
+	UPGRADE_MIGRATION_ATTEMPTED="0"
+	UPGRADE_ROLLBACK_DONE="0"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--target=*) target_version="${1#--target=}" ;;
+		--target)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --target"
+			target_version="$1"
+			;;
+		--dry-run) dry_run="1" ;;
+		--skip-backup) skip_backup="1" ;;
+		--yes | -y) assume_yes="1" ;;
+		*) fail "Unknown upgrade app option: $1" ;;
+		esac
+		shift
+	done
+
+	[[ -f "${SITE_DIR}/package.json" ]] || fail "Site package.json not found: ${SITE_DIR}/package.json"
+	migrate_managed_script_paths_if_legacy
+
+	plan_json="$(plan_emdash_dependency_upgrade "${target_version}")"
+	log "EmDash dependency upgrade plan (preserving all user templates, pages, styles, and astro.config.mjs):"
+	printf '%s\n' "${plan_json}" | python3 -c '
+import json, sys
+for item in json.load(sys.stdin).get("changes", []):
+    marker = "*" if item["changed"] else "="
+    name = item["name"]
+    old_v = item["from"]
+    new_v = item["to"]
+    print(f"  [{marker}] {name}: {old_v} -> {new_v}")
+'
+
+	if [[ "${dry_run}" == "1" ]]; then
+		local mig_preview
+		mig_preview="$(probe_emdash_migrations)"
+		log "Current migration status: ${mig_preview}"
+		log "Dry-run complete. No files or database were modified."
+		return 0
+	fi
+
+	acquire_op_lock
+
+	if [[ "${skip_backup}" != "1" ]]; then
+		log "Creating verified pre-upgrade backup..."
+		pre_upgrade_backup="$(create_backup_archive 1 0)"
+		log "Pre-upgrade backup created: ${pre_upgrade_backup}"
+	else
+		warn "Skipping pre-upgrade backup (--skip-backup)."
+	fi
+
+	rollback_dir="$(create_site_rollback)"
+
+	rollback_upgrade_once() {
+		if [[ "${UPGRADE_ROLLBACK_DONE}" == "1" ]]; then
+			return 0
+		fi
+		UPGRADE_ROLLBACK_DONE="1"
+		if [[ "${UPGRADE_MIGRATION_ATTEMPTED}" == "1" ]]; then
+			systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+			warn "CRITICAL: Failure occurred AFTER forward-only database migrations started."
+			warn "Database will NOT be silently overwritten to prevent data corruption."
+			if [[ -n "${pre_upgrade_backup}" ]]; then
+				warn "Restore both database and site explicitly with:"
+				warn "  emdashctl restore '${pre_upgrade_backup}' --with-site"
+			fi
+			rm -rf "${rollback_dir}"
+			return 0
+		fi
+		warn "Upgrade failed before database migration; restoring previous site, scripts, env, and systemd unit."
+		restore_site_rollback "${rollback_dir}"
+		rm -rf "${rollback_dir}"
+		systemctl start "${APP_SYSTEMD_SERVICE}" || true
+	}
+
+	trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback_upgrade_once; fi' RETURN
+
+	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+
+	apply_emdash_dependency_upgrade "${plan_json}"
+	chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/package.json" 2>/dev/null || true
+
+	if ! run_as_app_user "EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=1 '${APP_BUILD_SCRIPT}'"; then
+		rollback_upgrade_once
+		trap - RETURN
+		fail "Application dependency install/build failed; previous state restored."
+	fi
+
+	if ! run_upgrade_migration_gate "${assume_yes}"; then
+		rollback_upgrade_once
+		trap - RETURN
+		fail "Upgrade aborted at migration gate."
+	fi
+
+	systemctl start "${APP_SYSTEMD_SERVICE}"
+	if ! wait_http_ok "$(local_health_url)" 60; then
+		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+		rollback_upgrade_once
+		trap - RETURN
+		fail "Application did not become healthy after upgrade."
+	fi
+
+	trap - RETURN
+	rm -rf "${rollback_dir}"
+	log "EmDash upgrade completed safely without overwriting user site code."
+}
+
 upgrade_command() {
 	local target="$1"
-	local rollback_dir
+	shift || true
 	case "${target}" in
 	app)
-		migrate_managed_script_paths_if_legacy
-		rollback_dir="$(create_site_rollback)"
-		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
-		if ! {
-			ensure_template_source_checkout &&
-			sync_template_site_tree &&
-			refresh_managed_site_files &&
-			runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
-		}; then
-			warn "Upgrade failed; restoring previous site tree."
-			restore_site_rollback "${rollback_dir}"
-			rm -rf "${rollback_dir}"
-			systemctl start "${APP_SYSTEMD_SERVICE}" || true
-			fail "Application upgrade failed; previous site tree was restored."
-		fi
-		systemctl start "${APP_SYSTEMD_SERVICE}"
-		if ! wait_http_ok "$(local_health_url)" 60; then
-			warn "Upgraded app did not become healthy; rolling back site tree."
-			systemctl stop "${APP_SYSTEMD_SERVICE}" || true
-			restore_site_rollback "${rollback_dir}"
-			rm -rf "${rollback_dir}"
-			systemctl start "${APP_SYSTEMD_SERVICE}" || true
-			fail "Application did not become healthy after upgrade; previous site tree was restored."
-		fi
-		rm -rf "${rollback_dir}"
+		upgrade_app_command "$@"
 		;;
 	caddy-config)
 		[[ "${USE_CADDY}" == "1" ]] || fail "caddy is not enabled"
@@ -759,8 +1464,46 @@ upgrade_command() {
 	esac
 }
 
+template_diff_command() {
+	local stat_only="0"
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--stat) stat_only="1" ;;
+		*) fail "Unknown template diff option: $1" ;;
+		esac
+		shift
+	done
+	[[ -n "${TEMPLATE:-}" ]] || fail "TEMPLATE is not configured"
+	ensure_template_source_checkout
+	local template_path="${TEMPLATE_SOURCE_DIR}/${TEMPLATE}"
+	[[ -d "${template_path}" ]] || fail "Template directory not found: ${template_path}"
+	log "Comparing upstream template '${TEMPLATE}' against ${SITE_DIR} (read-only, no files modified):"
+	if [[ "${stat_only}" == "1" ]]; then
+		diff -rq \
+			--exclude=node_modules \
+			--exclude=dist \
+			--exclude=.astro \
+			--exclude=.emdash \
+			--exclude=.git \
+			--exclude=pnpm-lock.yaml \
+			--exclude=healthz.ts \
+			"${template_path}" "${SITE_DIR}" || true
+	else
+		diff -ru \
+			--exclude=node_modules \
+			--exclude=dist \
+			--exclude=.astro \
+			--exclude=.emdash \
+			--exclude=.git \
+			--exclude=pnpm-lock.yaml \
+			--exclude=healthz.ts \
+			"${template_path}" "${SITE_DIR}" || true
+	fi
+}
+
 reset_db_password_command() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
+	acquire_op_lock
 	local new_password old_password pg_user_encoded pg_password_encoded pg_db_name_encoded rollback_dir env_backup db_password_changed="0"
 	new_password="$(openssl rand -hex 16)"
 	old_password="${PG_DB_PASSWORD}"
@@ -786,13 +1529,7 @@ reset_db_password_command() {
 	pg_user_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_USER}")"
 	pg_password_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${new_password}")"
 	pg_db_name_encoded="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${PG_DB_NAME}")"
-	if ! {
-		update_env_value "DATABASE_URL" "postgres://${pg_user_encoded}:${pg_password_encoded}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db_name_encoded}" "${APP_ENV_FILE}" &&
-		render_site_astro_config &&
-		chown "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}/astro.config.mjs" &&
-		runuser -u "${APP_RUN_USER}" -- bash -lc "${APP_BUILD_SCRIPT}"
-	}; then
-		warn "Password reset rebuild failed; rolling back PostgreSQL password and app files."
+	if ! update_env_value "DATABASE_URL" "postgres://${pg_user_encoded}:${pg_password_encoded}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db_name_encoded}" "${APP_ENV_FILE}"; then
 		if [[ "${db_password_changed}" == "1" ]]; then
 			postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
 		fi
@@ -800,27 +1537,34 @@ reset_db_password_command() {
 		restore_site_rollback "${rollback_dir}"
 		rm -rf "${rollback_dir}"
 		systemctl start "${APP_SYSTEMD_SERVICE}" || true
-		fail "Password reset failed; previous password and app files were restored."
+		fail "Failed to update DATABASE_URL; previous password restored."
 	fi
+
+	# Never overwrite user's astro.config.mjs; verify real DB-backed setup API after restart,
+	# and rebuild without mutating source if Astro baked the previous PG password at build time.
 	systemctl start "${APP_SYSTEMD_SERVICE}"
-	if ! wait_http_ok "$(local_health_url)" 60; then
-		warn "Application did not become healthy after password reset; rolling back."
+	if ! { wait_http_ok "$(local_health_url)" 20 && wait_http_ok "$(local_setup_url)" 10; }; then
+		log "App requires clean rebuild to pick up rotated PostgreSQL credentials (preserving user astro.config.mjs)."
 		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
-		if [[ "${db_password_changed}" == "1" ]]; then
-			postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
+		if ! run_as_app_user "'${APP_BUILD_SCRIPT}'" || ! { systemctl start "${APP_SYSTEMD_SERVICE}" && wait_http_ok "$(local_health_url)" 60 && wait_http_ok "$(local_setup_url)" 20; }; then
+			warn "Application did not become healthy after password reset; rolling back."
+			systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+			if [[ "${db_password_changed}" == "1" ]]; then
+				postgres_alter_password "${PG_DB_USER}" "${old_password}" || true
+			fi
+			cp -a "${env_backup}" "${APP_ENV_FILE}" 2>/dev/null || true
+			restore_site_rollback "${rollback_dir}"
+			rm -rf "${rollback_dir}"
+			systemctl start "${APP_SYSTEMD_SERVICE}" || true
+			fail "Application did not become healthy after password reset; previous password and app files were restored."
 		fi
-		cp -a "${env_backup}" "${APP_ENV_FILE}" 2>/dev/null || true
-		restore_site_rollback "${rollback_dir}"
-		rm -rf "${rollback_dir}"
-		systemctl start "${APP_SYSTEMD_SERVICE}" || true
-		fail "Application did not become healthy after password reset; previous password and app files were restored."
 	fi
 	rm -rf "${rollback_dir}"
 	printf '%s\n' "${new_password}"
 }
 
 main() {
-	local args command json_flag="0" follow="0"
+	local args command json_flag="0" deep_flag="0" follow="0"
 	mapfile -t args < <(parse_lang_args "$@")
 	set -- "${args[@]}"
 	[[ $# -gt 0 ]] || { usage; exit 0; }
@@ -835,8 +1579,15 @@ main() {
 		status_command "${json_flag}"
 		;;
 	doctor)
-		[[ "${1:-}" == "--json" ]] && json_flag="1"
-		doctor_command "${json_flag}"
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+			--json) json_flag="1" ;;
+			--deep) deep_flag="1" ;;
+			*) fail "Unknown doctor option: $1" ;;
+			esac
+			shift
+		done
+		doctor_command "${json_flag}" "${deep_flag}"
 		;;
 	smoke)
 		[[ "${1:-}" == "--json" ]] && json_flag="1"
@@ -850,15 +1601,20 @@ main() {
 		restart_command "${1:-app}"
 		;;
 	backup)
-		backup_command
+		backup_command "$@"
 		;;
 	restore)
 		[[ $# -ge 1 ]] || fail "restore requires a backup file"
-		restore_command "$1"
+		restore_command "$@"
 		;;
 	upgrade)
 		[[ $# -ge 1 ]] || fail "$(ct upgrade_supported)"
-		upgrade_command "$1"
+		upgrade_command "$@"
+		;;
+	template)
+		[[ "${1:-}" == "diff" ]] || fail "Supported template subcommand: diff"
+		shift
+		template_diff_command "$@"
 		;;
 	reset-db-password)
 		reset_db_password_command

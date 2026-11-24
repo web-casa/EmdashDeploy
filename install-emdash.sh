@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/site-common.sh
+source "${SCRIPT_DIR}/lib/site-common.sh"
 # shellcheck source=lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
 # shellcheck source=lib/i18n.sh
@@ -65,7 +67,8 @@ collect_configuration() {
 	fi
 
 	prompt_value PROJECT_NAME "$(ti project_name)" "${PROJECT_NAME}"
-	prompt_choice TEMPLATE "$(ti template)" "blog marketing portfolio blank" "${TEMPLATE}"
+	prompt_choice TEMPLATE "$(ti template)" "blog marketing portfolio" "${TEMPLATE}"
+	prompt_yes_no ENABLE_PLUGIN_SANDBOX "$(ti enable_plugin_sandbox)" "${ENABLE_PLUGIN_SANDBOX}"
 	prompt_value ROOT_DIR "$(ti root_dir)" "${ROOT_DIR}"
 	prompt_value TIMEZONE "$(ti timezone)" "${TIMEZONE}"
 
@@ -143,6 +146,9 @@ wait_for_stack_ready() {
 		local_probe_host="127.0.0.1"
 	fi
 	app_health_url="http://${local_probe_host}:${APP_PORT}/healthz"
+	if [[ "${USE_CADDY}" != "1" ]]; then
+		setup_status_url="http://${local_probe_host}:${APP_PORT}/_emdash/api/setup/status"
+	fi
 
 	log "$(ti wait_app_health)"
 	if ! wait_for_http_ok "${app_health_url}" 120 2; then
@@ -264,10 +270,11 @@ cleanup_activation_rollback() {
 
 activation_rollback_on_exit() {
 	local exit_code="$1"
-	if [[ "${exit_code}" -eq 0 || "${ACTIVATION_ROLLBACK_ACTIVE:-0}" != "1" || -z "${ACTIVATION_ROLLBACK_DIR:-}" ]]; then
+	if [[ "${exit_code}" -eq 0 || "${ACTIVATION_ROLLBACK_ACTIVE:-0}" != "1" || "${ACTIVATION_ROLLBACK_DONE:-0}" == "1" || -z "${ACTIVATION_ROLLBACK_DIR:-}" ]]; then
 		return 0
 	fi
 	ACTIVATION_ROLLBACK_ACTIVE="0"
+	ACTIVATION_ROLLBACK_DONE="1"
 
 	warn "安装失败，正在恢复安装前的站点与运行时配置。"
 	restore_activation_rollback "${ACTIVATION_ROLLBACK_DIR}" \

@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=../lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../lib/site-common.sh
+source "${SCRIPT_DIR}/lib/site-common.sh"
 # shellcheck source=../lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
 # shellcheck source=../lib/i18n.sh
@@ -171,7 +173,7 @@ EOF
 	cat >"${INSTALL_YAML}" <<'EOF'
 version: 1
 project:
-  template: starter
+  template: marketing
 database:
   driver: sqlite
 session:
@@ -214,7 +216,7 @@ EOF
 export default {};
 EOF
 
-	TEMPLATE="starter"
+	TEMPLATE="blog"
 	DB_DRIVER="sqlite"
 	SESSION_DRIVER="file"
 	STORAGE_DRIVER="local"
