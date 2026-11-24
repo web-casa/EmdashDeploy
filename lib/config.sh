@@ -176,6 +176,7 @@ apply_env_overrides() {
 	fi
 	if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then
 		export NPM_CONFIG_REGISTRY
+		export npm_config_registry="${NPM_CONFIG_REGISTRY}"
 	fi
 	if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then
 		export COREPACK_NPM_REGISTRY

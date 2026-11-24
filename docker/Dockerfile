@@ -54,7 +54,7 @@ RUN case " ${EMDASH_TEMPLATE} " in \
         " blog " | " marketing " | " portfolio ") ;; \
         *) echo "Unsupported EMDASH_TEMPLATE: ${EMDASH_TEMPLATE}" >&2; exit 1 ;; \
     esac \
-    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY; fi \
+    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY npm_config_registry="${NPM_CONFIG_REGISTRY}"; fi \
     && if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then export COREPACK_NPM_REGISTRY; fi \
     && if [[ "${EMDASH_FAST_FAIL_GOOGLE_FONTS}" == "1" && -z "${HTTPS_PROXY:-}${https_proxy:-}${ALL_PROXY:-}${all_proxy:-}" ]]; then \
         export EMDASH_FAST_FAIL_GOOGLE_FONTS=1; \
@@ -71,7 +71,9 @@ RUN case " ${EMDASH_TEMPLATE} " in \
     && render_site_health_endpoint_common \
     && ensure_site_pnpm /app/site \
     && cd /app/site \
-    && pnpm install --no-frozen-lockfile \
+    && REG_ARG=() \
+    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then REG_ARG+=(--registry="${NPM_CONFIG_REGISTRY}"); fi \
+    && pnpm install --no-frozen-lockfile "${REG_ARG[@]}" \
     && pnpm build \
     && chown -R 10001:10001 /app /data
 

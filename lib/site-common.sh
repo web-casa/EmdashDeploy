@@ -351,6 +351,9 @@ if [[ -f "${APP_ENV_FILE}" ]]; then
 	. "${APP_ENV_FILE}"
 	set +a
 fi
+if [[ -n "\${NPM_CONFIG_REGISTRY:-}" ]]; then
+	export npm_config_registry="\${NPM_CONFIG_REGISTRY}"
+fi
 if [[ "\${EMDASH_FAST_FAIL_GOOGLE_FONTS:-0}" == "1" \
 	&& -z "\${HTTPS_PROXY:-}\${https_proxy:-}\${ALL_PROXY:-}\${all_proxy:-}" \
 	&& -f "${lib_dir}/fast-fail-google-fonts.mjs" ]]; then
@@ -363,10 +366,14 @@ else
 	corepack enable || true
 fi
 cd "${SITE_DIR}"
+PNPM_REGISTRY_ARGS=()
+if [[ -n "\${NPM_CONFIG_REGISTRY:-}" ]]; then
+	PNPM_REGISTRY_ARGS+=(--registry="\${NPM_CONFIG_REGISTRY}")
+fi
 if [[ "\${EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE:-0}" == "1" || ! -f "pnpm-lock.yaml" ]]; then
-	pnpm install --no-frozen-lockfile --config.confirmModulesPurge=false
+	pnpm install --no-frozen-lockfile --config.confirmModulesPurge=false "\${PNPM_REGISTRY_ARGS[@]}"
 else
-	pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+	pnpm install --frozen-lockfile --config.confirmModulesPurge=false "\${PNPM_REGISTRY_ARGS[@]}"
 fi
 pnpm build
 EOF

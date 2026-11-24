@@ -98,16 +98,23 @@ from pathlib import Path
 
 dest = Path(os.environ["EXTRACT_DIR"]).resolve()
 with tarfile.open(os.environ["TAR_PATH"], "r:gz") as tf:
+    members_to_extract = []
     for m in tf.getmembers():
+        norm = m.name.lstrip("./")
+        # Runtime migration only needs meta/ and data/ (skip site/ which may contain
+        # upstream template symlinks such as .claude/skills -> ../.agents/skills).
+        if norm and not (norm == "meta" or norm.startswith("meta/") or norm == "data" or norm.startswith("data/")):
+            continue
         if m.issym() or m.islnk() or m.isdev():
             raise SystemExit(f"Unsafe tar member rejected: {m.name}")
         target = (dest / m.name).resolve()
         if target != dest and dest not in target.parents:
             raise SystemExit(f"Path traversal member rejected: {m.name}")
+        members_to_extract.append(m)
     if hasattr(tarfile, "data_filter"):
-        tf.extractall(dest, filter="data")
+        tf.extractall(dest, members=members_to_extract, filter="data")
     else:
-        tf.extractall(dest)
+        tf.extractall(dest, members=members_to_extract)
 PY
 
 MANIFEST_DB="sqlite"

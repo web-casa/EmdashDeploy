@@ -130,6 +130,35 @@ EOF
 	# Verify next instance allocates a distinct port when site2's port is recorded
 	next_port="$(find_available_app_port "${APP_PORT}")"
 	[[ "${next_port}" != "${APP_PORT}" ]]
+
+	# Verify legacy single-file Caddyfile is automatically migrated to sites.d/default.caddy
+	# when installing a second named instance on an upgraded pre-1.6.0-hi.3 host
+	LEGACY_CADDY_DIR="${TEST_TMP_DIR}/legacy-caddy"
+	mkdir -p "${LEGACY_CADDY_DIR}"
+	cat >"${LEGACY_CADDY_DIR}/Caddyfile" <<'EOF'
+{
+	email legacy@example.com
+}
+
+http://legacy-default.local {
+	reverse_proxy 127.0.0.1:3000
+}
+EOF
+	CADDY_DIR="${LEGACY_CADDY_DIR}"
+	CADDY_SITES_DIR="${LEGACY_CADDY_DIR}/sites.d"
+	CADDY_CONF_DIR="${LEGACY_CADDY_DIR}/conf.d"
+	CADDYFILE_PATH="${LEGACY_CADDY_DIR}/Caddyfile"
+	CADDY_SITE_FILE="${LEGACY_CADDY_DIR}/sites.d/site2.caddy"
+	INSTANCE_SLUG="site2"
+	DOMAIN="site2-legacy.local"
+	ADMIN_EMAIL=""
+	APP_PORT="3001"
+	ENABLE_HTTPS="0"
+	render_caddy_file
+	[[ -f "${LEGACY_CADDY_DIR}/sites.d/default.caddy" ]]
+	grep -Fq 'http://legacy-default.local' "${LEGACY_CADDY_DIR}/sites.d/default.caddy"
+	grep -Fq 'email legacy@example.com' "${LEGACY_CADDY_DIR}/Caddyfile"
+	grep -Fq 'http://site2-legacy.local' "${LEGACY_CADDY_DIR}/sites.d/site2.caddy"
 )
 
 # 2. Test install-emdash.sh --update-cli (zero-downtime CLI & lib update across all instances)

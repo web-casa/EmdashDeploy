@@ -69,14 +69,27 @@ ordered = mod.topo_sort_tables(
 )
 assert ordered.index("users") < ordered.index("posts") < ordered.index("comments"), ordered
 
-# Build real SQLite DB and verify build_migration_sql
+# Build real SQLite DB (including SQLite-only _emdash_fts_* shadow table & dynamic ec_posts collection table)
 conn = sqlite3.connect(sys.argv[2])
 conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, is_admin INTEGER, secret TEXT)")
 conn.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, meta TEXT)")
+conn.execute("CREATE TABLE _emdash_fts_posts_config (k TEXT PRIMARY KEY, v TEXT)")
+conn.execute("CREATE TABLE ec_posts (id TEXT PRIMARY KEY, slug TEXT, status TEXT DEFAULT 'draft', version INTEGER DEFAULT 1, locale TEXT NOT NULL DEFAULT 'en')")
 conn.execute("INSERT INTO users VALUES (1, 'a@b.com', 1, ?)", (envelope,))
 conn.execute("INSERT INTO posts VALUES (10, 1, '{\"views\":5}')")
+conn.execute("INSERT INTO _emdash_fts_posts_config VALUES ('version', '4')")
+conn.execute("INSERT INTO ec_posts VALUES ('p1', 'hello-world', 'published', 1, 'en')")
 conn.commit()
 conn.close()
+
+# Verify FTS5 shadow table detection & dynamic ec_* DDL generation
+assert mod.is_sqlite_only_table("_emdash_fts_posts_config") is True
+assert mod.is_sqlite_only_table("ec_posts") is False
+ec_ddl = mod.build_dynamic_ec_table_ddl(sys.argv[2], "ec_posts")
+assert 'CREATE TABLE IF NOT EXISTS "ec_posts"' in ec_ddl, ec_ddl
+assert '"id" TEXT PRIMARY KEY' in ec_ddl, ec_ddl
+assert '"version" INTEGER DEFAULT 1' in ec_ddl, ec_ddl
+assert "\"locale\" TEXT NOT NULL DEFAULT 'en'" in ec_ddl, ec_ddl
 
 sqlite_info = mod.fetch_sqlite_tables(sys.argv[2])
 pg_tables = {
@@ -108,7 +121,10 @@ while [[ $# -gt 0 ]]; do
 	shift || true
 done
 if [[ -z "${sql}" ]]; then
-	cat >/dev/null
+	body="$(cat)"
+	if grep -Fq 'CREATE TABLE IF NOT EXISTS "ec_posts"' <<<"${body}" && [[ -n "${MOCK_PG_EC_CREATED_FLAG:-}" ]]; then
+		touch "${MOCK_PG_EC_CREATED_FLAG}"
+	fi
 	exit 0
 fi
 if grep -Fq "information_schema.columns" <<<"${sql}"; then
@@ -122,6 +138,13 @@ if grep -Fq "information_schema.columns" <<<"${sql}"; then
 	printf 'posts\tid\tinteger\tint4\n'
 	printf 'posts\tuser_id\tinteger\tint4\n'
 	printf 'posts\tmeta\tjsonb\tjsonb\n'
+	if [[ -f "${MOCK_PG_EC_CREATED_FLAG:-/nonexistent}" ]]; then
+		printf 'ec_posts\tid\ttext\ttext\n'
+		printf 'ec_posts\tslug\ttext\ttext\n'
+		printf 'ec_posts\tstatus\ttext\ttext\n'
+		printf 'ec_posts\tversion\tinteger\tint4\n'
+		printf 'ec_posts\tlocale\ttext\ttext\n'
+	fi
 	exit 0
 fi
 if grep -Fq "information_schema.table_constraints" <<<"${sql}"; then
@@ -164,10 +187,13 @@ if PATH="${FAKE_BIN}:${PATH}" MOCK_PG_EMPTY_SCHEMA=1 PGPASSWORD=x python3 "${SCR
 	exit 1
 fi
 
-# Exact match succeeds (MOCK_PG_COUNT=1)
-OK_OUT="$(PATH="${FAKE_BIN}:${PATH}" MOCK_PG_COUNT=1 PGPASSWORD=x python3 "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" \
+# Exact match succeeds (MOCK_PG_COUNT=1) including dynamic ec_posts creation and _emdash_fts_* skip
+EC_FLAG="${TMP_DIR}/ec_created"
+OK_OUT="$(PATH="${FAKE_BIN}:${PATH}" MOCK_PG_EC_CREATED_FLAG="${EC_FLAG}" MOCK_PG_COUNT=1 PGPASSWORD=x python3 "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" \
 	--sqlite-path "${SQLITE_DB}" --pg-user u --pg-db d --truncate-target)"
+[[ -f "${EC_FLAG}" ]]
 grep -Fq '"status": "ok"' <<<"${OK_OUT}"
+grep -Fq '"ec_posts": 1' <<<"${OK_OUT}"
 
 # 3. Test scripts/migrate-runtime.sh (native-to-docker & docker-to-native --dry-run)
 bash "${SCRIPT_DIR}/scripts/migrate-runtime.sh" --help >/dev/null
@@ -175,7 +201,8 @@ bash "${SCRIPT_DIR}/scripts/migrate-runtime.sh" --help >/dev/null
 BAK_SRC="${TMP_DIR}/bak-src"
 DOCKER_OUT="${TMP_DIR}/docker-out"
 NATIVE_BAK="${TMP_DIR}/emdash-backup-20261124-120000.tar.gz"
-mkdir -p "${BAK_SRC}/meta" "${BAK_SRC}/data/sqlite" "${BAK_SRC}/data/uploads"
+mkdir -p "${BAK_SRC}/meta" "${BAK_SRC}/data/sqlite" "${BAK_SRC}/data/uploads" "${BAK_SRC}/site/.agents/skills" "${BAK_SRC}/site/.claude"
+ln -s ../.agents/skills "${BAK_SRC}/site/.claude/skills"
 cp "${SQLITE_DB}" "${BAK_SRC}/data/sqlite/data.db"
 printf 'img-bytes' >"${BAK_SRC}/data/uploads/pic.bin"
 cat >"${BAK_SRC}/meta/emdash.env" <<'EOF'

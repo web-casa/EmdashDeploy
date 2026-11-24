@@ -173,6 +173,61 @@ def topo_sort_tables(tables, fk_deps):
     return ordered
 
 
+def is_sqlite_only_table(name: str) -> bool:
+    """Return True for SQLite-internal / FTS5 virtual shadow tables not used by PostgreSQL."""
+    return name.startswith("_emdash_fts_")
+
+
+def sqlite_type_to_pg(sqlite_type: str) -> str:
+    t = (sqlite_type or "").strip().upper()
+    if "BOOL" in t:
+        return "BOOLEAN"
+    if "BIGINT" in t:
+        return "BIGINT"
+    if "INT" in t:
+        return "INTEGER"
+    if any(k in t for k in ("REAL", "FLOA", "DOUB", "NUM", "DEC")):
+        return "DOUBLE PRECISION"
+    if "BLOB" in t:
+        return "BYTEA"
+    return "TEXT"
+
+
+def build_dynamic_ec_table_ddl(sqlite_path: str, table_name: str) -> str:
+    """Generate PostgreSQL CREATE TABLE DDL for dynamic EmDash collection tables (ec_*)."""
+    conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
+    cur = conn.cursor()
+    cols = cur.execute(f"PRAGMA table_info({pg_ident(table_name)});").fetchall()
+    conn.close()
+    if not cols:
+        raise RuntimeError(f"Dynamic collection table {table_name} has no columns in SQLite")
+
+    col_defs = []
+    pk_cols = [c[1] for c in sorted(cols, key=lambda x: x[5]) if c[5] > 0]
+    for cid, name, col_type, notnull, dflt_value, pk in cols:
+        pg_t = sqlite_type_to_pg(col_type)
+        parts = [pg_ident(name), pg_t]
+        if notnull and not (pk and len(pk_cols) == 1):
+            parts.append("NOT NULL")
+        if dflt_value is not None:
+            dv = str(dflt_value).strip()
+            dv_upper = dv.upper()
+            if "CURRENT_TIMESTAMP" in dv_upper or "DATETIME('NOW')" in dv_upper:
+                parts.append("DEFAULT CURRENT_TIMESTAMP")
+            elif pg_t == "BOOLEAN" and dv in ("0", "1"):
+                parts.append("DEFAULT TRUE" if dv == "1" else "DEFAULT FALSE")
+            elif dv.startswith("'") or dv.lstrip("-").replace(".", "", 1).isdigit() or dv_upper in ("TRUE", "FALSE", "NULL"):
+                parts.append(f"DEFAULT {dv}")
+        if pk and len(pk_cols) == 1:
+            parts.append("PRIMARY KEY")
+        col_defs.append("  " + " ".join(parts))
+
+    if len(pk_cols) > 1:
+        col_defs.append("  PRIMARY KEY (" + ", ".join(pg_ident(c) for c in pk_cols) + ")")
+
+    return f"CREATE TABLE IF NOT EXISTS {pg_ident(table_name)} (\n" + ",\n".join(col_defs) + "\n);\n"
+
+
 def fetch_sqlite_tables(sqlite_path: str):
     conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
     cur = conn.cursor()
@@ -297,8 +352,31 @@ def main():
         sys.exit(0 if not non_empty else 2)
 
     skip_tables = set(MIGRATION_META_TABLES)
-    missing_in_pg = [t for t in sqlite_info if t not in pg_tables and t not in skip_tables]
-    common_tables = [t for t in sqlite_info if t in pg_tables and t not in skip_tables]
+    sqlite_only_skipped = sorted(t for t in sqlite_info if is_sqlite_only_table(t))
+    skip_tables.update(sqlite_only_skipped)
+
+    # Dynamic EmDash collection tables (ec_*) are created by runtime/seed rather than
+    # core static migrations. Provision missing ec_* tables in PostgreSQL before data copy.
+    dynamic_ec_to_create = sorted(
+        t for t in sqlite_info
+        if t.startswith("ec_") and t not in pg_tables and t not in skip_tables
+    )
+    if dynamic_ec_to_create and not args.dry_run:
+        ddl_parts = ["BEGIN;"]
+        for tbl in dynamic_ec_to_create:
+            ddl_parts.append(build_dynamic_ec_table_ddl(args.sqlite_path, tbl))
+        ddl_parts.append("COMMIT;")
+        run_psql(pg_env, [], sql_input="\n".join(ddl_parts) + "\n")
+        pg_tables, fk_deps = fetch_pg_schema(pg_env)
+
+    missing_in_pg = [
+        t for t in sqlite_info
+        if t not in pg_tables and t not in skip_tables and not (args.dry_run and t in dynamic_ec_to_create)
+    ]
+    common_tables = [
+        t for t in sqlite_info
+        if (t in pg_tables or (args.dry_run and t in dynamic_ec_to_create)) and t not in skip_tables
+    ]
     ordered = topo_sort_tables(common_tables, fk_deps)
 
     if args.dry_run:
@@ -306,6 +384,7 @@ def main():
             "tables_to_migrate": [
                 {"table": t, "rows": sqlite_info[t]["count"]} for t in ordered
             ],
+            "dynamic_ec_tables_to_create": dynamic_ec_to_create,
             "skipped_tables": sorted(skip_tables & set(sqlite_info.keys())),
             "missing_in_pg": missing_in_pg,
         }

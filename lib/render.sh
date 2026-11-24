@@ -354,6 +354,38 @@ render_caddy_file() {
 	ensure_dir "${CADDY_SITES_DIR}"
 	ensure_dir "${CADDY_CONF_DIR}"
 
+	# Seamlessly migrate a legacy single-file Caddyfile (pre-1.6.0-hi.3) into
+	# sites.d/default.caddy before rewriting the modular main Caddyfile so
+	# adding a second instance never drops the primary instance's reverse proxy.
+	if [[ "${INSTANCE_SLUG:-default}" != "default" \
+		&& -f "${CADDYFILE_PATH}" \
+		&& ! -f "${CADDY_SITES_DIR}/default.caddy" ]] \
+		&& ! grep -Fq "import ${CADDY_SITES_DIR}/*.caddy" "${CADDYFILE_PATH}"; then
+		LEGACY_CADDY="${CADDYFILE_PATH}" \
+		DEFAULT_SITE_OUT="${CADDY_SITES_DIR}/default.caddy" \
+		GLOBAL_EMAIL_OUT="${global_email_file}" \
+		python3 - <<'PY'
+import os, re
+from pathlib import Path
+
+raw = Path(os.environ["LEGACY_CADDY"]).read_text()
+email_match = re.search(r"^\s*\{\s*\n\s*email\s+(\S+)\s*\n\s*\}\s*\n*", raw, flags=re.MULTILINE)
+if email_match:
+    ge = Path(os.environ["GLOBAL_EMAIL_OUT"])
+    if not ge.exists():
+        ge.write_text(email_match.group(1) + "\n")
+    body = raw[:email_match.start()] + raw[email_match.end():]
+else:
+    body = raw
+body = body.strip()
+if body:
+    Path(os.environ["DEFAULT_SITE_OUT"]).write_text(
+        "# Migrated from legacy single-file Caddyfile for instance: default\n" + body + "\n"
+    )
+PY
+		chmod 0644 "${CADDY_SITES_DIR}/default.caddy" 2>/dev/null || true
+	fi
+
 	if [[ "${ENABLE_HTTPS}" == "1" ]]; then
 		site_header="${DOMAIN}"
 	else
@@ -621,8 +653,8 @@ build_site() {
 	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" \
 		"${SITE_DIR}" "${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}" "${TMP_DIR}" \
 		"${ROOT_DIR}/.cache" "${ROOT_DIR}/.local" "${ROOT_DIR}/.config"
-	runuser -u "${APP_RUN_USER}" -- bash -lc "HOME='${ROOT_DIR}' EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=${allow_lockfile_update} '${APP_BUILD_SCRIPT}'"
-	ensure_site_encryption_key_after_build
+	runuser -u "${APP_RUN_USER}" -- bash -lc "HOME='${ROOT_DIR}' EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=${allow_lockfile_update} '${APP_BUILD_SCRIPT}'" || return 1
+	ensure_site_encryption_key_after_build || return 1
 }
 
 create_site_rollback() {

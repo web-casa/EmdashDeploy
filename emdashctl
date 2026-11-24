@@ -3039,12 +3039,12 @@ uninstall_command() {
 	if [[ -n "${CADDY_SITE_FILE:-}" && -f "${CADDY_SITE_FILE}" ]]; then
 		rm -f "${CADDY_SITE_FILE}"
 		log "Removed Caddy site snippet: ${CADDY_SITE_FILE}"
-		local remaining_sites=0
+		local remaining_caddy_files=0
 		local s=""
-		for s in "${CADDY_SITES_DIR}"/*.caddy; do
-			[[ -f "${s}" ]] && remaining_sites=$((remaining_sites + 1))
+		for s in "${CADDY_SITES_DIR}"/*.caddy "${CADDY_CONF_DIR}"/*.caddy; do
+			[[ -f "${s}" ]] && remaining_caddy_files=$((remaining_caddy_files + 1))
 		done
-		if (( remaining_sites > 0 )); then
+		if (( remaining_caddy_files > 0 )); then
 			local caddy_main="${EMDASH_CADDY_MAIN_FILE:-/etc/caddy/Caddyfile}"
 			if command -v caddy >/dev/null 2>&1 && caddy validate --config "${caddy_main}" >/dev/null 2>&1; then
 				systemctl reload caddy >/dev/null 2>&1 || true

@@ -49,12 +49,14 @@ COPY --from=custom_site . /app/site/
 # Strip any accidentally copied host build/runtime artifacts before clean install + build
 RUN rm -rf /app/site/node_modules /app/site/dist /app/site/.astro /app/site/.git \
     && test -f /app/site/package.json || { echo "ERROR: CUSTOM_SITE_DIR must contain package.json" >&2; exit 1; } \
-    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY; fi \
+    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY npm_config_registry="${NPM_CONFIG_REGISTRY}"; fi \
     && if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then export COREPACK_NPM_REGISTRY; fi \
     && source /opt/emdash/lib/site-common.sh \
     && ensure_site_pnpm /app/site \
     && cd /app/site \
-    && if [[ -f pnpm-lock.yaml ]]; then pnpm install --frozen-lockfile; else pnpm install --no-frozen-lockfile; fi \
+    && REG_ARG=() \
+    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then REG_ARG+=(--registry="${NPM_CONFIG_REGISTRY}"); fi \
+    && if [[ -f pnpm-lock.yaml ]]; then pnpm install --frozen-lockfile "${REG_ARG[@]}"; else pnpm install --no-frozen-lockfile "${REG_ARG[@]}"; fi \
     && pnpm build \
     && chown -R 10001:10001 /app /data
 
