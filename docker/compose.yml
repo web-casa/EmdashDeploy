@@ -62,7 +62,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/healthz"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/healthz >/dev/null || curl -fsS http://127.0.0.1:3000/_emdash/api/setup/status >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 3

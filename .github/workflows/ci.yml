@@ -116,6 +116,9 @@ jobs:
 
           git clone --depth 1 --branch main https://github.com/emdash-cms/templates.git "${WORK_DIR}/templates"
           cp -a "${WORK_DIR}/templates/blog" "${WORK_DIR}/custom-site"
+          # Simulate a custom site configured for /data persistence (without mutating inside Dockerfile.custom)
+          SITE_DIR="${WORK_DIR}/custom-site" DB_DRIVER="sqlite" SESSION_DRIVER="file" STORAGE_DRIVER="local" ENABLE_PLUGIN_SANDBOX="1" \
+            python3 lib/astro-patch.py
           mkdir -p "${WORK_DIR}/backups"
 
           cat >"${WORK_DIR}/.env" <<EOF
@@ -137,12 +140,11 @@ jobs:
           docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" up -d
 
           for _ in $(seq 1 45); do
-            if curl -fsS http://127.0.0.1:18300/healthz >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:18300/_emdash/api/setup/status >/dev/null 2>&1; then
               break
             fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:18300/healthz
           curl -fsS http://127.0.0.1:18300/_emdash/api/setup/status | grep -q '"data"'
 
           # Seed marker row + upload file inside container, then run encrypted docker/backup.sh
@@ -171,4 +173,4 @@ jobs:
           test "${RESTORED_VAL}" = "before-backup"
           docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
             test -f /data/uploads/marker.txt
-          curl -fsS http://127.0.0.1:18300/healthz
+          curl -fsS http://127.0.0.1:18300/_emdash/api/setup/status | grep -q '"data"'

@@ -204,10 +204,11 @@ if [[ "${STORAGE_DRIVER}" == "local" && -d "${EXTRACT_DIR}/data/uploads" ]]; the
 			"mkdir -p /data/uploads && find /data/uploads -mindepth 1 -delete && tar -C /data/uploads -xf - && chown -R ${PUID}:${PGID} /data/uploads"
 fi
 
-log "Starting emdash container and verifying /healthz..."
+log "Starting emdash container and verifying health..."
 docker compose "${compose_args[@]}" up -d emdash
 for _ in $(seq 1 30); do
-	if docker compose "${compose_args[@]}" exec -T emdash curl -fsS http://127.0.0.1:3000/healthz >/dev/null 2>&1; then
+	if docker compose "${compose_args[@]}" exec -T emdash sh -c \
+		'curl -fsS http://127.0.0.1:3000/healthz >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/_emdash/api/setup/status >/dev/null 2>&1'; then
 		log "Docker restore complete and container is healthy!"
 		exit 0
 	fi
