@@ -133,6 +133,10 @@ validate_domain_requirements() {
 	if port_in_use_by_foreign_process 80; then
 		fail "检测到 80 端口已被占用，无法为 Caddy 提供 HTTP/HTTPS。"
 	fi
+	if [[ "${ENABLE_HTTPS}" != "1" ]]; then
+		log "HTTP 模式（ENABLE_HTTPS=0）：跳过 443 端口与公网 DNS 解析校验。"
+		return
+	fi
 	if port_in_use_by_foreign_process 443; then
 		fail "检测到 443 端口已被占用，无法为 Caddy 提供 HTTP/HTTPS。"
 	fi

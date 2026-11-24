@@ -34,10 +34,22 @@ Operational maturity, AI-friendly diagnostics, safe two-stage encryption key rot
 - Synchronized all 9 language READMEs (`README.md`, `README.zh-CN.md`, `README.zh-TW.md`, `README.ja.md`, `README.ko.md`, `README.de.md`, `README.es.md`, `README.fr.md`, `README.pt.md`), `lib/i18n.sh` usage help, [`docker/README.md`](./docker/README.md), and [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)
 - Updated `.gitignore` to ignore local `mitm_mcp_traffic.db` and added AI project documentation under `docs4ai/`
 
+### Fixed
+
+- Fixed PostgreSQL encrypted-envelope `kid` scan in `emdashctl rotate-encryption-key --prune-old` (`LIKE '%\$emdash%'`) so JSON stored inside PostgreSQL `TEXT` columns (escaped by `row_to_json`) is reliably detected before pruning legacy keys
+- Added POSIX `fcntl.lockf` apt/dpkg lock waiting (`wait_for_apt_locks`) in `lib/os.sh` to prevent `apt-get` lock collisions with `cloud-init` / `unattended-upgrades` on freshly booted Debian/Ubuntu hosts
+- Skipped port 443 and public DNS A/AAAA checks in `lib/network.sh` when Caddy is configured in HTTP-only mode (`USE_CADDY=1`, `ENABLE_HTTPS=0`, e.g., LAN or behind Cloudflare Tunnel/CDN)
+
 ### Validation Summary
 
-- All 10 offline regression test suites + `bash -n` + `py_compile` + `shellcheck -S error` pass
-- Real PVE **Ubuntu 26.04.1 LTS** (`x86_64`, kernel `7.0.0-38-generic`, mainland China network with `EMDASH_MIRROR_PRESET=cn`) passed full 7-step E2E via `scripts/remote-e2e-verify.sh --destructive --verify-reboot`: fresh install (Node 24 + PGDG `resolute-pgdg` PostgreSQL 18 + Valkey + `sandbox-workerd`), `doctor --deep --json`, `diagnose --json` (0 secret leak), two-stage `rotate-encryption-key`, non-destructive `upgrade app`, encrypted full `backup` + `restore --with-site --with-secrets`, `reset-db-password`, and post-reboot autostart (`healthy=True`, `ok=15, warn=0, fail=0, skipped=1`)
+- All 10 offline regression test suites (including PostgreSQL `row_to_json` escaped `TEXT` column scan regression) + `bash -n` + `py_compile` + `shellcheck -S error` pass
+- Full 6-distro real PVE `x86_64` VM deep E2E verification matrix passed via `scripts/remote-e2e-verify.sh`:
+  - **Ubuntu 26.04.1 LTS** (`resolute`, kernel `7.0.0`): PG 18 + Valkey + `blog` + full 7-step + `reboot` autostart (`ok=15, warn=0, fail=0`)
+  - **Rocky Linux 10.3** (SELinux enforcing): SQLite + file + Caddy HTTP + `marketing` + SQLite upstream `emdash doctor` aggregation + Caddy live sensitive-header canary redaction (0 leak) + env permission fault injection + SQLite DB `kid` prune guard + chaos restore (`ok=18, warn=1, fail=0`)
+  - **Debian 13** (`trixie`, 2 GiB RAM): auto `/swapfile.emdash` creation + apt lock wait + PG 18 + Valkey + Caddy HTTP + `blog` + Caddy canary redaction + PG DB `kid` prune guard + `reset-db-password` + `reboot` autostart (`ok=16, warn=0, fail=0`)
+  - **Ubuntu 24.04.5 LTS** (`noble`): SQLite + Valkey + `portfolio` + idempotent installer rerun (preserve mode keeping custom files, `astro.config.mjs`, and encryption key) + SQLite DB `kid` prune guard + chaos restore (`ok=17, warn=1, fail=0`)
+  - **Rocky Linux 9.9** (SELinux enforcing): PGDG `EL-9-x86_64` PG 18 + Valkey + `blog` + PG DB `kid` prune guard + chaos restore + `reset-db-password` + `reboot` autostart (`ok=15, warn=0, fail=0`)
+  - **AlmaLinux 10.3** (SELinux enforcing, in-place CLI upgrade from `1.6.0-hi.1`): default read-only `remote-e2e-verify.sh` + `rotate-encryption-key --status` (`ok=15, warn=0, fail=0`)
 - Native **ARM64 (`aarch64`)** local Docker build (`compose.yml` + `compose.build.yml`) and `docker/backup.sh` (plain + encrypted SQLite `sqlite3.backup()` verification) passed live smoke tests
 
 ## 1.6.0-hi.1 - 2026-11-24

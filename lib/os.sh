@@ -53,8 +53,54 @@ detect_os_family() {
 	esac
 }
 
+wait_for_apt_locks() {
+	local max_wait="${1:-180}"
+	local waited=0
+	while (( waited < max_wait )); do
+		if python3 - <<'PY' >/dev/null 2>&1; then
+import fcntl, os, sys
+locks = [
+    "/var/lib/apt/lists/lock",
+    "/var/lib/dpkg/lock-frontend",
+    "/var/lib/dpkg/lock",
+    "/var/cache/apt/archives/lock",
+]
+fds = []
+try:
+    for p in locks:
+        if not os.path.exists(p):
+            continue
+        fd = os.open(p, os.O_RDWR)
+        fds.append(fd)
+        fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit(1)
+finally:
+    for fd in fds:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+sys.exit(0)
+PY
+			return 0
+		fi
+		if (( waited == 0 )); then
+			log "检测到其他 apt/dpkg 进程持有锁（如 cloud-init / unattended-upgrades），等待释放..."
+		fi
+		sleep 3
+		waited=$((waited + 3))
+	done
+	warn "等待 apt/dpkg 锁超过 ${max_wait}s，继续尝试执行 apt-get"
+}
+
+apt_run() {
+	wait_for_apt_locks 180
+	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 "$@"
+}
+
 apt_update() {
-	apt-get update -y
+	apt_run update -y
 }
 
 install_base_packages() {
@@ -62,7 +108,7 @@ install_base_packages() {
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		export DEBIAN_FRONTEND=noninteractive
 		apt_update
-		apt-get install -y \
+		apt_run install -y \
 			ca-certificates \
 			curl \
 			git \
@@ -108,7 +154,7 @@ PY
 
 	log "安装 Python boto3"
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
-		apt-get install -y python3-boto3
+		apt_run install -y python3-boto3
 	else
 		dnf -y install python3-boto3
 	fi
@@ -133,7 +179,7 @@ install_nodesource_node() {
 	log "安装 Node.js 24 (NodeSource)"
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-		apt-get install -y nodejs
+		apt_run install -y nodejs
 	else
 		curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -
 		dnf -y install nodejs
@@ -162,7 +208,7 @@ install_postgres_server() {
 deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main
 EOF
 			apt_update
-			apt-get install -y "postgresql-${PG_VERSION}" "postgresql-client-${PG_VERSION}"
+			apt_run install -y "postgresql-${PG_VERSION}" "postgresql-client-${PG_VERSION}"
 		fi
 		POSTGRES_SERVICE="postgresql"
 	else
@@ -268,7 +314,7 @@ install_redis_server() {
 	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
 
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
-		dpkg -s valkey >/dev/null 2>&1 || apt-get install -y valkey
+		dpkg -s valkey >/dev/null 2>&1 || apt_run install -y valkey
 	else
 		rpm -q valkey >/dev/null 2>&1 || dnf -y install valkey
 	fi
@@ -335,12 +381,12 @@ install_caddy_package() {
 
 	log "安装 Caddy"
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
-		apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
-		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+		apt_run install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
+		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 		curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
 		chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
 		apt_update
-		apt-get install -y caddy
+		apt_run install -y caddy
 	else
 		dnf -y install dnf-plugins-core
 		dnf copr enable -y @caddy/caddy

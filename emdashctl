@@ -2195,8 +2195,10 @@ PY
 	while IFS= read -r tbl; do
 		[[ -n "${tbl}" ]] || continue
 		[[ "${tbl}" =~ ^[A-Za-z0-9_]+$ ]] || continue
+		# Match %$emdash% without quotes so both JSON/JSONB columns and JSON-in-TEXT columns
+		# (where row_to_json escapes quotes as \") are returned for exact Python envelope parsing.
 		PGPASSWORD="${PG_DB_PASSWORD:-}" psql -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" -U "${PG_DB_USER:-emdash}" -d "${PG_DB_NAME:-emdash}" \
-			-tAc "SELECT '${tbl}' || E'\t' || row_to_json(t)::text FROM \"${tbl}\" t WHERE row_to_json(t)::text LIKE '%\"\$emdash\"%';" >>"${scan_tmp}" 2>/dev/null || true
+			-tAc "SELECT '${tbl}' || E'\t' || row_to_json(t)::text FROM \"${tbl}\" t WHERE row_to_json(t)::text LIKE '%\$emdash%';" >>"${scan_tmp}" 2>/dev/null || true
 	done <<<"${pg_tables}"
 
 	SCAN_FILE="${scan_tmp}" python3 - <<'PY'

@@ -165,4 +165,58 @@ PY
 	rm -rf "${tmpdir}"
 }
 
+test_pg_scan_handles_row_to_json_escaped_text_column() {
+	local tmpdir key1 kid1 scan_out
+	tmpdir="$(mktemp -d)"
+	PG_ROTATE_TEST_TMP="${tmpdir}"
+	trap 'rm -rf "${PG_ROTATE_TEST_TMP:-}"' RETURN
+
+	DB_DRIVER="postgres"
+	POSTGRES_HOST="127.0.0.1"
+	POSTGRES_PORT="5432"
+	PG_DB_USER="emdash"
+	PG_DB_NAME="emdash"
+	PG_DB_PASSWORD="dummy"
+	key1="$(generate_emdash_encryption_key_spec)"
+	kid1="$(emdash_encryption_key_fingerprint "${key1}")"
+
+	# Mock psql returning row_to_json() where TEXT column JSON quotes are escaped as \"
+	psql() {
+		local sql="${*: -1}"
+		if [[ "${sql}" == *"pg_tables"* ]]; then
+			printf '_emdash_options\n'
+			return 0
+		fi
+		# Verify the query does NOT require unescaped quotes around $emdash
+		if [[ "${sql}" == *'%"$emdash"%'* ]]; then
+			printf '[ERROR] PG scan SQL must not require unescaped quotes around $emdash: %s\n' "${sql}" >&2
+			return 1
+		fi
+		python3 - "${kid1}" <<'PY'
+import json, sys
+kid = sys.argv[1]
+inner = json.dumps({
+    "apiKey": {"$emdash": "encrypted", "v": 1, "kid": kid, "iv": "AAAA", "ciphertext": "BBBB"}
+})
+# Simulate PostgreSQL row_to_json(t)::text on a TEXT column
+row_json = json.dumps({"key": "plugin:resend:settings", "value": inner})
+print(f"_emdash_options\t{row_json}")
+PY
+	}
+
+	scan_out="$(scan_db_encrypted_kid_refs)"
+	python3 - "${scan_out}" "${kid1}" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+kid = sys.argv[2]
+assert d["checked"] is True, d
+assert d["counts"].get(kid) == 1, f"PG row_to_json escaped TEXT column missed kid={kid}: {d}"
+assert "_emdash_options" in d["tables"].get(kid, []), d
+PY
+	printf '[INFO] rotate-encryption-key PG row_to_json scan regression passed\n'
+	trap - RETURN
+	rm -rf "${tmpdir}"
+}
+
 test_rotate_encryption_key_two_stage_and_rollback
+test_pg_scan_handles_row_to_json_escaped_text_column
