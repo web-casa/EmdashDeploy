@@ -45,10 +45,14 @@ emdashctl --lang=pt diagnose --json --out /tmp/emdash-diag.json
 emdashctl --lang=pt smoke [--json]
 emdashctl --lang=pt backup [--full] [--encrypt]
 emdashctl --lang=pt restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
-emdashctl --lang=pt upgrade app [--dry-run] [--target <version|latest>]
-emdashctl --lang=pt template diff [--stat]
-emdashctl --lang=pt rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
-emdashctl --lang=pt reset-db-password
+emdashctl --lang=pt instances [--json]
+emdashctl --lang=pt [--instance <name>] upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=pt [--instance <name>] template diff [--stat]
+emdashctl --lang=pt [--instance <name>] rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
+emdashctl --lang=pt [--instance <name>] migrate-db sqlite-to-postgres [--dry-run] [--yes]
+emdashctl --lang=pt [--instance <name>] reset-db-password
+emdashctl --lang=pt [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]
+sudo bash install.sh --update-cli
 ```
 
 ## Escopo testado e limites

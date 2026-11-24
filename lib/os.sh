@@ -471,7 +471,11 @@ activate_caddy_service() {
 	ln -sfn "${CADDYFILE_PATH}" "${SYSTEM_CADDYFILE}"
 	caddy validate --config "${SYSTEM_CADDYFILE}"
 	systemctl enable caddy >/dev/null
-	systemctl restart caddy
+	if systemctl is-active --quiet caddy; then
+		systemctl reload caddy || systemctl restart caddy
+	else
+		systemctl restart caddy
+	fi
 }
 
 open_required_firewall_ports() {
@@ -500,10 +504,15 @@ open_required_firewall_ports() {
 
 install_backup_schedule() {
 	[[ "${BACKUP_ENABLED}" == "1" ]] || return 0
+	local instance_arg="" logger_tag="emdash-backup"
+	if [[ -n "${INSTANCE_NAME:-}" ]]; then
+		instance_arg="--instance ${INSTANCE_NAME} "
+		logger_tag="emdash-backup-${INSTANCE_NAME}"
+	fi
 	cat >"${BACKUP_CRON_FILE}" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl backup 2>&1 | logger -t emdash-backup
+${BACKUP_SCHEDULE} root /usr/local/bin/emdashctl ${instance_arg}backup 2>&1 | logger -t ${logger_tag}
 EOF
 	chmod 0644 "${BACKUP_CRON_FILE}"
 }

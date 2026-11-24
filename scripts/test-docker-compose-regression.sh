@@ -5,7 +5,7 @@ IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-bash -n "${SCRIPT_DIR}/docker/entrypoint.sh" "${SCRIPT_DIR}/docker/backup.sh"
+bash -n "${SCRIPT_DIR}/docker/entrypoint.sh" "${SCRIPT_DIR}/docker/backup.sh" "${SCRIPT_DIR}/docker/restore.sh"
 
 # Verify compose.yml does NOT mix build: with prebuilt image:
 if grep -Eq '^\s+build:' "${SCRIPT_DIR}/docker/compose.yml"; then
@@ -13,8 +13,9 @@ if grep -Eq '^\s+build:' "${SCRIPT_DIR}/docker/compose.yml"; then
 	exit 1
 fi
 
-# Verify docker/backup.sh help works cleanly
+# Verify docker/backup.sh and docker/restore.sh help work cleanly
 bash "${SCRIPT_DIR}/docker/backup.sh" --help >/dev/null
+bash "${SCRIPT_DIR}/docker/restore.sh" --help >/dev/null
 
 # Validate compose YAML combinations when docker compose is available
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then

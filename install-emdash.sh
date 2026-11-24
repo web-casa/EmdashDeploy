@@ -48,6 +48,17 @@ parse_args() {
 		--activate)
 			ACTIVATE_STACK=1
 			;;
+		--update-cli)
+			UPDATE_CLI_ONLY=1
+			;;
+		--instance=*)
+			INSTANCE_NAME="${1#--instance=}"
+			;;
+		--instance)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --instance"
+			INSTANCE_NAME="$1"
+			;;
 		-h | --help)
 			usage
 			exit 0
@@ -287,11 +298,59 @@ activation_rollback_on_exit() {
 	return 0
 }
 
+update_cli_only_command() {
+	require_root
+	validate_instance_name "${INSTANCE_NAME:-}"
+	local base_etc="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	local bin_path="${EMDASH_BIN_PATH:-/usr/local/bin/emdashctl}"
+	log "正在无停服更新 emdashctl 与共享运行库..."
+	install -d -m 0755 "$(dirname "${bin_path}")"
+	atomic_install_file 0755 "${SCRIPT_DIR}/emdashctl" "${bin_path}"
+
+	local -a env_files=()
+	if [[ -n "${INSTANCE_NAME:-}" ]]; then
+		local target_env="${base_etc}/instances/${INSTANCE_NAME}/emdash.env"
+		[[ -f "${target_env}" ]] || fail "未找到实例 ${INSTANCE_NAME} 的配置文件: ${target_env}"
+		env_files+=("${target_env}")
+	else
+		[[ -f "${base_etc}/emdash.env" ]] && env_files+=("${base_etc}/emdash.env")
+		local inst_env=""
+		for inst_env in "${base_etc}"/instances/*/emdash.env; do
+			[[ -f "${inst_env}" ]] && env_files+=("${inst_env}")
+		done
+	fi
+
+	local updated_count=0 env_path="" inst_root=""
+	for env_path in "${env_files[@]}"; do
+		inst_root="$(read_existing_env_value "${env_path}" ROOT_DIR || true)"
+		inst_root="${inst_root%/}"
+		if [[ -z "${inst_root}" || "${inst_root}" != /* || "${inst_root}" == "/" ]]; then
+			warn "跳过异常 ROOT_DIR (${inst_root:-<empty>}) 来自 ${env_path}"
+			continue
+		fi
+		install -d -m 0755 "${inst_root}/lib"
+		atomic_install_file 0644 "${SCRIPT_DIR}/lib/site-common.sh" "${inst_root}/lib/site-common.sh"
+		atomic_install_file 0644 "${SCRIPT_DIR}/lib/astro-patch.py" "${inst_root}/lib/astro-patch.py"
+		[[ -f "${SCRIPT_DIR}/lib/fast-fail-google-fonts.mjs" ]] && atomic_install_file 0644 "${SCRIPT_DIR}/lib/fast-fail-google-fonts.mjs" "${inst_root}/lib/fast-fail-google-fonts.mjs"
+		[[ -f "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" ]] && atomic_install_file 0644 "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" "${inst_root}/lib/migrate-sqlite-to-pg.py"
+		log "已更新共享运行库: ${inst_root}/lib"
+		updated_count=$((updated_count + 1))
+	done
+
+	remove_legacy_emdashctl_aliases
+	log "CLI 无停服更新完成（${bin_path} + ${updated_count} 个实例运行库，未重启应用服务）。"
+}
+
 main() {
 	detect_install_lang
 	parse_args "$@"
+	if [[ "${UPDATE_CLI_ONLY:-0}" == "1" ]]; then
+		update_cli_only_command
+		exit 0
+	fi
 	require_root
 	init_defaults
+	parse_args "$@"
 	apply_env_overrides
 	detect_os_family
 	collect_configuration
@@ -373,4 +432,6 @@ main() {
 	print_summary "$(ti summary_generated_only)"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

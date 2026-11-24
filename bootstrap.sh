@@ -73,13 +73,24 @@ main() {
 	while [[ "${idx}" -lt "${#raw_args[@]}" ]]; do
 		arg="${raw_args[${idx}]}"
 		case "${arg}" in
-		--activate | --write-only)
+		--activate | --write-only | --update-cli)
 			has_mode_flag="1"
 			args+=("${arg}")
 			;;
 		--non-interactive)
 			non_interactive="1"
 			args+=("${arg}")
+			;;
+		--instance=*)
+			args+=("${arg}")
+			;;
+		--instance)
+			idx=$((idx + 1))
+			[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
+				printf '[ERROR] Missing value for --instance\n' >&2
+				exit 1
+			}
+			args+=(--instance "${raw_args[${idx}]}")
 			;;
 		-h | --help)
 			show_help="1"

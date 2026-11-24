@@ -175,32 +175,39 @@ Installer:
 sudo bash install.sh --lang=en
 sudo bash install.sh --lang=en --activate
 sudo bash install.sh --lang=en --write-only
+sudo bash install.sh --lang=en --instance site2 --activate
+sudo bash install.sh --update-cli
 ```
 
 Operations:
 
 ```bash
-emdashctl --lang=en status
-emdashctl --lang=en status --json
-emdashctl --lang=en doctor
-emdashctl --lang=en doctor --deep --json
-emdashctl --lang=en diagnose --json --out /tmp/emdash-diag.json
-emdashctl --lang=en smoke
-emdashctl --lang=en smoke --json
-emdashctl --lang=en logs app
-emdashctl --lang=en restart app
-emdashctl --lang=en backup [--full] [--encrypt]
-emdashctl --lang=en restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
-emdashctl --lang=en upgrade app [--dry-run] [--target <version|latest>]
-emdashctl --lang=en template diff [--stat]
-emdashctl --lang=en upgrade caddy-config
-emdashctl --lang=en rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
-emdashctl --lang=en reset-db-password
+emdashctl --lang=en instances [--json]
+emdashctl --lang=en [--instance <name>] status [--json]
+emdashctl --lang=en [--instance <name>] doctor [--deep] [--json]
+emdashctl --lang=en [--instance <name>] diagnose --json --out /tmp/emdash-diag.json
+emdashctl --lang=en [--instance <name>] smoke [--json]
+emdashctl --lang=en [--instance <name>] logs app
+emdashctl --lang=en [--instance <name>] restart app
+emdashctl --lang=en [--instance <name>] backup [--full] [--encrypt] [--list-s3 [--json]]
+emdashctl --lang=en [--instance <name>] restore <backup.tar.gz | --from-s3 <key|latest>> [--with-site] [--with-secrets]
+emdashctl --lang=en [--instance <name>] upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=en [--instance <name>] template diff [--stat]
+emdashctl --lang=en [--instance <name>] upgrade caddy-config
+emdashctl --lang=en [--instance <name>] rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
+emdashctl --lang=en [--instance <name>] migrate-db sqlite-to-postgres [--dry-run] [--yes]
+emdashctl --lang=en [--instance <name>] reset-db-password
+emdashctl --lang=en [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]
 ```
 
 Key operational tools:
+- `install.sh --update-cli`: atomically updates `/usr/local/bin/emdashctl` and `${ROOT_DIR}/lib/` across installed instances with zero downtime (no service restart or rebuild).
+- `install.sh --instance <name>` & `emdashctl instances`: run multiple isolated native EmDash sites on a single host (`/etc/emdash/instances/<name>`, `/data/emdash-<name>`, `emdash-app-<name>.service`, auto-allocated port, modular `/etc/emdash/caddy/sites.d/*.caddy` + preserved user `/etc/emdash/caddy/conf.d/*.caddy`).
 - `emdashctl diagnose --json`: generates an AI-friendly diagnostic bundle with recursive redaction for secrets, cookies, Bearer/JWT tokens, sensitive URL query params, and client IPs (`--out` rejects symlinks and writes atomically with `0600`).
 - `emdashctl rotate-encryption-key`: performs safe two-stage `EMDASH_ENCRYPTION_KEY` rotation (Stage 1 prepends a new key while preserving decryption; Stage 2 scans DB encrypted envelopes for legacy `kid` references and requires explicit `--confirm-prune-kid <kid>`).
+- `emdashctl migrate-db sqlite-to-postgres` & [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh): migrate data from SQLite to PostgreSQL 18 (FK topological sort, sequence resets, exact row-count verification, automatic rollback) or move between Docker Compose and native systemd.
+- `emdashctl backup --list-s3` / `restore --from-s3 <key|latest>` & `BACKUP_KEEP_S3`: complete remote S3 backup retention, listing, and one-command restore loop.
+- `emdashctl uninstall`: cleanly removes systemd unit, backup cron, Caddy site snippet, and config (destructive `--purge-data` / `--drop-db` require explicit `--confirm-instance <name>`).
 
 ## Upgrade Model
 

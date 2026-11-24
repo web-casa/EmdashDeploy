@@ -48,10 +48,14 @@ emdashctl --lang=zh-TW diagnose --json --out /tmp/emdash-diag.json
 emdashctl --lang=zh-TW smoke [--json]
 emdashctl --lang=zh-TW backup [--full] [--encrypt]
 emdashctl --lang=zh-TW restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
-emdashctl --lang=zh-TW upgrade app [--dry-run] [--target <version|latest>]
-emdashctl --lang=zh-TW template diff [--stat]
-emdashctl --lang=zh-TW rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
-emdashctl --lang=zh-TW reset-db-password
+emdashctl --lang=zh-TW instances [--json]
+emdashctl --lang=zh-TW [--instance <name>] upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=zh-TW [--instance <name>] template diff [--stat]
+emdashctl --lang=zh-TW [--instance <name>] rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
+emdashctl --lang=zh-TW [--instance <name>] migrate-db sqlite-to-postgres [--dry-run] [--yes]
+emdashctl --lang=zh-TW [--instance <name>] reset-db-password
+emdashctl --lang=zh-TW [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]
+sudo bash install.sh --update-cli
 ```
 
 ## 實測邊界與限制

@@ -1,4 +1,4 @@
-# EmdashDeploy Docker Compose Kit (`1.6.0-hi.2`)
+# EmdashDeploy Docker Compose Kit (`1.6.0-hi.3`)
 
 A lightweight, composable Docker Compose kit for running **EmDash `1.6.x`** alongside other services (or multiple EmDash sites) on a single VPS.
 
@@ -31,7 +31,7 @@ Point your existing Nginx / Caddy / Traefik / 1Panel site to `http://127.0.0.1:3
 In `.env`:
 
 ```dotenv
-EMDASH_IMAGE=ghcr.io/web-casa/emdash-deploy:1.6.0-hi.2-blog-pg-valkey
+EMDASH_IMAGE=ghcr.io/web-casa/emdash-deploy:1.6.0-hi.3-blog-pg-valkey
 DB_DRIVER=postgres
 SESSION_DRIVER=redis
 PG_DB_PASSWORD=replace-with-strong-pg-password
@@ -59,6 +59,7 @@ To build locally (for example, to use the `marketing` or `portfolio` template, S
 NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
 EMDASH_TEMPLATES_REPO=https://gh-proxy.com/https://github.com/emdash-cms/templates.git
+EMDASH_FAST_FAIL_GOOGLE_FONTS=1
 ```
 
 ```bash
@@ -115,7 +116,7 @@ docker compose --profile caddy up -d
 
 ---
 
-## Container-Safe Backups (`docker/backup.sh`)
+## Container-Safe Backups & Restores (`docker/backup.sh` & `docker/restore.sh`)
 
 ```bash
 # Unencrypted archive (0600 permissions)
@@ -124,10 +125,45 @@ bash docker/backup.sh --env-file docker/.env --out-dir ./backups
 # Encrypted archive (uses a dedicated passphrase separate from EMDASH_ENCRYPTION_KEY)
 BACKUP_ENCRYPTION_PASSPHRASE='separate-backup-passphrase' \
   bash docker/backup.sh --env-file docker/.env --out-dir ./backups --encrypt
+
+# Restore (validates tar safety, manifest driver, and SHA-256 checksums before mutating state)
+BACKUP_ENCRYPTION_PASSPHRASE='separate-backup-passphrase' \
+  bash docker/restore.sh ./backups/emdash-blog-backup-*.tar.gz.enc --env-file docker/.env --yes
 ```
 
-- SQLite uses `sqlite3.backup()` + `PRAGMA integrity_check` inside the container (never raw file copy).
-- PostgreSQL uses `pg_dump -Fc` + `pg_restore --list` verification.
+- SQLite backup uses `sqlite3.backup()` + `PRAGMA integrity_check`; restore stops `emdash`, removes `-wal`/`-shm`, atomically swaps `/data/sqlite/data.db` with `PUID:PGID` ownership, and verifies `PRAGMA integrity_check` + `/healthz`.
+- PostgreSQL backup uses `pg_dump -Fc` + `pg_restore --list`; restore loads into a fresh temporary database and atomically swaps databases.
+
+---
+
+## Two-Stage Encryption Key Rotation (Docker)
+
+EmDash `1.6.x` supports comma-separated keys in `EMDASH_ENCRYPTION_KEY` (the first key encrypts new writes; subsequent keys remain active for decrypting legacy envelopes):
+
+1. **Stage 1 (Add new key)**:
+   ```bash
+   NEW_KEY="$(docker compose run --rm emdash secrets-generate | tail -n 1)"
+   # In .env, set: EMDASH_ENCRYPTION_KEY=<NEW_KEY>,<OLD_KEY>
+   docker compose up -d
+   ```
+2. **Stage 2 (Prune old key)**:
+   After re-saving any encrypted plugin settings in EmDash Admin so no legacy `kid` envelopes remain in the database, remove `<OLD_KEY>` from `EMDASH_ENCRYPTION_KEY` in `.env` and run `docker compose up -d`.
+
+---
+
+## Migrating Between Docker Compose and Native systemd
+
+Use [`scripts/migrate-runtime.sh`](../scripts/migrate-runtime.sh) to move backups and `EMDASH_ENCRYPTION_KEY` cleanly in either direction:
+
+```bash
+# Native backup -> Docker Compose deployment directory (.env created with 0600 permissions)
+bash scripts/migrate-runtime.sh native-to-docker \
+  --backup /data/emdash/backups/emdash-backup-*.tar.gz --out-dir ./my-docker-emdash
+
+# Docker backup -> Native systemd instance (dry-run preview first)
+bash scripts/migrate-runtime.sh docker-to-native \
+  --backup ./backups/emdash-blog-backup-*.tar.gz --docker-env docker/.env --dry-run
+```
 
 ---
 

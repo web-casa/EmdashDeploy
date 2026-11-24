@@ -10,6 +10,7 @@ ARG STORAGE_DRIVER=local
 ARG ENABLE_PLUGIN_SANDBOX=1
 ARG NPM_CONFIG_REGISTRY=
 ARG COREPACK_NPM_REGISTRY=
+ARG EMDASH_FAST_FAIL_GOOGLE_FONTS=0
 ARG APP_NODE_MAX_OLD_SPACE_SIZE=1536
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -46,7 +47,7 @@ RUN groupadd -g 10001 emdash || true \
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 WORKDIR /opt/emdash
-COPY lib/site-common.sh lib/astro-patch.py /opt/emdash/lib/
+COPY lib/site-common.sh lib/astro-patch.py lib/fast-fail-google-fonts.mjs /opt/emdash/lib/
 
 # Fetch upstream EmDash template, apply shared EmDash 1.6+ config patch, and build
 RUN case " ${EMDASH_TEMPLATE} " in \
@@ -55,6 +56,10 @@ RUN case " ${EMDASH_TEMPLATE} " in \
     esac \
     && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY; fi \
     && if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then export COREPACK_NPM_REGISTRY; fi \
+    && if [[ "${EMDASH_FAST_FAIL_GOOGLE_FONTS}" == "1" && -z "${HTTPS_PROXY:-}${https_proxy:-}${ALL_PROXY:-}${all_proxy:-}" ]]; then \
+        export EMDASH_FAST_FAIL_GOOGLE_FONTS=1; \
+        export NODE_OPTIONS="${NODE_OPTIONS} --import /opt/emdash/lib/fast-fail-google-fonts.mjs"; \
+    fi \
     && git clone --depth 1 --branch "${EMDASH_TEMPLATES_REF}" "${EMDASH_TEMPLATES_REPO}" /tmp/emdash-templates \
     && mkdir -p /app/site /data/sqlite /data/uploads /data/sessions \
     && cp -a "/tmp/emdash-templates/${EMDASH_TEMPLATE}/." /app/site/ \

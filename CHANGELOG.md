@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0-hi.3 - 2026-11-24
+
+Native multi-instance hosting, modular Caddy layout, zero-downtime CLI updates, clean instance uninstallation, full S3 backup/restore loop, SQLite-to-PostgreSQL and Docker/Native migration assistants, mainland China Google Fonts fast-fail build acceleration, Docker restore parity, and Node 24 CI/GHCR hardening for the `HiEmdash` line.
+
+### Added
+
+- **Native multi-instance support on a single host**:
+  - `install.sh --instance <name>` (and `bootstrap.sh` passthrough) creates isolated named instances under `/etc/emdash/instances/<name>`, `/data/emdash-<name>`, `emdash-app-<name>.service`, `/etc/cron.d/emdash-backup-<name>`, auto-allocated free `APP_PORT` starting at `3001`, and isolated PostgreSQL database/user `emdash_<name>` (while preserving 100% compatibility for default single-instance `/etc/emdash` + `/data/emdash` layouts)
+  - `emdashctl --instance <name> <command>` with per-instance `flock` (`/run/lock/emdashctl-<slug>.lock`), plus `emdashctl instances [--json]` host-wide overview
+- **Modular Caddy layout** (`/etc/emdash/caddy/`):
+  - Single host-wide global email block (`global.email`) in `/etc/emdash/caddy/Caddyfile`
+  - Managed per-instance site blocks under `/etc/emdash/caddy/sites.d/<slug>.caddy`
+  - User-owned snippets under `/etc/emdash/caddy/conf.d/*.caddy` preserved untouched across upgrades and instance uninstalls
+- **Zero-downtime CLI & shared library updater**:
+  - `install.sh --update-cli [--instance <name>]` atomically updates `/usr/local/bin/emdashctl` and `${ROOT_DIR}/lib/` across installed instances without rebuilding or restarting running services
+- **Safe instance uninstaller**:
+  - `emdashctl [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>] [--yes]`
+  - Includes root-path blocklist, mandatory `--confirm-instance <name>` guard for destructive `--purge-data` / `--drop-db` (never accepts `--yes` alone), sibling-instance and `conf.d` preservation, and only removes `/usr/local/bin/emdashctl` when zero instances remain
+- **Full S3 backup/restore loop**:
+  - `BACKUP_KEEP_S3` (default `14`) automatic remote retention pruning strictly scoped to `emdash-backup-YYYYMMDD-HHMMSS.tar.gz(.enc)?`
+  - `emdashctl backup --list-s3 [--json]` and `emdashctl restore --from-s3 <key|latest>`
+- **Database & runtime migration assistants**:
+  - `emdashctl [--instance <name>] migrate-db sqlite-to-postgres` powered by zero-dependency [`lib/migrate-sqlite-to-pg.py`](./lib/migrate-sqlite-to-pg.py) (`sqlite3` + `psql`): FK topological sort (non-superuser safe), `information_schema` column type coercion (including `$emdash` encrypted envelopes verbatim), sequence resets, exact per-table row count verification, hard-fail on empty/missing non-empty target schema, and full automatic rollback on failure
+  - [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh): `docker-to-native` and `native-to-docker` migration helper preserving `EMDASH_ENCRYPTION_KEY` with `0600` `.env` permissions
+- **Mainland China Google Fonts build speedup**:
+  - Non-invasive Node `--import` preload hook [`lib/fast-fail-google-fonts.mjs`](./lib/fast-fail-google-fonts.mjs) automatically enabled (`EMDASH_FAST_FAIL_GOOGLE_FONTS=1`) under `EMDASH_MIRROR_PRESET=cn` when no `HTTPS_PROXY`/`ALL_PROXY` is set (opt-out via `0`), cutting Astro build times from ~110–140s timeouts down to ~16–19s without modifying user `astro.config.mjs`
+- **Docker restore & key-rotation parity**:
+  - [`docker/restore.sh`](./docker/restore.sh): decrypts `.enc`, validates tar member safety (rejects symlinks/path traversal), verifies `manifest.json` driver and SHA-256 checksums, atomically swaps SQLite (`PRAGMA integrity_check`) or PostgreSQL (`pg_restore` temp-DB swap), restores `/data/uploads`, and verifies `/healthz`
+  - Repeatable `--compose-file` support in both [`docker/backup.sh`](./docker/backup.sh) and [`docker/restore.sh`](./docker/restore.sh) for `compose.build.yml` / `compose.custom-site.yml` overlays
+  - Updated [`docker/README.md`](./docker/README.md) with `docker/restore.sh`, two-stage Docker encryption key rotation, and `scripts/migrate-runtime.sh` guides
+- **CI & GHCR hardening**:
+  - Removed duplicate `push.tags` trigger and added `concurrency` control in [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml)
+  - Upgraded all GitHub Actions workflows to Node 24 native action releases (`checkout@v7`, `setup-node@v7`, `upload-artifact@v7`, `download-artifact@v8`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/build-push-action@v7`)
+  - Added `docker-kit-smoke` job to [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) testing `compose.custom-site.yml` + `Dockerfile.custom` + encrypted `docker/backup.sh` + `docker/restore.sh`
+  - Added 3 new offline regression suites: [`scripts/test-multi-instance-regression.sh`](./scripts/test-multi-instance-regression.sh), [`scripts/test-s3-backup-restore-regression.sh`](./scripts/test-s3-backup-restore-regression.sh), and [`scripts/test-migrate-db-regression.sh`](./scripts/test-migrate-db-regression.sh)
+
+### Fixed
+
+- Fixed `parse_lang_args` in [`emdashctl`](./emdashctl) running inside a `< <(...)` subshell so `--lang` and `--instance` flags always propagate to the main process
+- Isolated per-instance `HOME=${ROOT_DIR}` (with `.cache`, `.local`, `.config` owned by `${APP_RUN_USER}:${APP_RUN_GROUP}`) in [`lib/render.sh`](./lib/render.sh) and `emdashctl`'s `run_as_app_user()` so named instances never hit Corepack `EACCES` on startup or during migrations
+- Added `npm_config_confirm_modules_purge=false` / `--config.confirmModulesPurge=false` in [`lib/site-common.sh`](./lib/site-common.sh) so non-interactive `pnpm 11` installs during `migrate-db` or `upgrade app` never abort with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`
+- Invoked `${SITE_DIR}/node_modules/.bin/emdash` directly in `emdashctl` migration probes to avoid Corepack cache interference
+- Used Python 3.12+ `tarfile.extractall(..., filter="data")` when available (preserving Python 3.9 compatibility on EL9)
+
+### Validation Summary
+
+- All 13 offline regression test suites + `bash -n` + `py_compile` + `node --check` + `shellcheck -S error` pass with zero warnings
+- **Real PVE Ubuntu 26.04.1 LTS VM (`x86_64`) end-to-end verification**:
+  - `install.sh --update-cli` updated `/usr/local/bin/emdashctl` + both instances' `lib/` with zero downtime (`MainPID` unchanged across both running services)
+  - Multi-instance `--instance site2` (`marketing`, SQLite, Caddy HTTP, `EMDASH_MIRROR_PRESET=cn`): Google Fonts fast-fail built Astro server in `18.19s`, auto-allocated port `3001`, validated modular Caddyfile (`sites.d/` + user `conf.d/`), and passed `emdashctl instances`
+  - `emdashctl --instance site2 migrate-db sqlite-to-postgres --yes`: initialized 73 PostgreSQL 18 tables, migrated 72 data tables (61 rows including an `$emdash` encrypted-envelope canary in `options`) with exact row-count verification, and verified live `/healthz` + `/_emdash/api/setup/status`
+  - `emdashctl --instance site2 uninstall --purge-data --drop-db --confirm-instance site2`: removed `site2` service/cron/Caddy snippet/config/data/PostgreSQL DB cleanly while preserving `default` instance health, user `conf.d/` snippet, and `/usr/local/bin/emdashctl`
+- **Local ARM64 (`aarch64`) Docker end-to-end verification**:
+  - `compose.yml` + `compose.build.yml` with `EMDASH_FAST_FAIL_GOOGLE_FONTS=1` built Astro in `16.25s`
+  - Full encrypted `docker/backup.sh --encrypt` -> DB corruption + upload deletion -> `docker/restore.sh --yes` loop verified data, uploads, and `/healthz`
+
 ## 1.6.0-hi.2 - 2026-11-24
 
 Operational maturity, AI-friendly diagnostics, safe two-stage encryption key rotation, native multi-arch GHCR Docker publishing, and Ubuntu 26.04 LTS / ARM64 platform expansion for the `HiEmdash` line.

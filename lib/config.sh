@@ -4,13 +4,16 @@ init_defaults() {
 	NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 	WRITE_ONLY="${WRITE_ONLY:-0}"
 	ACTIVATE_STACK="${ACTIVATE_STACK:-${ACTIVATE:-0}}"
+	UPDATE_CLI_ONLY="${UPDATE_CLI_ONLY:-0}"
+	INSTANCE_NAME="${INSTANCE_NAME:-}"
 
 	TEMPLATES_REPO="${TEMPLATES_REPO:-https://github.com/emdash-cms/templates.git}"
 	TEMPLATES_REF="${TEMPLATES_REF:-main}"
 
 	PROJECT_NAME="emdash"
 	TEMPLATE="blog"
-	ROOT_DIR="/data/emdash"
+	ROOT_DIR=""
+	APP_PORT_OVERRIDE=""
 	TIMEZONE="$(default_timezone_for_lang)"
 	DOMAIN=""
 	ADMIN_EMAIL=""
@@ -20,13 +23,14 @@ init_defaults() {
 	ENABLE_PLUGIN_SANDBOX="1"
 
 	MIRROR_PRESET=""
+	EMDASH_FAST_FAIL_GOOGLE_FONTS="${EMDASH_FAST_FAIL_GOOGLE_FONTS:-}"
 	NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-}"
 	COREPACK_NPM_REGISTRY="${COREPACK_NPM_REGISTRY:-}"
 
 	DB_DRIVER="sqlite"
 	PG_VERSION="18"
-	PG_DB_NAME="emdash"
-	PG_DB_USER="emdash"
+	PG_DB_NAME=""
+	PG_DB_USER=""
 	PG_DB_PASSWORD=""
 
 	SESSION_DRIVER="file"
@@ -45,6 +49,7 @@ init_defaults() {
 	BACKUP_ENABLED="1"
 	BACKUP_SCHEDULE="0 3 * * *"
 	BACKUP_KEEP_LOCAL="7"
+	BACKUP_KEEP_S3="14"
 	BACKUP_TARGET_TYPE="local"
 	BACKUP_ENCRYPTION_PASSPHRASE=""
 	BACKUP_S3_ENDPOINT=""
@@ -65,9 +70,48 @@ init_defaults() {
 	LOG_CADDY_ROTATE_KEEP_DAYS="14"
 }
 
+validate_instance_name() {
+	local name="${1:-}"
+	[[ -n "${name}" ]] || return 0
+	if [[ "${name}" == "default" ]]; then
+		fail "Instance name 'default' is reserved for the primary single-instance layout."
+	fi
+	if ! [[ "${name}" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; then
+		fail "Invalid instance name '${name}': must match ^[a-z][a-z0-9-]{0,31}$"
+	fi
+}
+
+find_available_app_port() {
+	local start_port="${1:-3001}"
+	local base_etc="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	local p="" used_ports=""
+	used_ports="$(
+		for f in "${base_etc}/emdash.env" "${base_etc}"/instances/*/emdash.env; do
+			[[ -f "${f}" ]] || continue
+			read_existing_env_value "${f}" APP_PORT 2>/dev/null || true
+			printf '\n'
+		done
+	)"
+	for ((p = start_port; p <= 3999; p++)); do
+		if printf '%s\n' "${used_ports}" | grep -qx "${p}"; then
+			continue
+		fi
+		if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :${p} )" 2>/dev/null | tail -n +2 | grep -q .; then
+			continue
+		fi
+		printf '%s\n' "${p}"
+		return 0
+	done
+	fail "Unable to find a free APP_PORT in range ${start_port}-3999"
+}
+
 apply_env_overrides() {
+	[[ -n "${EMDASH_INSTALL_INSTANCE:-}" && -z "${INSTANCE_NAME}" ]] && INSTANCE_NAME="${EMDASH_INSTALL_INSTANCE}"
+	validate_instance_name "${INSTANCE_NAME}"
+
 	[[ -n "${EMDASH_INSTALL_TEMPLATE:-}" ]] && TEMPLATE="${EMDASH_INSTALL_TEMPLATE}"
 	[[ -n "${EMDASH_INSTALL_ROOT_DIR:-}" ]] && ROOT_DIR="${EMDASH_INSTALL_ROOT_DIR}"
+	[[ -n "${EMDASH_INSTALL_APP_PORT:-}" ]] && APP_PORT_OVERRIDE="${EMDASH_INSTALL_APP_PORT}"
 	[[ -n "${EMDASH_INSTALL_DOMAIN:-}" ]] && DOMAIN="${EMDASH_INSTALL_DOMAIN}"
 	[[ -n "${EMDASH_INSTALL_ADMIN_EMAIL:-}" ]] && ADMIN_EMAIL="${EMDASH_INSTALL_ADMIN_EMAIL}"
 	[[ -n "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE:-}" ]] && FORCE_SYNC_TEMPLATE="$(normalize_bool "${EMDASH_INSTALL_FORCE_SYNC_TEMPLATE}")"
@@ -79,7 +123,10 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_TEMPLATES_REPO:-}" ]] && TEMPLATES_REPO="${EMDASH_TEMPLATES_REPO}"
 	[[ -n "${EMDASH_TEMPLATES_REF:-}" ]] && TEMPLATES_REF="${EMDASH_TEMPLATES_REF}"
 	[[ -n "${EMDASH_INSTALL_DB_DRIVER:-}" ]] && DB_DRIVER="${EMDASH_INSTALL_DB_DRIVER}"
+	[[ -n "${EMDASH_INSTALL_PG_DB_NAME:-}" ]] && PG_DB_NAME="${EMDASH_INSTALL_PG_DB_NAME}"
+	[[ -n "${EMDASH_INSTALL_PG_DB_USER:-}" ]] && PG_DB_USER="${EMDASH_INSTALL_PG_DB_USER}"
 	[[ -n "${EMDASH_INSTALL_SESSION_DRIVER:-}" ]] && SESSION_DRIVER="${EMDASH_INSTALL_SESSION_DRIVER}"
+	[[ -n "${EMDASH_INSTALL_REDIS_DB:-}" ]] && REDIS_DATABASE="${EMDASH_INSTALL_REDIS_DB}"
 	[[ -n "${EMDASH_INSTALL_STORAGE_DRIVER:-}" ]] && STORAGE_DRIVER="${EMDASH_INSTALL_STORAGE_DRIVER}"
 	[[ -n "${EMDASH_INSTALL_USE_CADDY:-}" ]] && USE_CADDY="$(normalize_bool "${EMDASH_INSTALL_USE_CADDY}")"
 	[[ -n "${EMDASH_INSTALL_ENABLE_HTTPS:-}" ]] && ENABLE_HTTPS="$(normalize_bool "${EMDASH_INSTALL_ENABLE_HTTPS}")"
@@ -93,6 +140,7 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_INSTALL_S3_SECRET_ACCESS_KEY:-}" ]] && S3_SECRET_ACCESS_KEY="${EMDASH_INSTALL_S3_SECRET_ACCESS_KEY}"
 	[[ -n "${EMDASH_INSTALL_S3_PUBLIC_URL:-}" ]] && S3_PUBLIC_URL="${EMDASH_INSTALL_S3_PUBLIC_URL}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_ENABLED:-}" ]] && BACKUP_ENABLED="$(normalize_bool "${EMDASH_INSTALL_BACKUP_ENABLED}")"
+	[[ -n "${EMDASH_INSTALL_BACKUP_KEEP_S3:-}" ]] && BACKUP_KEEP_S3="${EMDASH_INSTALL_BACKUP_KEEP_S3}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_TARGET:-}" ]] && BACKUP_TARGET_TYPE="${EMDASH_INSTALL_BACKUP_TARGET}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] && BACKUP_ENCRYPTION_PASSPHRASE="${EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_ENDPOINT:-}" ]] && BACKUP_S3_ENDPOINT="${EMDASH_INSTALL_BACKUP_S3_ENDPOINT}"
@@ -102,9 +150,29 @@ apply_env_overrides() {
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY:-}" ]] && BACKUP_S3_SECRET_ACCESS_KEY="${EMDASH_INSTALL_BACKUP_S3_SECRET_ACCESS_KEY}"
 	[[ -n "${EMDASH_INSTALL_BACKUP_S3_PREFIX:-}" ]] && BACKUP_S3_PREFIX="${EMDASH_INSTALL_BACKUP_S3_PREFIX}"
 
+	if [[ -n "${INSTANCE_NAME}" ]]; then
+		local pg_slug="emdash_${INSTANCE_NAME//-/_}"
+		[[ "${PROJECT_NAME}" == "emdash" ]] && PROJECT_NAME="emdash-${INSTANCE_NAME}"
+		[[ -n "${ROOT_DIR}" ]] || ROOT_DIR="/data/emdash-${INSTANCE_NAME}"
+		[[ -n "${PG_DB_NAME}" ]] || PG_DB_NAME="${pg_slug}"
+		[[ -n "${PG_DB_USER}" ]] || PG_DB_USER="${pg_slug}"
+	else
+		[[ -n "${ROOT_DIR}" ]] || ROOT_DIR="/data/emdash"
+		[[ -n "${PG_DB_NAME}" ]] || PG_DB_NAME="emdash"
+		[[ -n "${PG_DB_USER}" ]] || PG_DB_USER="emdash"
+	fi
+
 	if [[ "${MIRROR_PRESET,,}" == "cn" ]]; then
 		[[ -n "${NPM_CONFIG_REGISTRY}" ]] || NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
 		[[ -n "${COREPACK_NPM_REGISTRY}" ]] || COREPACK_NPM_REGISTRY="https://registry.npmmirror.com"
+		if [[ -z "${EMDASH_FAST_FAIL_GOOGLE_FONTS}" ]]; then
+			EMDASH_FAST_FAIL_GOOGLE_FONTS="1"
+		fi
+	fi
+	if [[ -z "${EMDASH_FAST_FAIL_GOOGLE_FONTS}" ]]; then
+		EMDASH_FAST_FAIL_GOOGLE_FONTS="0"
+	else
+		EMDASH_FAST_FAIL_GOOGLE_FONTS="$(normalize_bool "${EMDASH_FAST_FAIL_GOOGLE_FONTS}")"
 	fi
 	if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then
 		export NPM_CONFIG_REGISTRY
@@ -117,7 +185,16 @@ apply_env_overrides() {
 }
 
 derive_paths() {
-	CONFIG_DIR="${CONFIG_DIR:-/etc/emdash}"
+	INSTANCE_SLUG="${INSTANCE_NAME:-default}"
+	if [[ -n "${INSTANCE_NAME}" ]]; then
+		CONFIG_DIR="${CONFIG_DIR:-/etc/emdash/instances/${INSTANCE_NAME}}"
+		BACKUP_CRON_FILE="/etc/cron.d/emdash-backup-${INSTANCE_NAME}"
+		APP_SYSTEMD_SERVICE="emdash-app-${INSTANCE_NAME}"
+	else
+		CONFIG_DIR="${CONFIG_DIR:-/etc/emdash}"
+		BACKUP_CRON_FILE="/etc/cron.d/emdash-backup"
+		APP_SYSTEMD_SERVICE="emdash-app"
+	fi
 	INSTALL_YAML="${CONFIG_DIR}/install.yml"
 	APP_ENV_FILE="${CONFIG_DIR}/emdash.env"
 	ROOT_DIR="${ROOT_DIR%/}"
@@ -127,8 +204,20 @@ derive_paths() {
 	LOG_DIR="${ROOT_DIR}/logs"
 	BACKUP_DIR="${ROOT_DIR}/backups"
 	TMP_DIR="${ROOT_DIR}/tmp"
-	CADDY_DIR="${CONFIG_DIR}/caddy"
-	CADDYFILE_PATH="${CADDY_DIR}/Caddyfile"
+	# Shared Caddy root with modular per-instance sites.d + user-owned conf.d
+	local base_etc="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	if [[ -z "${CADDY_ROOT_DIR:-}" ]]; then
+		if [[ "${CONFIG_DIR}" == "${base_etc}" || "${CONFIG_DIR}" == "${base_etc}/instances/"* ]]; then
+			CADDY_ROOT_DIR="${base_etc}/caddy"
+		else
+			CADDY_ROOT_DIR="${CONFIG_DIR}/caddy"
+		fi
+	fi
+	CADDY_DIR="${CADDY_ROOT_DIR}"
+	CADDY_SITES_DIR="${CADDY_ROOT_DIR}/sites.d"
+	CADDY_CONF_DIR="${CADDY_ROOT_DIR}/conf.d"
+	CADDYFILE_PATH="${CADDY_ROOT_DIR}/Caddyfile"
+	CADDY_SITE_FILE="${CADDY_SITES_DIR}/${INSTANCE_SLUG}.caddy"
 	SYSTEM_CADDYFILE="/etc/caddy/Caddyfile"
 	TEMPLATE_SOURCE_DIR="${APP_DIR}/template-source"
 	SQLITE_DIR="${DATA_DIR}/sqlite"
@@ -138,10 +227,20 @@ derive_paths() {
 	POSTGRES_DIR="${DATA_DIR}/postgres"
 	REDIS_DIR="${DATA_DIR}/redis"
 	SCRIPTS_DIR="${ROOT_DIR}/scripts"
-	BACKUP_CRON_FILE="/etc/cron.d/emdash-backup"
-	APP_PORT="3000"
+
+	if [[ -n "${APP_PORT_OVERRIDE:-}" ]]; then
+		APP_PORT="${APP_PORT_OVERRIDE}"
+	elif [[ -f "${APP_ENV_FILE}" ]]; then
+		APP_PORT="$(read_existing_env_value "${APP_ENV_FILE}" APP_PORT || true)"
+		if [[ -z "${APP_PORT}" ]]; then
+			APP_PORT="$([[ -n "${INSTANCE_NAME}" ]] && find_available_app_port 3001 || echo 3000)"
+		fi
+	elif [[ -n "${INSTANCE_NAME}" ]]; then
+		APP_PORT="$(find_available_app_port 3001)"
+	else
+		APP_PORT="3000"
+	fi
 	APP_BIND_HOST="127.0.0.1"
-	APP_SYSTEMD_SERVICE="emdash-app"
 	if [[ "${WRITE_ONLY}" == "1" ]]; then
 		APP_SYSTEMD_UNIT="${CONFIG_DIR}/${APP_SYSTEMD_SERVICE}.service"
 	else
@@ -297,6 +396,12 @@ validate_config() {
 
 	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
 		validate_cron_schedule "${BACKUP_SCHEDULE}"
+	fi
+	if ! [[ "${APP_PORT}" =~ ^[0-9]+$ ]] || (( APP_PORT < 1 || APP_PORT > 65535 )); then
+		fail "Invalid APP_PORT: ${APP_PORT} (expected 1-65535)"
+	fi
+	if ! [[ "${BACKUP_KEEP_S3:-14}" =~ ^[0-9]+$ ]]; then
+		fail "Invalid BACKUP_KEEP_S3: ${BACKUP_KEEP_S3} (expected non-negative integer)"
 	fi
 
 	if [[ "${DB_DRIVER}" == "postgres" && -z "${PG_DB_PASSWORD}" ]]; then

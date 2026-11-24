@@ -6,6 +6,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 ENV_FILE="${EMDASH_INSTALL_ENV_FILE:-/etc/emdash/emdash.env}"
+INSTANCE_NAME="${EMDASH_INSTANCE:-}"
 EMDASH_INSTALL_LANG="${EMDASH_INSTALL_LANG:-en}"
 EMDASHCTL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -55,24 +56,40 @@ usage() {
 emdashctl
 
 $(ct usage_title)
-  emdashctl [--lang <code>] status [--json]
-  emdashctl [--lang <code>] doctor [--deep] [--json]
-  emdashctl [--lang <code>] diagnose [--json] [--lines <N>] [--out <file>] [--no-ip-redact]
-  emdashctl [--lang <code>] smoke [--json]
-  emdashctl [--lang <code>] logs [app|postgres|redis|caddy] [-f]
-  emdashctl [--lang <code>] restart [app|postgres|redis|all|caddy]
-  emdashctl [--lang <code>] backup [--full] [--encrypt]
-  emdashctl [--lang <code>] restore <backup-file> [--with-site] [--with-secrets] [--yes]
-  emdashctl [--lang <code>] upgrade app [--target <version|latest>] [--dry-run] [--skip-backup] [--yes]
-  emdashctl [--lang <code>] upgrade caddy-config
-  emdashctl [--lang <code>] template diff [--stat]
-  emdashctl [--lang <code>] rotate-encryption-key [--status [--json] | --dry-run [--yes] | --prune-old [--confirm-prune-kid <kid>] [--force-prune] [--dry-run]]
-  emdashctl [--lang <code>] reset-db-password
+  emdashctl [--lang <code>] instances [--json]
+  emdashctl [--lang <code>] [--instance <name>] status [--json]
+  emdashctl [--lang <code>] [--instance <name>] doctor [--deep] [--json]
+  emdashctl [--lang <code>] [--instance <name>] diagnose [--json] [--lines <N>] [--out <file>] [--no-ip-redact]
+  emdashctl [--lang <code>] [--instance <name>] smoke [--json]
+  emdashctl [--lang <code>] [--instance <name>] logs [app|postgres|redis|caddy] [-f]
+  emdashctl [--lang <code>] [--instance <name>] restart [app|postgres|redis|all|caddy]
+  emdashctl [--lang <code>] [--instance <name>] backup [--full] [--encrypt] [--list-s3]
+  emdashctl [--lang <code>] [--instance <name>] restore <backup-file | --from-s3 <key|latest>> [--with-site] [--with-secrets] [--yes]
+  emdashctl [--lang <code>] [--instance <name>] upgrade app [--target <version|latest>] [--dry-run] [--skip-backup] [--yes]
+  emdashctl [--lang <code>] [--instance <name>] upgrade caddy-config
+  emdashctl [--lang <code>] [--instance <name>] template diff [--stat]
+  emdashctl [--lang <code>] [--instance <name>] rotate-encryption-key [--status [--json] | --dry-run [--yes] | --prune-old [--confirm-prune-kid <kid>] [--force-prune] [--dry-run]]
+  emdashctl [--lang <code>] [--instance <name>] migrate-db sqlite-to-postgres [--pg-host <h>] [--pg-port <p>] [--pg-db <db>] [--pg-user <u>] [--pg-password-file <file>] [--truncate-target] [--dry-run] [--yes]
+  emdashctl [--lang <code>] [--instance <name>] reset-db-password
+  emdashctl [--lang <code>] [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>] [--yes]
 EOF
 }
 
+validate_ctl_instance_name() {
+	local name="${1:-}"
+	[[ -n "${name}" ]] || return 0
+	if [[ "${name}" == "default" ]]; then
+		return 0
+	fi
+	if ! [[ "${name}" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; then
+		fail "Invalid instance name '${name}' (must match ^[a-z][a-z0-9-]{0,31}$)"
+	fi
+}
+
+PARSED_ARGS=()
+
 parse_lang_args() {
-	local remaining=()
+	PARSED_ARGS=()
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--lang=*)
@@ -83,13 +100,37 @@ parse_lang_args() {
 			[[ $# -gt 0 ]] || fail "Missing value for --lang"
 			EMDASH_INSTALL_LANG="$(normalize_ctl_lang "$1")"
 			;;
+		--instance=*)
+			INSTANCE_NAME="${1#--instance=}"
+			validate_ctl_instance_name "${INSTANCE_NAME}"
+			[[ "${INSTANCE_NAME}" == "default" ]] && INSTANCE_NAME=""
+			;;
+		--instance)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --instance"
+			INSTANCE_NAME="$1"
+			validate_ctl_instance_name "${INSTANCE_NAME}"
+			[[ "${INSTANCE_NAME}" == "default" ]] && INSTANCE_NAME=""
+			;;
 		*)
-			remaining+=("$1")
+			PARSED_ARGS+=("$1")
 			;;
 		esac
 		shift || true
 	done
-	printf '%s\n' "${remaining[@]}"
+}
+
+resolve_env_file_for_instance() {
+	local base_etc="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	if [[ -n "${EMDASH_INSTALL_ENV_FILE:-}" ]]; then
+		ENV_FILE="${EMDASH_INSTALL_ENV_FILE}"
+		return
+	fi
+	if [[ -n "${INSTANCE_NAME:-}" ]]; then
+		ENV_FILE="${base_etc}/instances/${INSTANCE_NAME}/emdash.env"
+	elif [[ -z "${ENV_FILE:-}" || "${ENV_FILE}" == "/etc/emdash/emdash.env" ]]; then
+		ENV_FILE="${base_etc}/emdash.env"
+	fi
 }
 
 load_site_common() {
@@ -107,14 +148,18 @@ load_site_common() {
 }
 
 load_env() {
+	resolve_env_file_for_instance
 	[[ -f "${ENV_FILE}" ]] || fail "$(ct missing_env): ${ENV_FILE}"
 	set -a
 	# shellcheck disable=SC1090
 	source "${ENV_FILE}"
 	set +a
-	ROOT_DIR="${ROOT_DIR:-/data/emdash}"
+	INSTANCE_NAME="${INSTANCE_NAME:-}"
+	INSTANCE_SLUG="${INSTANCE_SLUG:-${INSTANCE_NAME:-default}}"
+	CONFIG_DIR="${CONFIG_DIR:-$(dirname "${ENV_FILE}")}"
+	ROOT_DIR="${ROOT_DIR:-$([[ -n "${INSTANCE_NAME}" ]] && printf '/data/emdash-%s' "${INSTANCE_NAME}" || printf '/data/emdash')}"
 	APP_ENV_FILE="${APP_ENV_FILE:-${ENV_FILE}}"
-	INSTALL_YAML="${INSTALL_YAML:-/etc/emdash/install.yml}"
+	INSTALL_YAML="${INSTALL_YAML:-${CONFIG_DIR}/install.yml}"
 	SITE_DIR="${SITE_DIR:-${ROOT_DIR}/app/site}"
 	SCRIPTS_DIR="${SCRIPTS_DIR:-${ROOT_DIR}/scripts}"
 	TMP_DIR="${TMP_DIR:-${ROOT_DIR}/tmp}"
@@ -123,11 +168,16 @@ load_env() {
 	SESSIONS_DIR="${SESSIONS_DIR:-${ROOT_DIR}/data/sessions}"
 	SQLITE_DIR="${SQLITE_DIR:-${ROOT_DIR}/data/sqlite}"
 	SQLITE_PATH="${SQLITE_PATH:-${SQLITE_DIR}/data.db}"
-	APP_SYSTEMD_SERVICE="${APP_SYSTEMD_SERVICE:-emdash-app}"
+	APP_SYSTEMD_SERVICE="${APP_SYSTEMD_SERVICE:-$([[ -n "${INSTANCE_NAME}" ]] && printf 'emdash-app-%s' "${INSTANCE_NAME}" || printf 'emdash-app')}"
 	APP_SYSTEMD_UNIT="${APP_SYSTEMD_UNIT:-/etc/systemd/system/${APP_SYSTEMD_SERVICE}.service}"
 	APP_BUILD_SCRIPT="${APP_BUILD_SCRIPT:-${SCRIPTS_DIR}/emdash-build.sh}"
 	APP_START_SCRIPT="${APP_START_SCRIPT:-${SCRIPTS_DIR}/emdash-start.sh}"
 	CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/emdash/caddy/Caddyfile}"
+	CADDY_SITES_DIR="${CADDY_SITES_DIR:-/etc/emdash/caddy/sites.d}"
+	CADDY_CONF_DIR="${CADDY_CONF_DIR:-/etc/emdash/caddy/conf.d}"
+	CADDY_SITE_FILE="${CADDY_SITE_FILE:-${CADDY_SITES_DIR}/${INSTANCE_SLUG}.caddy}"
+	BACKUP_CRON_FILE="${BACKUP_CRON_FILE:-$([[ -n "${INSTANCE_NAME}" ]] && printf '/etc/cron.d/emdash-backup-%s' "${INSTANCE_NAME}" || printf '/etc/cron.d/emdash-backup')}"
+	BACKUP_KEEP_S3="${BACKUP_KEEP_S3:-14}"
 	ENABLE_PLUGIN_SANDBOX="${ENABLE_PLUGIN_SANDBOX:-1}"
 	BACKUP_ENABLED="${BACKUP_ENABLED:-1}"
 	BACKUP_TARGET_TYPE="${BACKUP_TARGET_TYPE:-local}"
@@ -143,10 +193,11 @@ load_env() {
 }
 
 acquire_op_lock() {
-	local lock_file="/run/lock/emdashctl.lock"
+	local lock_name="emdashctl-${INSTANCE_SLUG:-default}.lock"
+	local lock_file="/run/lock/${lock_name}"
 	if [[ ! -d /run/lock || ! -w /run/lock ]]; then
 		mkdir -p "${TMP_DIR}"
-		lock_file="${TMP_DIR}/emdashctl.lock"
+		lock_file="${TMP_DIR}/${lock_name}"
 	fi
 	exec 9>"${lock_file}"
 	if ! flock -n 9; then
@@ -193,11 +244,23 @@ wait_http_ok() {
 
 run_as_app_user() {
 	local cmd="$1"
+	local env_prefix=""
+	if [[ -n "${ROOT_DIR:-}" && -d "${ROOT_DIR}" ]]; then
+		env_prefix="export HOME='${ROOT_DIR}'; "
+	fi
 	if [[ "$(id -un)" == "${APP_RUN_USER}" ]]; then
-		bash -lc "${cmd}"
+		bash -lc "${env_prefix}${cmd}"
 		return
 	fi
-	runuser -u "${APP_RUN_USER}" -- bash -lc "${cmd}"
+	runuser -u "${APP_RUN_USER}" -- bash -lc "${env_prefix}${cmd}"
+}
+
+emdash_bin_cmd() {
+	if [[ -x "${SITE_DIR}/node_modules/.bin/emdash" ]]; then
+		printf "'%s/node_modules/.bin/emdash'" "${SITE_DIR}"
+	else
+		printf 'COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash'
+	fi
 }
 
 update_env_value() {
@@ -597,17 +660,18 @@ print(json.dumps({
 }
 
 probe_emdash_migrations() {
-	local out="" rc=0
+	local out="" rc=0 emdash_cmd=""
 	if [[ ! -d "${SITE_DIR}/node_modules" ]]; then
 		printf '{"supported":false,"reason":"node_modules missing"}\n'
 		return 0
 	fi
-	if ! run_as_app_user "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --help >/dev/null 2>&1"; then
+	emdash_cmd="$(emdash_bin_cmd)"
+	if ! run_as_app_user "cd '${SITE_DIR}' && ${emdash_cmd} migrate --help >/dev/null 2>&1"; then
 		printf '{"supported":false,"reason":"emdash migrate CLI unavailable"}\n'
 		return 0
 	fi
 	set +e
-	out="$(run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --status --json" 2>&1)"
+	out="$(run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && ${emdash_cmd} migrate --status --json" 2>&1)"
 	rc=$?
 	set -e
 	local parsed=""
@@ -679,10 +743,11 @@ PY
 	add_check "setup api" "${setup_api_status}" "${APP_PUBLIC_URL:-http://127.0.0.1:${APP_PORT}}/_emdash/api/setup/status" "$([[ "${setup_api_status}" == "ok" ]] && echo "" || echo "Check EmDash backend readiness")"
 
 	if [[ "${BACKUP_ENABLED}" == "1" ]]; then
-		if [[ -f "/etc/cron.d/emdash-backup" ]]; then
-			add_check "backup schedule" "ok" "/etc/cron.d/emdash-backup" ""
+		local cron_file="${BACKUP_CRON_FILE:-/etc/cron.d/emdash-backup}"
+		if [[ -f "${cron_file}" ]]; then
+			add_check "backup schedule" "ok" "${cron_file}" ""
 		else
-			add_check "backup schedule" "fail" "/etc/cron.d/emdash-backup missing" "Re-run installer or create /etc/cron.d/emdash-backup"
+			add_check "backup schedule" "fail" "${cron_file} missing" "Re-run installer or create ${cron_file}"
 		fi
 	else
 		add_check "backup schedule" "skipped" "BACKUP_ENABLED=0" ""
@@ -1518,6 +1583,145 @@ prune_local_backups() {
 	done
 }
 
+list_s3_backups_json() {
+	[[ "${BACKUP_TARGET_TYPE}" == "s3" ]] || fail "S3 backup target is not configured (BACKUP_TARGET_TYPE=${BACKUP_TARGET_TYPE})."
+	[[ -n "${BACKUP_S3_BUCKET:-}" && -n "${BACKUP_S3_ENDPOINT:-}" ]] || fail "S3 backup endpoint/bucket is not configured."
+	BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT}" \
+	BACKUP_S3_REGION="${BACKUP_S3_REGION:-auto}" \
+	BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET}" \
+	BACKUP_S3_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID:-}" \
+	BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+	BACKUP_S3_PREFIX="${BACKUP_S3_PREFIX:-backups}" \
+	python3 - <<'PY'
+import json, os, re
+import boto3
+from botocore.config import Config
+
+prefix = os.environ["BACKUP_S3_PREFIX"].strip("/")
+search_prefix = f"{prefix}/" if prefix else ""
+pat = re.compile(r"^emdash-backup-\d{8}-\d{6}\.tar\.gz(\.enc)?$")
+
+client = boto3.client(
+    "s3",
+    endpoint_url=os.environ["BACKUP_S3_ENDPOINT"],
+    aws_access_key_id=os.environ["BACKUP_S3_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["BACKUP_S3_SECRET_ACCESS_KEY"],
+    region_name=os.environ["BACKUP_S3_REGION"],
+    config=Config(signature_version="s3v4"),
+)
+
+items = []
+paginator = client.get_paginator("list_objects_v2")
+for page in paginator.paginate(Bucket=os.environ["BACKUP_S3_BUCKET"], Prefix=search_prefix):
+    for obj in page.get("Contents", []) or []:
+        key = obj["Key"]
+        name = key.rsplit("/", 1)[-1]
+        if not pat.match(name):
+            continue
+        lm = obj.get("LastModified")
+        items.append({
+            "key": key,
+            "name": name,
+            "size": int(obj.get("Size", 0)),
+            "last_modified": lm.isoformat() if hasattr(lm, "isoformat") else str(lm or ""),
+        })
+
+items.sort(key=lambda x: (x["last_modified"], x["name"]), reverse=True)
+print(json.dumps(items, indent=2))
+PY
+}
+
+prune_s3_backups() {
+	local keep="${BACKUP_KEEP_S3:-14}"
+	[[ "${BACKUP_TARGET_TYPE}" == "s3" ]] || return 0
+	[[ "${keep}" =~ ^[0-9]+$ ]] || return 0
+	(( keep > 0 )) || return 0
+
+	BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT}" \
+	BACKUP_S3_REGION="${BACKUP_S3_REGION:-auto}" \
+	BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET}" \
+	BACKUP_S3_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID:-}" \
+	BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+	BACKUP_S3_PREFIX="${BACKUP_S3_PREFIX:-backups}" \
+	BACKUP_KEEP_S3="${keep}" \
+	python3 - <<'PY'
+import os, re
+import boto3
+from botocore.config import Config
+
+keep = int(os.environ["BACKUP_KEEP_S3"])
+prefix = os.environ["BACKUP_S3_PREFIX"].strip("/")
+search_prefix = f"{prefix}/" if prefix else ""
+pat = re.compile(r"^emdash-backup-\d{8}-\d{6}\.tar\.gz(\.enc)?$")
+
+client = boto3.client(
+    "s3",
+    endpoint_url=os.environ["BACKUP_S3_ENDPOINT"],
+    aws_access_key_id=os.environ["BACKUP_S3_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["BACKUP_S3_SECRET_ACCESS_KEY"],
+    region_name=os.environ["BACKUP_S3_REGION"],
+    config=Config(signature_version="s3v4"),
+)
+
+items = []
+paginator = client.get_paginator("list_objects_v2")
+for page in paginator.paginate(Bucket=os.environ["BACKUP_S3_BUCKET"], Prefix=search_prefix):
+    for obj in page.get("Contents", []) or []:
+        key = obj["Key"]
+        name = key.rsplit("/", 1)[-1]
+        if pat.match(name):
+            lm = obj.get("LastModified")
+            items.append((lm.isoformat() if hasattr(lm, "isoformat") else "", name, key))
+
+items.sort(reverse=True)
+for _, _, old_key in items[keep:]:
+    client.delete_object(Bucket=os.environ["BACKUP_S3_BUCKET"], Key=old_key)
+    print(f"[INFO] Pruned old S3 backup: {old_key}")
+PY
+}
+
+download_s3_backup_to_dir() {
+	local requested_key="$1"
+	local dest_dir="$2"
+	[[ "${BACKUP_TARGET_TYPE}" == "s3" ]] || fail "S3 backup target is not configured (BACKUP_TARGET_TYPE=${BACKUP_TARGET_TYPE})."
+	[[ "${requested_key}" != *".."* ]] || fail "Invalid S3 key: ${requested_key}"
+
+	local target_key="${requested_key}"
+	if [[ "${requested_key}" == "latest" ]]; then
+		target_key="$(list_s3_backups_json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["key"] if d else "")')"
+		[[ -n "${target_key}" ]] || fail "No EmDash backups found in S3 bucket ${BACKUP_S3_BUCKET}/${BACKUP_S3_PREFIX}."
+	fi
+
+	local base_name=""
+	base_name="$(basename "${target_key}")"
+	local dest_file="${dest_dir}/${base_name}"
+	BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT}" \
+	BACKUP_S3_REGION="${BACKUP_S3_REGION:-auto}" \
+	BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET}" \
+	BACKUP_S3_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID:-}" \
+	BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+	S3_KEY="${target_key}" \
+	DEST_FILE="${dest_file}" \
+	python3 - <<'PY'
+import os
+import boto3
+from botocore.config import Config
+
+client = boto3.client(
+    "s3",
+    endpoint_url=os.environ["BACKUP_S3_ENDPOINT"],
+    aws_access_key_id=os.environ["BACKUP_S3_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["BACKUP_S3_SECRET_ACCESS_KEY"],
+    region_name=os.environ["BACKUP_S3_REGION"],
+    config=Config(signature_version="s3v4"),
+)
+with open(os.environ["DEST_FILE"], "wb") as fh:
+    client.download_fileobj(os.environ["BACKUP_S3_BUCKET"], os.environ["S3_KEY"], fh)
+os.chmod(os.environ["DEST_FILE"], 0o600)
+PY
+	printf '%s\n' "${dest_file}"
+}
+
 create_backup_archive() {
 	local full_mode="${1:-0}"
 	local encrypt_mode="${2:-0}"
@@ -1665,8 +1869,9 @@ PY
 		rm -f "${plain_archive}"
 	fi
 
-	rm -rf "${tmpdir}"
+	rm -rf "${tmpdir}" "${RESTORE_S3_TMP_DIR:-}"
 	BACKUP_TMP_DIR=""
+	RESTORE_S3_TMP_DIR=""
 	trap - RETURN
 
 	if [[ "${BACKUP_TARGET_TYPE}" == "s3" ]]; then
@@ -1690,6 +1895,7 @@ client = boto3.client(
 with open(archive_path, "rb") as fh:
     client.upload_fileobj(fh, bucket, key)
 PY
+		prune_s3_backups || warn "Failed to prune old S3 backups (new backup upload succeeded)."
 	fi
 
 	prune_local_backups
@@ -1697,25 +1903,54 @@ PY
 }
 
 backup_command() {
-	local full_mode="0" encrypt_mode="0" archive=""
+	local full_mode="0" encrypt_mode="0" list_s3="0" as_json="0" archive=""
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--full) full_mode="1" ;;
 		--encrypt) encrypt_mode="1" ;;
+		--list-s3) list_s3="1" ;;
+		--json) as_json="1" ;;
 		*) fail "Unknown backup option: $1" ;;
 		esac
 		shift
 	done
+	if [[ "${list_s3}" == "1" ]]; then
+		local s3_json=""
+		s3_json="$(list_s3_backups_json)"
+		if [[ "${as_json}" == "1" ]]; then
+			printf '%s\n' "${s3_json}"
+			return 0
+		fi
+		printf '%s\n' "${s3_json}" | python3 -c '
+import json, sys
+items = json.load(sys.stdin)
+if not items:
+    print("No S3 backups found.")
+else:
+    for it in items:
+        lm = it["last_modified"]
+        sz = it["size"]
+        k = it["key"]
+        print(f"{lm}  {sz:>10}  {k}")
+'
+		return 0
+	fi
 	acquire_op_lock
 	archive="$(create_backup_archive "${full_mode}" "${encrypt_mode}")"
 	log "$(ct backup_complete): ${archive}"
 }
 
 restore_command() {
-	local archive="" with_site="0" with_secrets="0" assume_yes="0"
-	local tmpdir decrypted_tar ts tmp_db old_db manifest_db_driver=""
+	local archive="" from_s3="" with_site="0" with_secrets="0" assume_yes="0"
+	local tmpdir s3_dl_dir="" decrypted_tar ts tmp_db old_db manifest_db_driver=""
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
+		--from-s3=*) from_s3="${1#--from-s3=}" ;;
+		--from-s3)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --from-s3"
+			from_s3="$1"
+			;;
 		--with-site) with_site="1" ;;
 		--with-secrets) with_secrets="1" ;;
 		--yes | -y) assume_yes="1" ;;
@@ -1728,13 +1963,24 @@ restore_command() {
 		shift
 	done
 
+	if [[ -n "${from_s3}" ]]; then
+		[[ -z "${archive}" ]] || fail "Cannot combine positional backup file with --from-s3"
+		umask 0077
+		s3_dl_dir="$(mktemp -d)"
+		chmod 0700 "${s3_dl_dir}"
+		RESTORE_S3_TMP_DIR="${s3_dl_dir}"
+		trap 'rm -rf "${RESTORE_S3_TMP_DIR:-}" "${BACKUP_TMP_DIR:-}"' RETURN
+		log "Downloading S3 backup (${from_s3}) from bucket ${BACKUP_S3_BUCKET:-}..."
+		archive="$(download_s3_backup_to_dir "${from_s3}" "${s3_dl_dir}")"
+	fi
+
 	[[ -n "${archive}" && -f "${archive}" ]] || fail "Backup file not found: ${archive:-<empty>}"
 	acquire_op_lock
 
 	umask 0077
 	tmpdir="$(mktemp -d)"
 	BACKUP_TMP_DIR="${tmpdir}"
-	trap 'rm -rf "${BACKUP_TMP_DIR:-}"' RETURN
+	trap 'rm -rf "${RESTORE_S3_TMP_DIR:-}" "${BACKUP_TMP_DIR:-}"' RETURN
 
 	if [[ "${archive}" == *.enc ]]; then
 		[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] || fail "Encrypted backup requires BACKUP_ENCRYPTION_PASSPHRASE."
@@ -1835,8 +2081,9 @@ EOF
 		run_as_app_user "'${APP_BUILD_SCRIPT}'"
 	fi
 
-	rm -rf "${tmpdir}"
+	rm -rf "${tmpdir}" "${RESTORE_S3_TMP_DIR:-}"
 	BACKUP_TMP_DIR=""
+	RESTORE_S3_TMP_DIR=""
 	trap - RETURN
 
 	systemctl start "${APP_SYSTEMD_SERVICE}"
@@ -1939,12 +2186,14 @@ run_upgrade_migration_gate() {
 	fi
 
 	if (( pending_count > 0 )); then
+		local emdash_cmd=""
+		emdash_cmd="$(emdash_bin_cmd)"
 		log "Applying ${pending_count} pending database migrations explicitly..."
 		UPGRADE_MIGRATION_ATTEMPTED="1"
 		if [[ -n "${target_fp}" ]]; then
-			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate --expected-target-fingerprint '${target_fp}'"
+			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && ${emdash_cmd} migrate --expected-target-fingerprint '${target_fp}'"
 		else
-			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash migrate"
+			run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && ${emdash_cmd} migrate"
 		fi
 		return $?
 	fi
@@ -2626,14 +2875,446 @@ reset_db_password_command() {
 	printf '%s\n' "${new_password}"
 }
 
+instances_command() {
+	local as_json="0"
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--json) as_json="1" ;;
+		*) fail "Unknown instances option: $1" ;;
+		esac
+		shift
+	done
+
+	local base_dir="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	local out_json=""
+	out_json="$(
+		BASE_DIR="${base_dir}" python3 - <<'PY'
+import json, os, shlex, subprocess
+from pathlib import Path
+
+base = Path(os.environ["BASE_DIR"])
+candidates = []
+default_env = base / "emdash.env"
+if default_env.is_file():
+    candidates.append(("default", default_env))
+inst_dir = base / "instances"
+if inst_dir.is_dir():
+    for d in sorted(inst_dir.iterdir()):
+        ef = d / "emdash.env"
+        if d.is_dir() and ef.is_file():
+            candidates.append((d.name, ef))
+
+def parse_env(path: Path):
+    data = {}
+    for raw in path.read_text(errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw or raw.startswith("#") or "=" not in raw:
+            continue
+        k, v = raw.split("=", 1)
+        try:
+            parts = shlex.split(v)
+            data[k] = parts[0] if parts else ""
+        except Exception:
+            data[k] = v.strip('"').strip("'")
+    return data
+
+def svc_active(unit: str) -> bool:
+    try:
+        r = subprocess.run(["systemctl", "is-active", "--quiet", unit], capture_output=True)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+rows = []
+for name, ef in candidates:
+    env = parse_env(ef)
+    svc = env.get("APP_SYSTEMD_SERVICE") or ("emdash-app" if name == "default" else f"emdash-app-{name}")
+    rows.append({
+        "instance": name,
+        "env_file": str(ef),
+        "root_dir": env.get("ROOT_DIR", ""),
+        "service": svc,
+        "running": svc_active(svc),
+        "app_port": env.get("APP_PORT", "3000"),
+        "app_url": env.get("APP_PUBLIC_URL", ""),
+        "template": env.get("TEMPLATE", ""),
+        "db_driver": env.get("DB_DRIVER", "sqlite"),
+        "session_driver": env.get("SESSION_DRIVER", "file"),
+        "use_caddy": env.get("USE_CADDY", "0") == "1",
+    })
+
+print(json.dumps({"schema_version": 1, "instances": rows}, ensure_ascii=False, indent=2))
+PY
+	)"
+
+	if [[ "${as_json}" == "1" ]]; then
+		printf '%s\n' "${out_json}"
+		return 0
+	fi
+
+	INST_JSON="${out_json}" python3 - <<'PY'
+import json, os
+rows = json.loads(os.environ["INST_JSON"]).get("instances", [])
+if not rows:
+    print("No native EmDash instances found.")
+else:
+    print(f"{'INSTANCE':<16} {'RUNNING':<8} {'PORT':<6} {'DB':<10} {'SERVICE':<22} URL")
+    for r in rows:
+        inst = r["instance"]
+        run = "yes" if r["running"] else "no"
+        port = r["app_port"]
+        db = r["db_driver"]
+        svc = r["service"]
+        url = r["app_url"]
+        print(f"{inst:<16} {run:<8} {port:<6} {db:<10} {svc:<22} {url}")
+PY
+}
+
+uninstall_command() {
+	local purge_data="0"
+	local drop_db="0"
+	local assume_yes="0"
+	local confirm_instance=""
+	local expected_instance="${INSTANCE_SLUG:-default}"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--purge-data) purge_data="1" ;;
+		--drop-db) drop_db="1" ;;
+		--yes | -y) assume_yes="1" ;;
+		--confirm-instance=*) confirm_instance="${1#--confirm-instance=}" ;;
+		--confirm-instance)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --confirm-instance"
+			confirm_instance="$1"
+			;;
+		*) fail "Unknown uninstall option: $1" ;;
+		esac
+		shift
+	done
+
+	# Safety guard against accidental deletion of system root directories
+	local norm_root="${ROOT_DIR%/}"
+	case "${norm_root}" in
+	"" | "/" | "/data" | "/etc" | "/var" | "/home" | "/usr" | "/root" | "/tmp" | "/opt")
+		fail "Refusing to uninstall with unsafe ROOT_DIR: '${ROOT_DIR}'"
+		;;
+	esac
+
+	# Strong instance-bound confirmation whenever destructive data/DB removal is requested
+	if [[ "${purge_data}" == "1" || "${drop_db}" == "1" ]]; then
+		if [[ -n "${confirm_instance}" ]]; then
+			[[ "${confirm_instance}" == "${expected_instance}" ]] \
+				|| fail "--confirm-instance '${confirm_instance}' does not match target instance '${expected_instance}'."
+		elif [[ -t 0 ]]; then
+			warn "Destructive uninstall requested for instance '${expected_instance}' (purge_data=${purge_data}, drop_db=${drop_db})."
+			local typed=""
+			read -r -p "Type instance name '${expected_instance}' to confirm permanent deletion: " typed
+			[[ "${typed}" == "${expected_instance}" ]] || fail "Confirmation mismatch; uninstall aborted."
+		else
+			fail "Non-interactive destructive uninstall (--purge-data / --drop-db) requires --confirm-instance '${expected_instance}' (--yes alone is not accepted)."
+		fi
+	elif [[ "${assume_yes}" != "1" && -t 0 ]]; then
+		local ans=""
+		read -r -p "Uninstall EmDash service & managed config for instance '${expected_instance}' (data dir ${ROOT_DIR} will be kept)? [y/N]: " ans
+		[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] || fail "Uninstall aborted by user."
+	fi
+
+	acquire_op_lock
+	log "Stopping and removing systemd service: ${APP_SYSTEMD_SERVICE}..."
+	systemctl stop "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+	systemctl disable "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+	if [[ -f "${APP_SYSTEMD_UNIT}" ]]; then
+		rm -f "${APP_SYSTEMD_UNIT}"
+		systemctl daemon-reload >/dev/null 2>&1 || true
+	fi
+
+	local cron_file="${BACKUP_CRON_FILE:-/etc/cron.d/emdash-backup}"
+	if [[ -f "${cron_file}" ]]; then
+		rm -f "${cron_file}"
+		log "Removed backup cron: ${cron_file}"
+	fi
+
+	# Remove only this instance's Caddy site snippet (never touch user conf.d or other instances)
+	if [[ -n "${CADDY_SITE_FILE:-}" && -f "${CADDY_SITE_FILE}" ]]; then
+		rm -f "${CADDY_SITE_FILE}"
+		log "Removed Caddy site snippet: ${CADDY_SITE_FILE}"
+		local remaining_sites=0
+		local s=""
+		for s in "${CADDY_SITES_DIR}"/*.caddy; do
+			[[ -f "${s}" ]] && remaining_sites=$((remaining_sites + 1))
+		done
+		if (( remaining_sites > 0 )); then
+			local caddy_main="${EMDASH_CADDY_MAIN_FILE:-/etc/caddy/Caddyfile}"
+			if command -v caddy >/dev/null 2>&1 && caddy validate --config "${caddy_main}" >/dev/null 2>&1; then
+				systemctl reload caddy >/dev/null 2>&1 || true
+			fi
+		else
+			systemctl stop caddy >/dev/null 2>&1 || true
+			systemctl disable caddy >/dev/null 2>&1 || true
+		fi
+	fi
+
+	if [[ "${drop_db}" == "1" && "${DB_DRIVER}" == "postgres" ]]; then
+		log "Dropping PostgreSQL database '${PG_DB_NAME}' and role '${PG_DB_USER}'..."
+		runuser -u postgres -- psql postgres -v ON_ERROR_STOP=1 <<EOF >/dev/null
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${PG_DB_NAME}' AND pid <> pg_backend_pid();
+DROP DATABASE IF EXISTS "${PG_DB_NAME}";
+DROP ROLE IF EXISTS "${PG_DB_USER}";
+EOF
+	fi
+
+	# Remove instance config files safely without affecting sibling instances
+	if [[ -n "${INSTANCE_NAME:-}" ]]; then
+		rm -rf "${CONFIG_DIR}"
+	else
+		rm -f "${APP_ENV_FILE}" "${INSTALL_YAML}"
+	fi
+	log "Removed instance configuration for '${expected_instance}'."
+
+	if [[ "${purge_data}" == "1" ]]; then
+		rm -rf "${norm_root}"
+		log "Purged data directory: ${norm_root}"
+	else
+		log "Preserved data directory: ${norm_root} (pass --purge-data --confirm-instance ${expected_instance} to remove)"
+	fi
+
+	release_op_lock
+
+	# Only remove global /usr/local/bin/emdashctl if zero instances remain on the host
+	local base_etc="${EMDASH_INSTANCES_BASE_DIR:-/etc/emdash}"
+	local bin_path="${EMDASH_BIN_PATH:-/usr/local/bin/emdashctl}"
+	local remaining_instances=0
+	[[ -f "${base_etc}/emdash.env" ]] && remaining_instances=$((remaining_instances + 1))
+	local f=""
+	for f in "${base_etc}"/instances/*/emdash.env; do
+		[[ -f "${f}" ]] && remaining_instances=$((remaining_instances + 1))
+	done
+	if (( remaining_instances == 0 )) && [[ -f "${bin_path}" && "${EMDASH_UNINSTALL_KEEP_BIN:-0}" != "1" ]]; then
+		rm -f "${bin_path}"
+		log "No remaining EmDash instances; removed ${bin_path}."
+	fi
+
+	log "Uninstall complete for instance '${expected_instance}'."
+}
+
+find_sqlite_to_pg_migrator() {
+	local candidate=""
+	for candidate in \
+		"${ROOT_DIR:-}/lib/migrate-sqlite-to-pg.py" \
+		"${EMDASHCTL_SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py"; do
+		if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+			printf '%s\n' "${candidate}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+migrate_db_command() {
+	local target="${1:-}"
+	shift || true
+	[[ "${target}" == "sqlite-to-postgres" ]] || fail "Supported migrate-db target: sqlite-to-postgres"
+	[[ "${DB_DRIVER}" == "sqlite" ]] || fail "migrate-db sqlite-to-postgres requires current DB_DRIVER=sqlite (got: ${DB_DRIVER})."
+	[[ -f "${SQLITE_PATH}" ]] || fail "SQLite database not found: ${SQLITE_PATH}"
+
+	local pg_host="${POSTGRES_HOST:-127.0.0.1}"
+	local pg_port="${POSTGRES_PORT:-5432}"
+	local pg_db="${PG_DB_NAME:-$([[ -n "${INSTANCE_NAME:-}" ]] && printf 'emdash_%s' "${INSTANCE_NAME//-/_}" || printf 'emdash')}"
+	local pg_user="${PG_DB_USER:-${pg_db}}"
+	local pg_pass="${PG_DB_PASSWORD:-}"
+	local pg_pass_file=""
+	local truncate_target="0"
+	local dry_run="0"
+	local assume_yes="0"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--pg-host=*) pg_host="${1#--pg-host=}" ;;
+		--pg-host) shift; [[ $# -gt 0 ]] || fail "Missing value for --pg-host"; pg_host="$1" ;;
+		--pg-port=*) pg_port="${1#--pg-port=}" ;;
+		--pg-port) shift; [[ $# -gt 0 ]] || fail "Missing value for --pg-port"; pg_port="$1" ;;
+		--pg-db=*) pg_db="${1#--pg-db=}" ;;
+		--pg-db) shift; [[ $# -gt 0 ]] || fail "Missing value for --pg-db"; pg_db="$1" ;;
+		--pg-user=*) pg_user="${1#--pg-user=}" ;;
+		--pg-user) shift; [[ $# -gt 0 ]] || fail "Missing value for --pg-user"; pg_user="$1" ;;
+		--pg-password-file=*) pg_pass_file="${1#--pg-password-file=}" ;;
+		--pg-password-file) shift; [[ $# -gt 0 ]] || fail "Missing value for --pg-password-file"; pg_pass_file="$1" ;;
+		--truncate-target) truncate_target="1" ;;
+		--dry-run) dry_run="1" ;;
+		--yes | -y) assume_yes="1" ;;
+		*) fail "Unknown migrate-db option: $1" ;;
+		esac
+		shift
+	done
+
+	if [[ -n "${pg_pass_file}" ]]; then
+		[[ -f "${pg_pass_file}" ]] || fail "PostgreSQL password file not found: ${pg_pass_file}"
+		pg_pass="$(tr -d '\r\n' <"${pg_pass_file}")"
+	elif [[ -n "${EMDASH_TARGET_PG_PASSWORD:-}" ]]; then
+		pg_pass="${EMDASH_TARGET_PG_PASSWORD}"
+	fi
+	[[ -n "${pg_pass}" ]] || fail "Target PostgreSQL password required (set EMDASH_TARGET_PG_PASSWORD or pass --pg-password-file <file>)."
+
+	local migrator=""
+	migrator="$(find_sqlite_to_pg_migrator)" || fail "migrate-sqlite-to-pg.py not found in ${ROOT_DIR}/lib or ${EMDASHCTL_SCRIPT_DIR}/lib"
+	command -v psql >/dev/null 2>&1 || fail "psql client is required for sqlite-to-postgres migration."
+
+	# Verify PostgreSQL connectivity
+	PGPASSWORD="${pg_pass}" psql -h "${pg_host}" -p "${pg_port}" -U "${pg_user}" -d "${pg_db}" -tAc "SELECT 1" >/dev/null 2>&1 \
+		|| fail "Cannot connect to target PostgreSQL (${pg_user}@${pg_host}:${pg_port}/${pg_db}). Ensure PostgreSQL is running and role/database exist."
+
+	# Ensure target DB is empty unless --truncate-target was explicitly passed
+	if [[ "${truncate_target}" != "1" ]]; then
+		if ! PGPASSWORD="${pg_pass}" python3 "${migrator}" \
+			--sqlite-path "${SQLITE_PATH}" \
+			--pg-host "${pg_host}" --pg-port "${pg_port}" \
+			--pg-user "${pg_user}" --pg-db "${pg_db}" \
+			--check-target-empty >/dev/null 2>&1; then
+			fail "Target PostgreSQL database '${pg_db}' already contains rows. Use an empty database or pass --truncate-target explicitly."
+		fi
+	fi
+
+	if [[ "${dry_run}" == "1" ]]; then
+		log "Dry-run: SQLite -> PostgreSQL migration plan:"
+		log "  Source SQLite: ${SQLITE_PATH}"
+		log "  Target PG:     ${pg_user}@${pg_host}:${pg_port}/${pg_db}"
+		PGPASSWORD="${pg_pass}" python3 "${migrator}" \
+			--sqlite-path "${SQLITE_PATH}" \
+			--pg-host "${pg_host}" --pg-port "${pg_port}" \
+			--pg-user "${pg_user}" --pg-db "${pg_db}" --dry-run
+		log "Dry-run complete. No files or databases were modified."
+		return 0
+	fi
+
+	if [[ "${assume_yes}" != "1" && -t 0 ]]; then
+		local ans=""
+		read -r -p "Migrate instance '${INSTANCE_SLUG:-default}' from SQLite to PostgreSQL (${pg_user}@${pg_host}:${pg_port}/${pg_db})? [y/N]: " ans
+		[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] || fail "Database migration aborted by user."
+	fi
+
+	acquire_op_lock
+	log "Creating verified pre-migration full backup..."
+	local pre_bak=""
+	pre_bak="$(create_backup_archive 1 0)"
+	log "Pre-migration backup created: ${pre_bak}"
+
+	local rollback_dir=""
+	rollback_dir="$(create_site_rollback)"
+	[[ -f "${INSTALL_YAML}" ]] && cp -a "${INSTALL_YAML}" "${rollback_dir}/install.yml"
+
+	rollback_db_migration() {
+		warn "SQLite -> PostgreSQL migration failed; rolling back site, env, and systemd state to SQLite..."
+		systemctl stop "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+		restore_site_rollback "${rollback_dir}"
+		if [[ -f "${rollback_dir}/install.yml" ]]; then
+			cp -a "${rollback_dir}/install.yml" "${INSTALL_YAML}"
+		fi
+		rm -rf "${rollback_dir}"
+		systemctl start "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+		release_op_lock
+	}
+
+	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+
+	local pg_user_enc pg_pass_enc pg_db_enc new_db_url
+	pg_user_enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${pg_user}")"
+	pg_pass_enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${pg_pass}")"
+	pg_db_enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${pg_db}")"
+	new_db_url="postgres://${pg_user_enc}:${pg_pass_enc}@${pg_host}:${pg_port}/${pg_db_enc}"
+
+	# Switch package.json + astro.config.mjs + emdash.env to PostgreSQL
+	DB_DRIVER="postgres"
+	POSTGRES_HOST="${pg_host}"
+	POSTGRES_PORT="${pg_port}"
+	PG_DB_NAME="${pg_db}"
+	PG_DB_USER="${pg_user}"
+	PG_DB_PASSWORD="${pg_pass}"
+
+	if ! {
+		patch_site_package_json_common "${SITE_DIR}" "${PROJECT_NAME:-emdash}" "postgres" "${SESSION_DRIVER}" "${STORAGE_DRIVER}" "${ENABLE_PLUGIN_SANDBOX:-1}" &&
+		render_site_astro_config &&
+		update_env_value "DB_DRIVER" "postgres" "${APP_ENV_FILE}" &&
+		update_env_value "POSTGRES_HOST" "${pg_host}" "${APP_ENV_FILE}" &&
+		update_env_value "POSTGRES_PORT" "${pg_port}" "${APP_ENV_FILE}" &&
+		update_env_value "PG_DB_NAME" "${pg_db}" "${APP_ENV_FILE}" &&
+		update_env_value "PG_DB_USER" "${pg_user}" "${APP_ENV_FILE}" &&
+		update_env_value "PG_DB_PASSWORD" "${pg_pass}" "${APP_ENV_FILE}" &&
+		update_env_value "DATABASE_URL" "${new_db_url}" "${APP_ENV_FILE}" &&
+		chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" "${SITE_DIR}"
+	}; then
+		rollback_db_migration
+		fail "Failed to reconfigure site for PostgreSQL."
+	fi
+
+	log "Rebuilding EmDash site for PostgreSQL..."
+	if ! run_as_app_user "HOME='${ROOT_DIR}' npm_config_confirm_modules_purge=false CI=true EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=1 '${APP_BUILD_SCRIPT}'"; then
+		rollback_db_migration
+		fail "Application build failed after switching to PostgreSQL."
+	fi
+
+	log "Initializing PostgreSQL schema via upstream 'emdash migrate'..."
+	# Never bypass migration gate during sqlite-to-postgres: target PG schema MUST be created
+	if ! run_upgrade_migration_gate 0; then
+		rollback_db_migration
+		fail "Upstream PostgreSQL schema initialization failed."
+	fi
+
+	log "Migrating rows from SQLite (${SQLITE_PATH}) to PostgreSQL (${pg_db}) with exact row-count verification..."
+	# Target DB emptiness was already enforced before `emdash migrate`; passing
+	# --truncate-target here cleanly replaces any schema-init seed rows (e.g.
+	# _emdash_media_usage_index_status) with the authoritative SQLite rows while
+	# keeping _emdash_migrations intact.
+	local -a mig_flags=(
+		--sqlite-path "${SQLITE_PATH}"
+		--pg-host "${pg_host}" --pg-port "${pg_port}"
+		--pg-user "${pg_user}" --pg-db "${pg_db}"
+		--truncate-target
+	)
+	if ! PGPASSWORD="${pg_pass}" python3 "${migrator}" "${mig_flags[@]}"; then
+		rollback_db_migration
+		fail "Data transfer or row-count verification failed; rolled back to SQLite."
+	fi
+
+	if [[ -f "${INSTALL_YAML}" ]]; then
+		INSTALL_YAML_FILE="${INSTALL_YAML}" PG_DB_NAME_V="${pg_db}" PG_DB_USER_V="${pg_user}" python3 - <<'PY'
+import os, re
+from pathlib import Path
+p = Path(os.environ["INSTALL_YAML_FILE"])
+text = p.read_text()
+text = re.sub(r"(?m)^(\s*driver:\s*)sqlite$", r"\1postgres", text, count=1)
+text = re.sub(r"(?m)^(\s*db_name:\s*).*$", rf"\g<1>{os.environ['PG_DB_NAME_V']}", text, count=1)
+text = re.sub(r"(?m)^(\s*db_user:\s*).*$", rf"\g<1>{os.environ['PG_DB_USER_V']}", text, count=1)
+p.write_text(text)
+PY
+	fi
+
+	local health_tries="${EMDASHCTL_HEALTH_TRIES:-60}"
+	local setup_tries="${EMDASHCTL_SETUP_TRIES:-20}"
+	systemctl start "${APP_SYSTEMD_SERVICE}"
+	if ! { wait_http_ok "$(local_health_url)" "${health_tries}" && wait_http_ok "$(local_setup_url)" "${setup_tries}"; }; then
+		rollback_db_migration
+		fail "Application did not become healthy on PostgreSQL; rolled back to SQLite."
+	fi
+
+	rm -rf "${rollback_dir}"
+	release_op_lock
+	log "SQLite -> PostgreSQL migration completed and verified healthy!"
+	log "Original SQLite file preserved at ${SQLITE_PATH} (pre-migration backup: ${pre_bak})."
+}
+
 main() {
-	local args command json_flag="0" deep_flag="0" follow="0"
-	mapfile -t args < <(parse_lang_args "$@")
-	set -- "${args[@]}"
+	local command json_flag="0" deep_flag="0" follow="0"
+	parse_lang_args "$@"
+	set -- "${PARSED_ARGS[@]}"
 	[[ $# -gt 0 ]] || { usage; exit 0; }
 	command="$1"
 	shift || true
 	[[ "${command}" == "-h" || "${command}" == "--help" ]] && { usage; exit 0; }
+	if [[ "${command}" == "instances" ]]; then
+		instances_command "$@"
+		return 0
+	fi
 	load_env
 
 	case "${command}" in
@@ -2670,7 +3351,7 @@ main() {
 		backup_command "$@"
 		;;
 	restore)
-		[[ $# -ge 1 ]] || fail "restore requires a backup file"
+		[[ $# -ge 1 ]] || fail "restore requires a backup file or --from-s3 <key|latest>"
 		restore_command "$@"
 		;;
 	upgrade)
@@ -2685,8 +3366,15 @@ main() {
 	rotate-encryption-key)
 		rotate_encryption_key_command "$@"
 		;;
+	migrate-db)
+		[[ $# -ge 1 ]] || fail "Supported migrate-db target: sqlite-to-postgres"
+		migrate_db_command "$@"
+		;;
 	reset-db-password)
 		reset_db_password_command
+		;;
+	uninstall)
+		uninstall_command "$@"
 		;;
 	*)
 		fail "$(ct unknown_command): ${command}"

@@ -70,7 +70,7 @@ sudo bash install.sh --lang=zh-CN --activate
 - PostgreSQL 18 全平台统一来自 `PGDG`（EL 系列按 `uname -m` 自动选择 `x86_64` / `aarch64` 仓库）
 - Session 缓存全平台统一使用 `Valkey`，安装后自动探测实际 systemd unit（`valkey-server` 或 `valkey`）
 - 完整适配 EmDash `1.6.x`：`EMDASH_ENCRYPTION_KEY` 生成与两阶段安全轮转、`@emdash-cms/sandbox-workerd` 插件沙箱、显式 `emdash migrate` 迁移门禁
-- 大陆网络可设置 `EMDASH_MIRROR_PRESET=cn` 加速 npm/Corepack 下载（不改写宿主机全局 APT/DNF 源）
+- 大陆网络可设置 `EMDASH_MIRROR_PRESET=cn` 加速 npm/Corepack 下载，并在无代理时自动启用 Google Fonts 构建期 fast-fail（减少 ~90–120s 超时等待，不改写宿主机全局 APT/DNF 源，也可用 `EMDASH_FAST_FAIL_GOOGLE_FONTS=0` 关闭）
 - 实测边界说明：Debian 13 / Ubuntu 24.04 / Ubuntu 26.04 / EL9 / EL10 均已在 `x86_64` 真机（PVE/Linode）验证；`ARM64` 多架构容器镜像与 `workerd` 运行时由 GitHub Actions `ubuntu-24.04-arm` 原生 Runner 验证。
 
 ## 主要功能
@@ -120,23 +120,36 @@ sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ## 常用命令
 
 ```bash
-emdashctl --lang=zh-CN status
-emdashctl --lang=zh-CN doctor --deep --json
-emdashctl --lang=zh-CN diagnose --json --out /tmp/emdash-diag.json
-emdashctl --lang=zh-CN smoke
-emdashctl --lang=zh-CN logs app
-emdashctl --lang=zh-CN backup [--full] [--encrypt]
-emdashctl --lang=zh-CN restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
-emdashctl --lang=zh-CN upgrade app [--dry-run] [--target <version|latest>]
-emdashctl --lang=zh-CN template diff [--stat]
-emdashctl --lang=zh-CN rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
-emdashctl --lang=zh-CN reset-db-password
+# 无停服更新 CLI 与共享运行库 / 安装单机多实例
+sudo bash install.sh --update-cli
+sudo bash install.sh --lang=zh-CN --instance site2 --activate
+
+# 实例总览与日常运维（所有命令均支持 --instance <name>）
+emdashctl --lang=zh-CN instances [--json]
+emdashctl --lang=zh-CN [--instance <name>] status
+emdashctl --lang=zh-CN [--instance <name>] doctor --deep --json
+emdashctl --lang=zh-CN [--instance <name>] diagnose --json --out /tmp/emdash-diag.json
+emdashctl --lang=zh-CN [--instance <name>] smoke
+emdashctl --lang=zh-CN [--instance <name>] logs app
+emdashctl --lang=zh-CN [--instance <name>] backup [--full] [--encrypt] [--list-s3 [--json]]
+emdashctl --lang=zh-CN [--instance <name>] restore <backup.tar.gz | --from-s3 <key|latest>> [--with-site] [--with-secrets]
+emdashctl --lang=zh-CN [--instance <name>] upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=zh-CN [--instance <name>] template diff [--stat]
+emdashctl --lang=zh-CN [--instance <name>] rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
+emdashctl --lang=zh-CN [--instance <name>] migrate-db sqlite-to-postgres [--dry-run] [--yes]
+emdashctl --lang=zh-CN [--instance <name>] reset-db-password
+emdashctl --lang=zh-CN [--instance <name>] uninstall [--purge-data] [--drop-db] [--confirm-instance <name>]
 ```
 
 说明：
+- `install.sh --update-cli`：无停服原子更新 `/usr/local/bin/emdashctl` 与各实例 `${ROOT_DIR}/lib/`，不重启运行中的服务。
+- 原生单机多实例与模块化 Caddy：`--instance <name>` 独立隔离 `/etc/emdash/instances/<name>`、`/data/emdash-<name>`、`emdash-app-<name>.service` 与自动端口；Caddy 采用 `/etc/emdash/caddy/sites.d/*.caddy` + 用户自定义 `/etc/emdash/caddy/conf.d/*.caddy`（升级与卸载均完整保留用户规则）。
 - `upgrade app` 仅无损升级 `emdash` / `@emdash-cms/*` 依赖并在构建后执行显式数据库迁移门禁，**不再覆盖用户自定义的页面、样式与 `astro.config.mjs`**；如需对照官方模板更新，使用只读命令 `emdashctl template diff`。
 - `diagnose --json` 一键收集全面脱敏的 AI 诊断包（自动屏蔽密码、密钥、Cookie、Bearer、JWT、URL 敏感参数及客户端 IP，支持 `--out` 安全 `0600` 原子输出）。
 - `rotate-encryption-key` 支持 EmDash `1.6.x` 两阶段安全密钥轮转：阶段 1 前置新密钥保留旧密钥解密；阶段 2 裁剪前自动扫描数据库密文 `kid` 引用并要求显式 `--confirm-prune-kid <kid>` 防止密文误删。
+- S3 备份闭环：支持 `BACKUP_KEEP_S3`（默认 14）远端自动清理、`backup --list-s3` 与 `restore --from-s3 <key|latest>`。
+- 迁移助手：`emdashctl migrate-db sqlite-to-postgres` 支持零外部依赖 SQLite → PostgreSQL 18 迁移（外键拓扑排序、序列重置、逐表行数校验、失败自动回滚）；[`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh) 支持 Docker Compose 与原生 systemd 双向迁移。
+- 安全卸载：`emdashctl uninstall` 清理当前实例的 systemd、cron、Caddy 片段与配置，不误伤同机兄弟实例；`--purge-data` / `--drop-db` 必须显式传入 `--confirm-instance <name>`。
 
 ## 运维示例
 

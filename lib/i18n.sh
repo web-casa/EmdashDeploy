@@ -273,17 +273,22 @@ print_usage() {
 EmDash installer
 
 Usage:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 Options:
+  --instance <name>  Install or manage a named isolated instance (/etc/emdash/instances/<name>, /data/emdash-<name>)
+  --update-cli       Atomically update /usr/local/bin/emdashctl and shared libs with zero downtime
   --non-interactive  Use only environment variables and defaults
   --write-only       Generate config and project files only, do not start native services
   --activate         Generate files, build the app, and start native services
   -h, --help         Show help
 
 Common environment variables:
+  EMDASH_INSTALL_INSTANCE
   EMDASH_INSTALL_TEMPLATE
   EMDASH_INSTALL_ROOT_DIR
+  EMDASH_INSTALL_APP_PORT
   EMDASH_INSTALL_DOMAIN
   EMDASH_INSTALL_ADMIN_EMAIL
   EMDASH_INSTALL_DB_DRIVER
@@ -295,7 +300,9 @@ Common environment variables:
   EMDASH_INSTALL_REDIS_PASSWORD
   EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX
   EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE
+  EMDASH_INSTALL_BACKUP_KEEP_S3
   EMDASH_MIRROR_PRESET
+  EMDASH_FAST_FAIL_GOOGLE_FONTS
 EOF
 		;;
 	ja)
@@ -303,9 +310,12 @@ EOF
 EmDash installer
 
 使い方:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 オプション:
+  --instance <name>  独立した複数インスタンスをインストール・管理
+  --update-cli       ダウンタイムなしで emdashctl と共有ライブラリを更新
   --non-interactive  環境変数と既定値のみを使用し、質問しません
   --write-only       設定とプロジェクトファイルのみ生成し、ネイティブサービスは起動しません
   --activate         生成後すぐに build とネイティブサービス起動を実行します
@@ -333,9 +343,12 @@ EOF
 EmDash installer
 
 사용법:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 옵션:
+  --instance <name>  격리된 다중 인스턴스 설치 또는 관리
+  --update-cli       무중단으로 emdashctl 및 공유 라이브러리 업데이트
   --non-interactive  환경 변수와 기본값만 사용하고 질문하지 않습니다
   --write-only       설정과 프로젝트 파일만 생성하고 네이티브 서비스는 시작하지 않습니다
   --activate         생성 후 즉시 build 와 네이티브 서비스 시작을 실행합니다
@@ -363,9 +376,12 @@ EOF
 EmDash installer
 
 Uso:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 Opciones:
+  --instance <name>  Instalar o gestionar una instancia aislada con nombre
+  --update-cli       Actualizar emdashctl y librerías compartidas sin tiempo de inactividad
   --non-interactive  Usa solo variables de entorno y valores predeterminados
   --write-only       Genera solo la configuración y los archivos del proyecto, sin iniciar servicios nativos
   --activate         Genera, compila y arranca los servicios nativos
@@ -393,9 +409,12 @@ EOF
 EmDash installer
 
 Verwendung:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 Optionen:
+  --instance <name>  Benannte isolierte Instanz installieren oder verwalten
+  --update-cli       emdashctl und gemeinsame Bibliotheken ohne Ausfallzeit aktualisieren
   --non-interactive  Nur Umgebungsvariablen und Standardwerte verwenden
   --write-only       Nur Konfiguration und Projektdateien erzeugen, native Dienste nicht starten
   --activate         Dateien erzeugen, App bauen und native Dienste starten
@@ -423,9 +442,12 @@ EOF
 EmDash installer
 
 Utilisation :
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 Options :
+  --instance <name>  Installer ou gérer une instance isolée nommée
+  --update-cli       Mettre à jour emdashctl et les bibliothèques partagées sans interruption
   --non-interactive  Utiliser uniquement les variables d’environnement et les valeurs par défaut
   --write-only       Générer seulement la configuration et les fichiers du projet, sans démarrer les services natifs
   --activate         Générer, construire puis démarrer les services natifs
@@ -453,17 +475,22 @@ EOF
 EmDash 安装器
 
 用法:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 参数:
+  --instance <name>  安装或管理独立多实例（/etc/emdash/instances/<name>、/data/emdash-<name>）
+  --update-cli       无停服原子更新 /usr/local/bin/emdashctl 与共享运行库
   --non-interactive  仅使用环境变量和默认值，不提问
   --write-only       只生成配置和项目文件，不启动本机服务
   --activate         生成后立即构建并启动本机服务
   -h, --help         显示帮助
 
 常用环境变量:
+  EMDASH_INSTALL_INSTANCE
   EMDASH_INSTALL_TEMPLATE
   EMDASH_INSTALL_ROOT_DIR
+  EMDASH_INSTALL_APP_PORT
   EMDASH_INSTALL_DOMAIN
   EMDASH_INSTALL_ADMIN_EMAIL
   EMDASH_INSTALL_DB_DRIVER
@@ -475,7 +502,9 @@ EmDash 安装器
   EMDASH_INSTALL_REDIS_PASSWORD
   EMDASH_INSTALL_ENABLE_PLUGIN_SANDBOX
   EMDASH_INSTALL_BACKUP_ENCRYPTION_PASSPHRASE
+  EMDASH_INSTALL_BACKUP_KEEP_S3
   EMDASH_MIRROR_PRESET
+  EMDASH_FAST_FAIL_GOOGLE_FONTS
 EOF
 		;;
 	zh-TW)
@@ -483,9 +512,12 @@ EOF
 EmDash 安裝器
 
 用法:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 參數:
+  --instance <name>  安裝或管理獨立多實例（/etc/emdash/instances/<name>、/data/emdash-<name>）
+  --update-cli       無停服原子更新 /usr/local/bin/emdashctl 與共享執行函式庫
   --non-interactive  僅使用環境變數與預設值，不提問
   --write-only       只產生設定與專案檔案，不啟動原生服務
   --activate         產生後立即建置並啟動原生服務
@@ -513,9 +545,12 @@ EOF
 EmDash installer
 
 Uso:
-  bash install.sh [--lang <code>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh [--lang <code>] [--instance <name>] [--non-interactive] [--write-only] [--activate]
+  bash install.sh --update-cli [--instance <name>]
 
 Opções:
+  --instance <name>  Instalar ou gerenciar uma instância isolada nomeada
+  --update-cli       Atualizar emdashctl e bibliotecas compartilhadas sem tempo de inatividade
   --non-interactive  Usa apenas variáveis de ambiente e valores padrão
   --write-only       Gera apenas a configuração e os arquivos do projeto, sem iniciar os serviços nativos
   --activate         Gera, compila e inicia os serviços nativos

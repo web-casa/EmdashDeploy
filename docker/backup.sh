@@ -13,7 +13,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-${SCRIPT_DIR}/compose.yml}"
+COMPOSE_FILES=()
 ENV_FILE="${ENV_FILE:-${SCRIPT_DIR}/.env}"
 OUTPUT_DIR="${BACKUP_OUTPUT_DIR:-${SCRIPT_DIR}/backups}"
 ENCRYPT_MODE="0"
@@ -21,7 +21,7 @@ ENCRYPT_MODE="0"
 usage() {
 	cat <<'EOF'
 Usage:
-  bash docker/backup.sh [--env-file <path>] [--compose-file <path>] [--out-dir <dir>] [--encrypt]
+  bash docker/backup.sh [--env-file <path>] [--compose-file <path>]... [--out-dir <dir>] [--encrypt]
 
 Environment:
   BACKUP_ENCRYPTION_PASSPHRASE   Required when --encrypt is set (must NOT reuse EMDASH_ENCRYPTION_KEY)
@@ -40,11 +40,11 @@ while [[ $# -gt 0 ]]; do
 		[[ $# -gt 0 ]] || fail "Missing value for --env-file"
 		ENV_FILE="$1"
 		;;
-	--compose-file=*) COMPOSE_FILE="${1#--compose-file=}" ;;
+	--compose-file=*) COMPOSE_FILES+=("${1#--compose-file=}") ;;
 	--compose-file)
 		shift
 		[[ $# -gt 0 ]] || fail "Missing value for --compose-file"
-		COMPOSE_FILE="$1"
+		COMPOSE_FILES+=("$1")
 		;;
 	--out-dir=*) OUTPUT_DIR="${1#--out-dir=}" ;;
 	--out-dir)
@@ -64,7 +64,12 @@ done
 
 command -v docker >/dev/null 2>&1 || fail "docker is required"
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is required"
-[[ -f "${COMPOSE_FILE}" ]] || fail "Compose file not found: ${COMPOSE_FILE}"
+if (( ${#COMPOSE_FILES[@]} == 0 )); then
+	COMPOSE_FILES=("${COMPOSE_FILE:-${SCRIPT_DIR}/compose.yml}")
+fi
+for cf in "${COMPOSE_FILES[@]}"; do
+	[[ -f "${cf}" ]] || fail "Compose file not found: ${cf}"
+done
 
 # Load non-exported defaults from env file if present without overriding explicit shell env
 if [[ -f "${ENV_FILE}" ]]; then
@@ -90,7 +95,10 @@ if [[ "${ENCRYPT_MODE}" == "1" ]]; then
 	fi
 fi
 
-compose_args=(-f "${COMPOSE_FILE}")
+compose_args=()
+for cf in "${COMPOSE_FILES[@]}"; do
+	compose_args+=(-f "${cf}")
+done
 [[ -f "${ENV_FILE}" ]] && compose_args+=(--env-file "${ENV_FILE}")
 [[ "${DB_DRIVER}" == "postgres" ]] && compose_args+=(--profile postgres)
 

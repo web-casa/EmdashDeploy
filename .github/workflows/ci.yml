@@ -14,16 +14,22 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
 
       - name: Shell syntax and Python compile checks
         run: |
-          bash -n bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh docker/backup.sh lib/*.sh scripts/*.sh linode-test.sh linode-test-matrix.sh
-          python3 -m py_compile lib/astro-patch.py
+          bash -n bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh docker/backup.sh docker/restore.sh lib/*.sh scripts/*.sh linode-test.sh linode-test-matrix.sh
+          python3 -m py_compile lib/astro-patch.py lib/migrate-sqlite-to-pg.py
+          node --check lib/fast-fail-google-fonts.mjs
 
       - name: ShellCheck static analysis (error gate)
         run: |
-          shellcheck -S error bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh docker/backup.sh lib/*.sh scripts/*.sh
+          shellcheck -S error bootstrap.sh install.sh install-emdash.sh emdashctl docker/entrypoint.sh docker/backup.sh docker/restore.sh lib/*.sh scripts/*.sh
 
       - name: Run offline regression test suites
         run: |
@@ -37,7 +43,10 @@ jobs:
             scripts/test-doctor-regression.sh \
             scripts/test-diagnose-regression.sh \
             scripts/test-rotate-key-regression.sh \
-            scripts/test-docker-compose-regression.sh; do
+            scripts/test-docker-compose-regression.sh \
+            scripts/test-multi-instance-regression.sh \
+            scripts/test-s3-backup-restore-regression.sh \
+            scripts/test-migrate-db-regression.sh; do
             echo "=== Running $t ==="
             bash "$t"
           done
@@ -47,10 +56,10 @@ jobs:
     needs: lint-and-regression
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -87,3 +96,79 @@ jobs:
           test -f ".emdash/migrations.json"
           pnpm exec emdash init --database "${WORK_DIR}/data/data.db"
           SQLITE_PATH="${WORK_DIR}/data/data.db" pnpm exec emdash migrate --status --json
+
+  docker-kit-smoke:
+    runs-on: ubuntu-24.04
+    needs: lint-and-regression
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build custom site image and test Docker backup/restore loop
+        run: |
+          set -Eeuo pipefail
+          WORK_DIR="$(mktemp -d)"
+          cleanup() {
+            docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" down -v >/dev/null 2>&1 || true
+            rm -rf "${WORK_DIR}"
+          }
+          trap cleanup EXIT
+
+          git clone --depth 1 --branch main https://github.com/emdash-cms/templates.git "${WORK_DIR}/templates"
+          cp -a "${WORK_DIR}/templates/blog" "${WORK_DIR}/custom-site"
+          mkdir -p "${WORK_DIR}/backups"
+
+          cat >"${WORK_DIR}/.env" <<EOF
+          COMPOSE_PROJECT_NAME=ci-emdash-custom
+          CUSTOM_SITE_DIR=${WORK_DIR}/custom-site
+          APP_BIND_IP=127.0.0.1
+          APP_PORT=18300
+          EMDASH_SITE_URL=http://127.0.0.1:18300
+          DB_DRIVER=sqlite
+          SESSION_DRIVER=file
+          STORAGE_DRIVER=local
+          ENABLE_PLUGIN_SANDBOX=1
+          EOF
+
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" build
+          ENC_KEY="$(docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" run --rm emdash secrets-generate | grep -oE 'emdash_enc_v1_[A-Za-z0-9_-]{43}' | tail -n 1)"
+          test -n "${ENC_KEY}"
+          printf 'EMDASH_ENCRYPTION_KEY=%s\n' "${ENC_KEY}" >> "${WORK_DIR}/.env"
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" up -d
+
+          for _ in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:18300/healthz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18300/healthz
+          curl -fsS http://127.0.0.1:18300/_emdash/api/setup/status | grep -q '"data"'
+
+          # Seed marker row + upload file inside container, then run encrypted docker/backup.sh
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            python3 -c "import sqlite3; c=sqlite3.connect('/data/sqlite/data.db'); c.execute('CREATE TABLE IF NOT EXISTS _ci_smoke_marker (id INTEGER PRIMARY KEY, val TEXT)'); c.execute(\"INSERT INTO _ci_smoke_marker (id, val) VALUES (1, 'before-backup')\"); c.commit(); c.close()"
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            sh -c "mkdir -p /data/uploads && printf 'hello-upload\n' > /data/uploads/marker.txt"
+
+          BACKUP_ENCRYPTION_PASSPHRASE="ci-backup-secret" \
+            bash docker/backup.sh --compose-file docker/compose.yml --compose-file docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" --out-dir "${WORK_DIR}/backups" --encrypt
+
+          BACKUP_FILE="$(ls -1t "${WORK_DIR}/backups"/*-backup-*.tar.gz.enc | head -n 1)"
+          test -f "${BACKUP_FILE}"
+
+          # Mutate DB and remove upload file, then restore with docker/restore.sh
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            python3 -c "import sqlite3; c=sqlite3.connect('/data/sqlite/data.db'); c.execute(\"UPDATE _ci_smoke_marker SET val = 'corrupted' WHERE id = 1\"); c.commit(); c.close()"
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            rm -f /data/uploads/marker.txt
+
+          BACKUP_ENCRYPTION_PASSPHRASE="ci-backup-secret" \
+            bash docker/restore.sh "${BACKUP_FILE}" --compose-file docker/compose.yml --compose-file docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" --yes
+
+          RESTORED_VAL="$(docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            python3 -c "import sqlite3; print(sqlite3.connect('/data/sqlite/data.db').execute('SELECT val FROM _ci_smoke_marker WHERE id=1').fetchone()[0])")"
+          test "${RESTORED_VAL}" = "before-backup"
+          docker compose -f docker/compose.yml -f docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" exec -T emdash \
+            test -f /data/uploads/marker.txt
+          curl -fsS http://127.0.0.1:18300/healthz

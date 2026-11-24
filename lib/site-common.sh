@@ -345,10 +345,16 @@ set -Eeuo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\${PATH:-}"
 export NODE_OPTIONS="--max-old-space-size=${node_heap}"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+export npm_config_confirm_modules_purge=false
 if [[ -f "${APP_ENV_FILE}" ]]; then
 	set -a
 	. "${APP_ENV_FILE}"
 	set +a
+fi
+if [[ "\${EMDASH_FAST_FAIL_GOOGLE_FONTS:-0}" == "1" \
+	&& -z "\${HTTPS_PROXY:-}\${https_proxy:-}\${ALL_PROXY:-}\${all_proxy:-}" \
+	&& -f "${lib_dir}/fast-fail-google-fonts.mjs" ]]; then
+	export NODE_OPTIONS="\${NODE_OPTIONS} --import ${lib_dir}/fast-fail-google-fonts.mjs"
 fi
 if [[ -f "${lib_dir}/site-common.sh" ]]; then
 	. "${lib_dir}/site-common.sh"
@@ -358,9 +364,9 @@ else
 fi
 cd "${SITE_DIR}"
 if [[ "\${EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE:-0}" == "1" || ! -f "pnpm-lock.yaml" ]]; then
-	pnpm install --no-frozen-lockfile
+	pnpm install --no-frozen-lockfile --config.confirmModulesPurge=false
 else
-	pnpm install --frozen-lockfile
+	pnpm install --frozen-lockfile --config.confirmModulesPurge=false
 fi
 pnpm build
 EOF

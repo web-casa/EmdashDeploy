@@ -26,6 +26,8 @@ prepare_layout() {
 	ensure_dir "${BACKUP_DIR}"
 	ensure_dir "${TMP_DIR}"
 	ensure_dir "${CADDY_DIR}"
+	ensure_dir "${CADDY_SITES_DIR}"
+	ensure_dir "${CADDY_CONF_DIR}"
 	ensure_dir "${UPLOADS_DIR}"
 	ensure_dir "${SESSIONS_DIR}"
 	ensure_dir "${SQLITE_DIR}"
@@ -174,6 +176,9 @@ render_app_env() {
 	{
 		append_env_line HOST "${APP_BIND_HOST}"
 		append_env_line PORT "${APP_PORT}"
+		append_env_line INSTANCE_NAME "${INSTANCE_NAME:-}"
+		append_env_line INSTANCE_SLUG "${INSTANCE_SLUG:-default}"
+		append_env_line CONFIG_DIR "${CONFIG_DIR}"
 		append_env_line PROJECT_NAME "${PROJECT_NAME}"
 		append_env_line ROOT_DIR "${ROOT_DIR}"
 		append_env_line SITE_DIR "${SITE_DIR}"
@@ -189,6 +194,11 @@ render_app_env() {
 		append_env_line APP_RUN_GROUP "${APP_RUN_GROUP}"
 		append_env_line APP_BUILD_SCRIPT "${APP_BUILD_SCRIPT}"
 		append_env_line APP_START_SCRIPT "${APP_START_SCRIPT}"
+		append_env_line CADDYFILE_PATH "${CADDYFILE_PATH}"
+		append_env_line CADDY_SITE_FILE "${CADDY_SITE_FILE}"
+		append_env_line CADDY_SITES_DIR "${CADDY_SITES_DIR}"
+		append_env_line CADDY_CONF_DIR "${CADDY_CONF_DIR}"
+		append_env_line BACKUP_CRON_FILE "${BACKUP_CRON_FILE}"
 		append_env_line TEMPLATES_REPO "${TEMPLATES_REPO}"
 		append_env_line TEMPLATES_REF "${TEMPLATES_REF}"
 		append_env_line TEMPLATE "${TEMPLATE}"
@@ -201,6 +211,7 @@ render_app_env() {
 		append_env_line ENABLE_PLUGIN_SANDBOX "${ENABLE_PLUGIN_SANDBOX:-1}"
 		append_env_line LIB_SCHEMA_VERSION "${EMDASH_LIB_SCHEMA_VERSION:-1}"
 		append_env_line MIRROR_PRESET "${MIRROR_PRESET:-}"
+		append_env_line EMDASH_FAST_FAIL_GOOGLE_FONTS "${EMDASH_FAST_FAIL_GOOGLE_FONTS:-0}"
 		[[ -n "${NPM_CONFIG_REGISTRY:-}" ]] && append_env_line NPM_CONFIG_REGISTRY "${NPM_CONFIG_REGISTRY}"
 		[[ -n "${COREPACK_NPM_REGISTRY:-}" ]] && append_env_line COREPACK_NPM_REGISTRY "${COREPACK_NPM_REGISTRY}"
 		append_env_line DOMAIN "${DOMAIN}"
@@ -233,12 +244,13 @@ render_app_env() {
 		append_env_line S3_ACCESS_KEY_ID "${S3_ACCESS_KEY_ID}"
 		append_env_line S3_SECRET_ACCESS_KEY "${S3_SECRET_ACCESS_KEY}"
 		append_env_line S3_PUBLIC_URL "${S3_PUBLIC_URL}"
-			append_env_line BACKUP_ENABLED "${BACKUP_ENABLED}"
-			append_env_line BACKUP_SCHEDULE "${BACKUP_SCHEDULE}"
-			append_env_line BACKUP_KEEP_LOCAL "${BACKUP_KEEP_LOCAL}"
-			append_env_line BACKUP_DIR "${BACKUP_DIR}"
-			append_env_line BACKUP_TARGET_TYPE "${BACKUP_TARGET_TYPE}"
-			[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] && append_env_line BACKUP_ENCRYPTION_PASSPHRASE "${BACKUP_ENCRYPTION_PASSPHRASE}"
+		append_env_line BACKUP_ENABLED "${BACKUP_ENABLED}"
+		append_env_line BACKUP_SCHEDULE "${BACKUP_SCHEDULE}"
+		append_env_line BACKUP_KEEP_LOCAL "${BACKUP_KEEP_LOCAL}"
+		append_env_line BACKUP_KEEP_S3 "${BACKUP_KEEP_S3:-14}"
+		append_env_line BACKUP_DIR "${BACKUP_DIR}"
+		append_env_line BACKUP_TARGET_TYPE "${BACKUP_TARGET_TYPE}"
+		[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] && append_env_line BACKUP_ENCRYPTION_PASSPHRASE "${BACKUP_ENCRYPTION_PASSPHRASE}"
 		append_env_line BACKUP_S3_ENDPOINT "${BACKUP_S3_ENDPOINT}"
 		append_env_line BACKUP_S3_REGION "${BACKUP_S3_REGION}"
 		append_env_line BACKUP_S3_BUCKET "${BACKUP_S3_BUCKET}"
@@ -334,24 +346,33 @@ render_caddy_file() {
 	fi
 
 	local site_header=""
+	local global_email=""
+	local global_email_file="${CADDY_DIR}/global.email"
 	local global_block=""
+
+	ensure_dir "${CADDY_DIR}"
+	ensure_dir "${CADDY_SITES_DIR}"
+	ensure_dir "${CADDY_CONF_DIR}"
+
 	if [[ "${ENABLE_HTTPS}" == "1" ]]; then
 		site_header="${DOMAIN}"
 	else
 		site_header="http://${DOMAIN}"
 	fi
-	if [[ -n "${ADMIN_EMAIL}" ]]; then
-		global_block=$(cat <<EOF
-{
-	email ${ADMIN_EMAIL}
-}
 
-EOF
-)
+	# Maintain a single host-wide Caddy global email block so multiple instances
+	# never emit duplicate global option blocks.
+	if [[ -n "${ADMIN_EMAIL:-}" ]]; then
+		printf '%s\n' "${ADMIN_EMAIL}" >"${global_email_file}"
+		chmod 0644 "${global_email_file}"
+	fi
+	if [[ -f "${global_email_file}" ]]; then
+		global_email="$(head -n 1 "${global_email_file}" | tr -d '\r\n')"
 	fi
 
-	cat >"${CADDYFILE_PATH}" <<EOF
-${global_block}
+	# Write per-instance site snippet (never touches user-owned conf.d/*.caddy)
+	cat >"${CADDY_SITE_FILE}" <<EOF
+# Managed by EmdashDeploy for instance: ${INSTANCE_SLUG:-default}
 ${site_header} {
 	encode zstd gzip
 
@@ -363,13 +384,25 @@ ${site_header} {
 	reverse_proxy 127.0.0.1:${APP_PORT}
 }
 EOF
+	chmod 0644 "${CADDY_SITE_FILE}"
+
+	# Write modular main Caddyfile importing sites.d and user conf.d
+	{
+		printf '# Managed by EmdashDeploy (modular multi-site layout)\n'
+		printf '# Add custom Caddy snippets under %s/*.caddy — they are preserved across upgrades.\n' "${CADDY_CONF_DIR}"
+		if [[ -n "${global_email}" ]]; then
+			printf '{\n\temail %s\n}\n\n' "${global_email}"
+		fi
+		printf 'import %s/*.caddy\n' "${CADDY_SITES_DIR}"
+		printf 'import %s/*.caddy\n' "${CADDY_CONF_DIR}"
+	} >"${CADDYFILE_PATH}"
 	chmod 0644 "${CADDYFILE_PATH}"
 }
 
 render_systemd_service() {
 	cat >"${APP_SYSTEMD_UNIT}" <<EOF
 [Unit]
-Description=EmDash App
+Description=EmDash App (${INSTANCE_SLUG:-default})
 After=network-online.target
 Wants=network-online.target
 $( [[ "${DB_DRIVER}" == "postgres" ]] && printf 'After=%s.service\n' "${POSTGRES_SERVICE}" )
@@ -400,6 +433,8 @@ install_emdashctl_script() {
 	install -d -m 0755 "${ROOT_DIR}/lib"
 	atomic_install_file 0644 "${SCRIPT_DIR}/lib/site-common.sh" "${ROOT_DIR}/lib/site-common.sh"
 	atomic_install_file 0644 "${SCRIPT_DIR}/lib/astro-patch.py" "${ROOT_DIR}/lib/astro-patch.py"
+	[[ -f "${SCRIPT_DIR}/lib/fast-fail-google-fonts.mjs" ]] && atomic_install_file 0644 "${SCRIPT_DIR}/lib/fast-fail-google-fonts.mjs" "${ROOT_DIR}/lib/fast-fail-google-fonts.mjs"
+	[[ -f "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" ]] && atomic_install_file 0644 "${SCRIPT_DIR}/lib/migrate-sqlite-to-pg.py" "${ROOT_DIR}/lib/migrate-sqlite-to-pg.py"
 	remove_legacy_emdashctl_aliases
 }
 
@@ -581,10 +616,12 @@ build_site() {
 	log "构建 EmDash 站点"
 	install -d -o "${APP_RUN_USER}" -g "${APP_RUN_GROUP}" \
 		"${APP_DIR}" "${SITE_DIR}" "${DATA_DIR}" "${TMP_DIR}" \
-		"${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}"
+		"${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}" \
+		"${ROOT_DIR}/.cache" "${ROOT_DIR}/.local" "${ROOT_DIR}/.config"
 	chown -R "${APP_RUN_USER}:${APP_RUN_GROUP}" \
-		"${SITE_DIR}" "${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}" "${TMP_DIR}"
-	runuser -u "${APP_RUN_USER}" -- bash -lc "EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=${allow_lockfile_update} '${APP_BUILD_SCRIPT}'"
+		"${SITE_DIR}" "${UPLOADS_DIR}" "${SESSIONS_DIR}" "${SQLITE_DIR}" "${TMP_DIR}" \
+		"${ROOT_DIR}/.cache" "${ROOT_DIR}/.local" "${ROOT_DIR}/.config"
+	runuser -u "${APP_RUN_USER}" -- bash -lc "HOME='${ROOT_DIR}' EMDASH_BUILD_ALLOW_LOCKFILE_UPDATE=${allow_lockfile_update} '${APP_BUILD_SCRIPT}'"
 	ensure_site_encryption_key_after_build
 }
 
