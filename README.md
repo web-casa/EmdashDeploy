@@ -85,6 +85,22 @@ For PostgreSQL 18 + Valkey 8 profiles, local China mirror builds (`compose.build
 
 ---
 
+## Live Deployment Walkthrough (Screenshots)
+
+Captured end-to-end on a fresh Ubuntu 24.04 VPS and Docker host running **EmdashDeploy `1.6.0-hi.5`** (click any screenshot to view full resolution):
+
+| 1. Interactive Installer Wizard (`--lang=en`) | 2. Native Build, Caddy & Health Verification |
+| :---: | :---: |
+| ![Interactive installer wizard](./docs/images/01-interactive-wizard-en.png) | ![Native install summary](./docs/images/02-install-summary-en.png) |
+| **3. Live EmDash `1.6.0` Blog Frontend** | **4. EmDash `/_emdash/admin` Passkey Setup Wizard** |
+| ![EmDash blog frontend](./docs/images/03-site-frontend.png) | ![EmDash admin setup wizard](./docs/images/04-admin-setup.png) |
+| **5. Multi-Instance Hosting & Modular Caddy (`sites.d/`)** | **6. Deep Health Diagnostics (`emdashctl doctor --deep`)** |
+| ![Multi-instance and modular Caddy](./docs/images/05-multi-instance.png) | ![Deep health check](./docs/images/06-doctor-deep.png) |
+| **7. Encrypted Backup (`0600`) & Redacted Diagnostics** | **8. Docker Compose `1.6.0-hi.5` (PG 18 + Valkey 8)** |
+| ![Encrypted backup and redacted diagnose](./docs/images/07-backup-diagnose-en.png) | ![Docker Compose PG 18 and Valkey 8](./docs/images/08-docker-compose.png) |
+
+---
+
 ## Key Features (`1.6.0-hi.5`)
 
 - **Full EmDash `1.6.x` Native Support**:

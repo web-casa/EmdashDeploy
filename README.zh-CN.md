@@ -85,6 +85,22 @@ PostgreSQL 18 + Valkey 8 profiles、大陆本地加速构建（`compose.build.ym
 
 ---
 
+## 全流程实测截图
+
+以下配图均在真实 Ubuntu 24.04 虚拟机与 Docker 宿主机上运行 **EmdashDeploy `1.6.0-hi.5`** 全链路采集（点击任意图片可查看大图）：
+
+| 1. 交互式安装向导（`--lang=zh-CN`） | 2. 原生构建、Caddy 校验与完成摘要 |
+| :---: | :---: |
+| ![交互式安装向导](./docs/images/01-interactive-wizard-zh.png) | ![原生安装完成摘要](./docs/images/02-install-summary-zh.png) |
+| **3. EmDash `1.6.0` 博客前台实拍** | **4. `/_emdash/admin` Passkey 初始化向导** |
+| ![EmDash 博客前台](./docs/images/03-site-frontend.png) | ![EmDash 后台初始化向导](./docs/images/04-admin-setup.png) |
+| **5. 单机多实例与模块化 Caddy（`sites.d/`）** | **6. 深度运维体检（`emdashctl doctor --deep`）** |
+| ![单机多实例与模块化 Caddy](./docs/images/05-multi-instance.png) | ![深度运维体检](./docs/images/06-doctor-deep.png) |
+| **7. `0600` 加密备份与一键脱敏诊断包** | **8. Docker Compose `1.6.0-hi.5`（PG 18 + Valkey 8）** |
+| ![加密备份与脱敏诊断包](./docs/images/07-backup-diagnose-zh.png) | ![Docker Compose 生产栈](./docs/images/08-docker-compose.png) |
+
+---
+
 ## 核心特性（`1.6.0-hi.5`）
 
 - **完整适配 EmDash `1.6.x` 安全与运行时规范**：
