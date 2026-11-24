@@ -71,12 +71,16 @@ for cf in "${COMPOSE_FILES[@]}"; do
 	[[ -f "${cf}" ]] || fail "Compose file not found: ${cf}"
 done
 
-# Load non-exported defaults from env file if present without overriding explicit shell env
+# Preserve caller-supplied passphrase before sourcing .env
+CALLER_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 if [[ -f "${ENV_FILE}" ]]; then
 	set -a
 	# shellcheck disable=SC1090
 	source "${ENV_FILE}"
 	set +a
+fi
+if [[ -n "${CALLER_PASSPHRASE}" ]]; then
+	BACKUP_ENCRYPTION_PASSPHRASE="${CALLER_PASSPHRASE}"
 fi
 
 DB_DRIVER="${DB_DRIVER:-sqlite}"

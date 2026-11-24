@@ -174,7 +174,15 @@ export EMDASH_LOCK_FILE="${TMP_DIR}/s3.lock"
 export PATH="${FAKE_BIN}:${PATH}"
 
 # 1. Run encrypted backup -> uploads to S3 and prunes remote to BACKUP_KEEP_S3=2
-bash "${SCRIPT_DIR}/emdashctl" backup --encrypt >/dev/null
+BACKUP_STDOUT="$(bash "${SCRIPT_DIR}/emdashctl" backup --encrypt 2>/dev/null)"
+if grep -Fq 'Pruned old S3 backup' <<<"${BACKUP_STDOUT}"; then
+	printf '[ERROR] S3 prune log leaked into backup stdout: %s\n' "${BACKUP_STDOUT}" >&2
+	exit 1
+fi
+grep -Eq '^\[INFO\] Backup complete: .*/emdash-backup-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$' <<<"${BACKUP_STDOUT}" || {
+	printf '[ERROR] Unexpected backup stdout format: %s\n' "${BACKUP_STDOUT}" >&2
+	exit 1
+}
 
 # Verify non-matching object was NEVER deleted
 [[ -f "${MOCK_S3_DIR}/test-bucket/site-a/keep-me-forever.txt" ]]

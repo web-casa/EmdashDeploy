@@ -106,7 +106,7 @@ fi
 EXTRACT_DIR="${TMP_DIR}/extracted"
 mkdir -p "${EXTRACT_DIR}"
 
-# Safe extraction (rejects path traversal, absolute paths, symlinks, device nodes)
+# Safe extraction of meta/ and data/ (rejects path traversal, symlinks, hardlinks, device nodes)
 TAR_PATH="${TAR_PATH}" EXTRACT_DIR="${EXTRACT_DIR}" python3 - <<'PY'
 import os, tarfile
 from pathlib import Path
@@ -115,19 +115,26 @@ tar_path = os.environ["TAR_PATH"]
 dest = Path(os.environ["EXTRACT_DIR"]).resolve()
 
 with tarfile.open(tar_path, "r:gz") as tf:
+    members_to_extract = []
     for m in tf.getmembers():
+        norm = m.name.lstrip("./")
+        # Docker restore only uses meta/ and data/ (skip site/ and scripts/ from native
+        # full backups, which may contain upstream template symlinks like site/.claude/skills).
+        if norm and not (norm == "meta" or norm.startswith("meta/") or norm == "data" or norm.startswith("data/")):
+            continue
         if m.issym() or m.islnk() or m.isdev():
             raise SystemExit(f"Refusing unsafe tar member (symlink/hardlink/device): {m.name}")
         target = (dest / m.name).resolve()
         if target != dest and dest not in target.parents:
             raise SystemExit(f"Refusing path traversal tar member: {m.name}")
+        members_to_extract.append(m)
     if hasattr(tarfile, "data_filter"):
-        tf.extractall(dest, filter="data")
+        tf.extractall(dest, members=members_to_extract, filter="data")
     else:
-        tf.extractall(dest)
+        tf.extractall(dest, members=members_to_extract)
 PY
 
-# Verify manifest driver compatibility and SHA-256 checksums when present
+# Verify manifest driver compatibility and SHA-256 checksums for meta/ and data/ when present
 if [[ -f "${EXTRACT_DIR}/meta/manifest.json" ]]; then
 	EXTRACT_DIR="${EXTRACT_DIR}" EXPECTED_DB="${DB_DRIVER}" python3 - <<'PY'
 import hashlib, json, os
@@ -138,8 +145,12 @@ manifest = json.loads((root / "meta" / "manifest.json").read_text())
 m_db = manifest.get("db_driver", "")
 if m_db and m_db != os.environ["EXPECTED_DB"]:
     raise SystemExit(f"Backup DB driver ({m_db}) does not match target DB_DRIVER ({os.environ['EXPECTED_DB']}).")
+verified = 0
 for rel, expected_sha in (manifest.get("files") or {}).items():
-    p = root / rel
+    norm = rel.lstrip("./")
+    if not (norm.startswith("meta/") or norm.startswith("data/")):
+        continue
+    p = root / norm
     if not p.is_file():
         raise SystemExit(f"Manifest listed file missing from archive: {rel}")
     h = hashlib.sha256()
@@ -148,7 +159,8 @@ for rel, expected_sha in (manifest.get("files") or {}).items():
             h.update(chunk)
     if h.hexdigest() != expected_sha:
         raise SystemExit(f"SHA-256 checksum mismatch for {rel}")
-print(f"[INFO] Manifest verified ({len(manifest.get('files') or {})} files, db_driver={m_db or os.environ['EXPECTED_DB']})")
+    verified += 1
+print(f"[INFO] Manifest verified ({verified} files, db_driver={m_db or os.environ['EXPECTED_DB']})")
 PY
 fi
 
@@ -178,6 +190,16 @@ PY
 elif [[ "${DB_DRIVER}" == "postgres" ]]; then
 	[[ -f "${EXTRACT_DIR}/data/postgres.dump" ]] || fail "data/postgres.dump not found in archive"
 	docker compose "${compose_args[@]}" up -d postgres
+	pg_ready="0"
+	for _ in $(seq 1 30); do
+		if docker compose "${compose_args[@]}" exec -T postgres \
+			psql -U "${PG_DB_USER}" -d "${PG_DB_NAME}" -Atc "SELECT 1" >/dev/null 2>&1; then
+			pg_ready="1"
+			break
+		fi
+		sleep 2
+	done
+	[[ "${pg_ready}" == "1" ]] || fail "PostgreSQL container did not become ready for database ${PG_DB_NAME}."
 	TS="$(date +%s)"
 	TMP_DB="${PG_DB_NAME}_restore_${TS}"
 	OLD_DB="${PG_DB_NAME}_pre_restore_${TS}"
@@ -205,6 +227,9 @@ if [[ "${STORAGE_DRIVER}" == "local" && -d "${EXTRACT_DIR}/data/uploads" ]]; the
 fi
 
 log "Starting emdash container and verifying health..."
+if [[ "${SESSION_DRIVER:-file}" == "redis" ]]; then
+	docker compose "${compose_args[@]}" up -d valkey
+fi
 docker compose "${compose_args[@]}" up -d emdash
 for _ in $(seq 1 30); do
 	if docker compose "${compose_args[@]}" exec -T emdash sh -c \

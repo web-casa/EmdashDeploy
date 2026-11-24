@@ -148,12 +148,16 @@ load_site_common() {
 }
 
 load_env() {
+	local caller_backup_passphrase="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 	resolve_env_file_for_instance
 	[[ -f "${ENV_FILE}" ]] || fail "$(ct missing_env): ${ENV_FILE}"
 	set -a
 	# shellcheck disable=SC1090
 	source "${ENV_FILE}"
 	set +a
+	if [[ -n "${caller_backup_passphrase}" ]]; then
+		BACKUP_ENCRYPTION_PASSPHRASE="${caller_backup_passphrase}"
+	fi
 	INSTANCE_NAME="${INSTANCE_NAME:-}"
 	INSTANCE_SLUG="${INSTANCE_SLUG:-${INSTANCE_NAME:-default}}"
 	CONFIG_DIR="${CONFIG_DIR:-$(dirname "${ENV_FILE}")}"
@@ -1645,7 +1649,7 @@ prune_s3_backups() {
 	BACKUP_S3_PREFIX="${BACKUP_S3_PREFIX:-backups}" \
 	BACKUP_KEEP_S3="${keep}" \
 	python3 - <<'PY'
-import os, re
+import os, re, sys
 import boto3
 from botocore.config import Config
 
@@ -1676,7 +1680,7 @@ for page in paginator.paginate(Bucket=os.environ["BACKUP_S3_BUCKET"], Prefix=sea
 items.sort(reverse=True)
 for _, _, old_key in items[keep:]:
     client.delete_object(Bucket=os.environ["BACKUP_S3_BUCKET"], Key=old_key)
-    print(f"[INFO] Pruned old S3 backup: {old_key}")
+    print(f"[INFO] Pruned old S3 backup: {old_key}", file=sys.stderr)
 PY
 }
 

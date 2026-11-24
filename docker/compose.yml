@@ -1,4 +1,4 @@
-# EmdashDeploy 1.6.0-hi.4 — Multi-service / Multi-instance Docker Compose Stack
+# EmdashDeploy 1.6.0-hi.5 — Multi-service / Multi-instance Docker Compose Stack
 #
 # Designed to coexist cleanly with other services on the same host:
 #   - Uses prebuilt multi-arch GHCR images by default (never mixes image + build)
@@ -12,7 +12,7 @@
 
 services:
   emdash:
-    image: ${EMDASH_IMAGE:-ghcr.io/web-casa/emdash-deploy:1.6.0-hi.4-blog-sqlite}
+    image: ${EMDASH_IMAGE:-ghcr.io/web-casa/emdash-deploy:1.6.0-hi.5-blog-sqlite}
     restart: unless-stopped
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000}:3000"

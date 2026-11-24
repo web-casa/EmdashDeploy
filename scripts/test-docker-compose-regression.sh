@@ -13,9 +13,35 @@ if grep -Eq '^\s+build:' "${SCRIPT_DIR}/docker/compose.yml"; then
 	exit 1
 fi
 
-# Verify docker/backup.sh and docker/restore.sh help work cleanly
+# Verify docker/backup.sh, docker/restore.sh, and scripts/migrate-runtime.sh contracts
 bash "${SCRIPT_DIR}/docker/backup.sh" --help >/dev/null
 bash "${SCRIPT_DIR}/docker/restore.sh" --help >/dev/null
+bash "${SCRIPT_DIR}/scripts/migrate-runtime.sh" --help >/dev/null
+
+# Verify backup.sh preserves caller-supplied BACKUP_ENCRYPTION_PASSPHRASE before sourcing .env
+grep -Fq 'CALLER_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"' "${SCRIPT_DIR}/docker/backup.sh" || {
+	printf '[ERROR] docker/backup.sh must preserve caller BACKUP_ENCRYPTION_PASSPHRASE\n' >&2
+	exit 1
+}
+
+# Verify restore.sh filters extraction to meta/ and data/ (ignores upstream site/ symlinks),
+# waits for PostgreSQL readiness, and starts valkey when SESSION_DRIVER=redis
+grep -Fq 'norm.startswith("meta/")' "${SCRIPT_DIR}/docker/restore.sh" || {
+	printf '[ERROR] docker/restore.sh must restrict extraction to meta/ and data/\n' >&2
+	exit 1
+}
+grep -Fq 'pg_ready="1"' "${SCRIPT_DIR}/docker/restore.sh" || {
+	printf '[ERROR] docker/restore.sh must wait for PostgreSQL readiness before createdb\n' >&2
+	exit 1
+}
+grep -Fq 'up -d valkey' "${SCRIPT_DIR}/docker/restore.sh" || {
+	printf '[ERROR] docker/restore.sh must start valkey when SESSION_DRIVER=redis\n' >&2
+	exit 1
+}
+grep -Fq '1.6.0-hi.5-' "${SCRIPT_DIR}/scripts/migrate-runtime.sh" || {
+	printf '[ERROR] scripts/migrate-runtime.sh must default to 1.6.0-hi.5 image tags\n' >&2
+	exit 1
+}
 
 # Validate compose YAML combinations when docker compose is available
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then

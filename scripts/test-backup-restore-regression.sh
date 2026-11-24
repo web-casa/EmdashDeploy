@@ -114,6 +114,21 @@ EOF
 		exit 1
 	fi
 
+	# 4. Caller-supplied BACKUP_ENCRYPTION_PASSPHRASE must NOT be clobbered by load_env()
+	cat >>"${APP_ENV_FILE}" <<'EOF'
+BACKUP_ENCRYPTION_PASSPHRASE="host-default-passphrase-should-not-override"
+EOF
+	local preserved_pass=""
+	preserved_pass="$(
+		EMDASH_INSTALL_ENV_FILE="${APP_ENV_FILE}" \
+		BACKUP_ENCRYPTION_PASSPHRASE="caller-override-passphrase-999" \
+		bash -c 'source "'"${SCRIPT_DIR}"'/emdashctl"; load_env; printf "%s" "${BACKUP_ENCRYPTION_PASSPHRASE}"'
+	)"
+	[[ "${preserved_pass}" == "caller-override-passphrase-999" ]] || {
+		printf '[ERROR] load_env clobbered caller BACKUP_ENCRYPTION_PASSPHRASE: got %s\n' "${preserved_pass}" >&2
+		exit 1
+	}
+
 	printf '[INFO] backup/restore regression checks passed\n'
 	trap - RETURN
 	rm -rf "${tmpdir}"

@@ -85,7 +85,7 @@ For PostgreSQL 18 + Valkey 8 profiles, local China mirror builds (`compose.build
 
 ---
 
-## Key Features (`1.6.0-hi.4`)
+## Key Features (`1.6.0-hi.5`)
 
 - **Full EmDash `1.6.x` Native Support**:
   - `EMDASH_ENCRYPTION_KEY` generation via `emdash secrets generate`, format/fingerprint verification, and safe **two-stage key rotation** (`emdashctl rotate-encryption-key`) with database encrypted-envelope `kid` scanning before pruning legacy keys.
@@ -201,7 +201,7 @@ Detailed verification procedures and the generic remote E2E verifier ([`scripts/
 
 ## Versioning & Compatibility
 
-This repository follows the **`HiEmdash`** version line: `<emdash-version>-hi.<revision>` (e.g. `1.6.0-hi.1` → `1.6.0-hi.4`). When upstream EmDash bumps its base version, the `-hi.<revision>` suffix resets to `1`.
+This repository follows the **`HiEmdash`** version line: `<emdash-version>-hi.<revision>` (e.g. `1.6.0-hi.1` → `1.6.0-hi.5`). When upstream EmDash bumps its base version, the `-hi.<revision>` suffix resets to `1`.
 
 - Unified command interface across all 9 languages: `bootstrap.sh --lang=<code>`, `install.sh --lang=<code>`, `emdashctl --lang=<code>`.
 - Legacy language-suffixed alias scripts (`emdashctl.<lang>.sh`) were retired; see [`COMPATIBILITY.md`](./COMPATIBILITY.md) for migration details.

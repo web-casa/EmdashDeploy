@@ -40,7 +40,11 @@ clone_template_repo() {
 	if [[ ! -d "${TEMPLATE_SOURCE_DIR}/.git" ]]; then
 		rm -rf "${TEMPLATE_SOURCE_DIR}"
 		log "拉取 EmDash 模板 ${TEMPLATE}"
-		git clone --depth 1 --branch "${TEMPLATES_REF}" "${TEMPLATES_REPO}" "${TEMPLATE_SOURCE_DIR}"
+		if ! git clone --depth 1 --branch "${TEMPLATES_REF}" "${TEMPLATES_REPO}" "${TEMPLATE_SOURCE_DIR}"; then
+			warn "模板仓库拉取失败，正在回退使用 HTTP/1.1 重试..."
+			rm -rf "${TEMPLATE_SOURCE_DIR}"
+			git -c http.version=HTTP/1.1 clone --depth 1 --branch "${TEMPLATES_REF}" "${TEMPLATES_REPO}" "${TEMPLATE_SOURCE_DIR}"
+		fi
 	fi
 	prepare_site_directory
 }

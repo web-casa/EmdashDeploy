@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0-hi.5 - 2026-11-25
+
+Hardening hotfix discovered during full P0/P1 real-environment E2E verification (Docker Compose PG 18 + Valkey + custom no-`/healthz` site, bidirectional Native ↔ Docker migration, real S3-compatible VersityGW storage/backup/prune/restore, and Rocky Linux 9.9 Python 3.9 + SELinux Enforcing 3-instance chaos testing).
+
+### Fixed
+
+- **Caller backup passphrase preservation across hosts/runtimes**: preserved caller-supplied `BACKUP_ENCRYPTION_PASSPHRASE` before sourcing `emdash.env` / `.env` in [`emdashctl`](./emdashctl) (`load_env`) and [`docker/backup.sh`](./docker/backup.sh), matching [`docker/restore.sh`](./docker/restore.sh) so cross-host/cross-runtime encrypted backups and restores (e.g. `docker-to-native` and `native-to-docker`) never fail with `openssl bad decrypt` when target host configs define a different passphrase
+- **Clean S3 backup stdout return path**: routed `[INFO] Pruned old S3 backup: ...` in [`emdashctl`](./emdashctl) (`prune_s3_backups`) to `stderr` instead of `stdout` so S3 retention pruning no longer pollutes the captured archive path returned by `create_backup_archive`
+- **Cross-runtime `docker/restore.sh` reliability on fresh PG + Valkey stacks and native `--full` archives**:
+  - Restricted tar extraction and manifest SHA-256 verification in [`docker/restore.sh`](./docker/restore.sh) to `meta/` and `data/` (matching [`scripts/migrate-runtime.sh`](./scripts/migrate-runtime.sh)) so native `--full` backup archives containing upstream `site/` symlinks (e.g. `site/.claude/skills`) restore cleanly into Docker without relaxing symlink/traversal checks inside `meta/` or `data/`
+  - Added PostgreSQL readiness polling (`psql SELECT 1`) after `docker compose up -d postgres` to eliminate first-boot `createdb` race conditions during `native-to-docker --apply`
+  - Automatically starts `valkey` alongside `emdash` when `SESSION_DRIVER=redis`
+- **`scripts/migrate-runtime.sh` image tag & port override**: updated default `native-to-docker` GHCR image tag to `1.6.0-hi.5-{profile}` and added optional `DOCKER_APP_PORT` override for side-by-side host migrations
+- **EL9 / flaky network `git clone` resilience**: added automatic `git -c http.version=HTTP/1.1 clone` retry fallback in [`lib/render.sh`](./lib/render.sh) (`clone_template_repo`) to recover from GitHub HTTP/2 stream resets on EL9 hosts
+
+### Validation Summary
+
+- Full local verification gate (`bash -n`, `py_compile`, `node --check`, `shellcheck -S error`, all 13 offline regression suites including new passphrase-preservation, S3 prune stdout hygiene, `docker/restore.sh` hardening, and `git` HTTP/1.1 fallback assertions)
+- **Docker Compose ARM64 E2E**: PG 18 + Valkey encrypted backup & atomic temp-DB restore (`ALTER DATABASE`), multi-instance coexistence + `compose.proxy-net.yml` zero-host-port behind external Caddy, and `Dockerfile.custom` + `compose.custom-site.yml` site without `/healthz` (HTTP 404 on `/healthz`, container still `healthy` via `/_emdash/api/setup/status`, multi-`--compose-file` backup/restore)
+- **Bidirectional Native ↔ Docker Migration (PG 18 + Valkey)**: full encrypted `docker-to-native` (Docker → PVE Ubuntu 26.04 `VM 981`) and `native-to-docker --apply` (`VM 981` `--full --encrypt` → fresh Docker PG + Valkey stack), preserving `EMDASH_ENCRYPTION_KEY`, PG `$emdash` encrypted rows, and `/data/uploads`
+- **Real S3-Compatible Loop (VersityGW + PVE `VM 981`)**: `STORAGE_DRIVER=s3` preflight + `doctor --deep`, 3 encrypted S3 backups with `BACKUP_KEEP_S3=2` remote pruning (`S3_COUNT=2`), local disaster wipe + `restore --from-s3 latest --yes`
+- **Rocky Linux 9.9 (`VM 985`, Python `3.9.25` + SELinux `Enforcing`)**: zero-downtime `--update-cli` (`MainPID 947 -> 947`), legacy single-file Caddyfile auto-migration + `conf.d` preservation + Caddy reload-only uninstall, `upgrade app` user route preservation, 3-instance mixed stack (`default` PG+Valkey, `site2` SQLite+Caddy, `site3` isolated PG+Valkey `REDIS_DB=1`) full `reboot` autostart, per-instance `flock` concurrency, `migrate-db` non-empty/wrong-password/mid-migration automatic rollback, and full Python 3.9 `migrate-db sqlite-to-postgres` (`74` tables, `missing_in_pg: []`, `doctor --deep` `16/16 ok`)
+- Documented full P0 (Phase F) and P1 (Phase G) matrices in [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)
+
 ## 1.6.0-hi.4 - 2026-11-24
 
 Post-release real-VM hardening hotfix discovered during cross-distro Proxmox VE verification (Rocky Linux 10.3 SELinux Enforcing + Debian 13 `trixie` + ARM64 GHCR).

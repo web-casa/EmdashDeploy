@@ -297,12 +297,54 @@ test_activation_rollback_restores_runtime_files() {
 	rm -rf "${tmpdir}"
 }
 
+test_clone_template_repo_retries_http11() {
+	local tmpdir calls_file
+	tmpdir="$(mktemp -d)"
+	calls_file="${tmpdir}/git-calls.log"
+	trap 'rm -rf "${tmpdir}"' RETURN
+
+	TEMPLATE="blog"
+	TEMPLATES_REF="main"
+	TEMPLATES_REPO="https://example.invalid/emdash-cms/templates.git"
+	TEMPLATE_SOURCE_DIR="${tmpdir}/template-source"
+	SITE_DIR="${tmpdir}/site"
+	FORCE_SYNC_TEMPLATE="0"
+
+	git() {
+		printf '%s ' "$@" >>"${calls_file}"
+		printf '\n' >>"${calls_file}"
+		if [[ "$1" == "-c" && "$2" == "http.version=HTTP/1.1" ]]; then
+			mkdir -p "${TEMPLATE_SOURCE_DIR}/.git" "${TEMPLATE_SOURCE_DIR}/blog"
+			printf '{"name":"blog"}\n' >"${TEMPLATE_SOURCE_DIR}/blog/package.json"
+			return 0
+		fi
+		return 128
+	}
+
+	clone_template_repo
+	unset -f git
+
+	[[ -f "${SITE_DIR}/package.json" ]] || {
+		printf '[ERROR] HTTP/1.1 retry did not sync template site\n' >&2
+		exit 1
+	}
+	grep -Fq -- '-c http.version=HTTP/1.1 clone' "${calls_file}" || {
+		printf '[ERROR] Expected HTTP/1.1 retry invocation in git call log\n' >&2
+		exit 1
+	}
+
+	log "template sync regression: clone_template_repo HTTP/1.1 fallback passed"
+	trap - RETURN
+	rm -rf "${tmpdir}"
+}
+
 main() {
 	test_render_preserves_template_config
 	test_render_preserve_mode_leaves_config_untouched
 	test_prepare_site_directory_rejects_mixed_template_state
 	test_prepare_site_directory_rejects_unknown_existing_metadata
 	test_activation_rollback_restores_runtime_files
+	test_clone_template_repo_retries_http11
 	log "template sync regression checks passed"
 }
 
