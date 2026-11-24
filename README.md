@@ -1,9 +1,10 @@
 # EmdashDeploy
 
 ![License](https://img.shields.io/github/license/web-casa/EmdashDeploy)
-![OS](https://img.shields.io/badge/OS-Debian%2013%20%7C%20Ubuntu%2024.04%20%7C%20EL%209%2F10-blue)
-![Mode](https://img.shields.io/badge/Mode-Native%20Deployment-2ea44f)
-![Stack](https://img.shields.io/badge/Stack-Node.js%20%2B%20Caddy%20%2B%20PostgreSQL%20%2F%20SQLite-2ea44f)
+![OS](https://img.shields.io/badge/OS-Debian%2013%20%7C%20Ubuntu%2024.04%2F26.04%20%7C%20EL%209%2F10-blue)
+![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-blue)
+![Mode](https://img.shields.io/badge/Mode-Native%20%2B%20Docker%20Compose-2ea44f)
+![Stack](https://img.shields.io/badge/Stack-Node.js%2024%20%2B%20Caddy%20%2B%20PostgreSQL%2018%20%2F%20SQLite%20%2B%20Valkey-2ea44f)
 
 Native VPS installer and operations toolkit for EmDash with Node.js, systemd, optional Caddy HTTPS, backup, restore, and health checks.
 
@@ -70,19 +71,20 @@ The legacy container-based bash installer remains archived on the `docker` branc
 
 ## Supported Platforms
 
-| OS family | Versions | Notes |
-| --- | --- | --- |
-| Debian | 13 | Native install |
-| Ubuntu | 24.04 | Native install |
-| EL-like | 9, 10 | Native install |
+| OS family | Versions | Architectures | Notes |
+| --- | --- | --- | --- |
+| Debian | 13 (`trixie`) | `x86_64`, `aarch64` | Native install |
+| Ubuntu | 24.04 LTS (`noble`), 26.04 LTS (`resolute`) | `x86_64`, `aarch64` | Native install |
+| EL-like | 9, 10 | `x86_64`, `aarch64` | Native install |
 
 Notes:
 
 - EL-like means Rocky Linux, AlmaLinux, RHEL-like variants, Oracle Linux, CentOS Stream, and similar systems handled by the installer.
 - Node.js 24 is installed from `NodeSource` with Corepack respecting each project's `packageManager` field (e.g. `pnpm@11.9.0`).
-- PostgreSQL 18 is installed from `PGDG` across all supported platforms.
-- Session caching uses `Valkey` across all supported platforms (`valkey-server` on Debian/Ubuntu, `valkey` on EL 9/10).
-- EmDash `1.6.x` native features are supported out of the box, including `EMDASH_ENCRYPTION_KEY` generation/fingerprinting, `@emdash-cms/sandbox-workerd` plugin isolation, and explicit `emdash migrate` checks.
+- PostgreSQL 18 is installed from `PGDG` across all supported platforms (EL automatically selects `x86_64` or `aarch64` via `uname -m`).
+- Session caching uses `Valkey` across all supported platforms with automatic systemd unit detection (`valkey-server` or `valkey`).
+- EmDash `1.6.x` native features are supported out of the box, including `EMDASH_ENCRYPTION_KEY` generation and two-stage rotation, `@emdash-cms/sandbox-workerd` plugin isolation, and explicit `emdash migrate` checks.
+- Validation boundary: Debian 13, Ubuntu 24.04, Ubuntu 26.04, EL9, and EL10 have been verified on real `x86_64` VMs (PVE/Linode); `ARM64` (`linux/arm64`) multi-arch container images and `workerd` runtime are natively verified on GitHub Actions `ubuntu-24.04-arm` runners.
 
 ## Features
 
@@ -182,6 +184,7 @@ emdashctl --lang=en status
 emdashctl --lang=en status --json
 emdashctl --lang=en doctor
 emdashctl --lang=en doctor --deep --json
+emdashctl --lang=en diagnose --json --out /tmp/emdash-diag.json
 emdashctl --lang=en smoke
 emdashctl --lang=en smoke --json
 emdashctl --lang=en logs app
@@ -191,8 +194,13 @@ emdashctl --lang=en restore /path/to/backup.tar.gz [--with-site] [--with-secrets
 emdashctl --lang=en upgrade app [--dry-run] [--target <version|latest>]
 emdashctl --lang=en template diff [--stat]
 emdashctl --lang=en upgrade caddy-config
+emdashctl --lang=en rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
 emdashctl --lang=en reset-db-password
 ```
+
+Key operational tools:
+- `emdashctl diagnose --json`: generates an AI-friendly diagnostic bundle with recursive redaction for secrets, cookies, Bearer/JWT tokens, sensitive URL query params, and client IPs (`--out` rejects symlinks and writes atomically with `0600`).
+- `emdashctl rotate-encryption-key`: performs safe two-stage `EMDASH_ENCRYPTION_KEY` rotation (Stage 1 prepends a new key while preserving decryption; Stage 2 scans DB encrypted envelopes for legacy `kid` references and requires explicit `--confirm-prune-kid <kid>`).
 
 ## Upgrade Model
 

@@ -4,3 +4,4 @@ linode-test-*.json
 linode-test-*.log
 test-results/
 __pycache__/
+mitm_mcp_traffic.db

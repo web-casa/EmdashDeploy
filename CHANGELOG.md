@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0-hi.2 - 2026-11-24
+
+Operational maturity, AI-friendly diagnostics, safe two-stage encryption key rotation, native multi-arch GHCR Docker publishing, and Ubuntu 26.04 LTS / ARM64 platform expansion for the `HiEmdash` line.
+
+### Added
+
+- AI-friendly one-command redacted diagnostic bundle: `emdashctl diagnose [--json] [--lines <N>] [--out <file>] [--no-ip-redact]` (`schema_version: 1`)
+  - Aggregates host metadata, non-secret config summary (`encryption_key_kids`), site package versions, `doctor --deep`, migration status, systemd service states, structured `journalctl -o json` logs (32 KiB per-service cap with `truncated` flag), and `suggested_next_steps`
+  - Recursive, idempotent redaction covering database/Redis URLs, `emdash_enc_v1_*`, runtime secrets, `Authorization: Bearer/Basic`, `Cookie`/`Set-Cookie`, JWTs, sensitive URL query parameters, and Caddy client IP headers (`remote_ip`/`client_ip`/`X-Forwarded-For`, opt-out via `--no-ip-redact`)
+  - `--out` refuses symlinks and writes atomically with `0600` permissions
+- Safe two-stage `EMDASH_ENCRYPTION_KEY` rotation assistant: `emdashctl rotate-encryption-key [--status [--json] | --dry-run [--yes] | --prune-old [--confirm-prune-kid <kid>] [--force-prune]]`
+  - Stage 1 generates a new key via `emdash secrets generate`, atomically prepends `<new>,<old>` to `/etc/emdash/emdash.env` and updates `encryption_key_kid` in `/etc/emdash/install.yml`, restarts `emdash-app`, verifies `/healthz` + `/_emdash/api/setup/status`, and rolls back both files automatically on failure
+  - Stage 2 (`--prune-old`) scans SQLite/PostgreSQL tables for EmDash `1.6.x` encrypted envelopes referencing legacy `kid`s, blocks pruning if any references remain (unless `--force-prune`), and requires explicit kid-bound confirmation (`--confirm-prune-kid <kid>`)
+- Enhanced `emdashctl doctor --deep`:
+  - Verifies runtime directory ownership (`${APP_RUN_USER}:${APP_RUN_GROUP}`) and `/etc/emdash/emdash.env` permissions (blocks group-write or world-readable modes)
+  - Aggregates upstream `pnpm exec emdash doctor --database <path> --json` checks (`collections`, `datetime storage`, `users`) under `timeout 15` protection in SQLite mode
+- Native multi-arch GHCR Docker publishing workflow [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml) (`linux/amd64` on `ubuntu-24.04` + `linux/arm64` on `ubuntu-24.04-arm`, digest merge via `docker buildx imagetools create`, SBOM & provenance attestations, and native dual-arch `workerd` + `/healthz` post-publish smoke tests)
+- Decoupled Docker Compose overlays and container backup helper:
+  - [`docker/compose.build.yml`](./docker/compose.build.yml): independent local build overlay (with `emdash-deploy:local-*` tags and mainland China mirror args), separated from prebuilt GHCR images in [`docker/compose.yml`](./docker/compose.yml)
+  - [`docker/Dockerfile.custom`](./docker/Dockerfile.custom) & [`docker/compose.custom-site.yml`](./docker/compose.custom-site.yml): immutable non-root build for custom/AI-modified EmDash sites via BuildKit `additional_contexts` without bind-mounting `/app/site`
+  - [`docker/backup.sh`](./docker/backup.sh): container-safe SQLite (`sqlite3.backup()` + `PRAGMA integrity_check`) and PostgreSQL (`pg_dump -Fc` + `pg_restore --list`) backup script with `0600` output and dedicated `BACKUP_ENCRYPTION_PASSPHRASE` encryption
+- Ubuntu 26.04 LTS (`resolute`) and ARM64 (`aarch64`) support in [`lib/os.sh`](./lib/os.sh) (dynamic EL PGDG `uname -m` URL selection, PGDG apt release reachability check, and runtime Valkey systemd unit detection)
+- Generic, read-only-by-default remote E2E verification script [`scripts/remote-e2e-verify.sh`](./scripts/remote-e2e-verify.sh) (mutating tests require `--destructive`, reboot test requires `--verify-reboot`)
+- New offline regression suites: [`scripts/test-diagnose-regression.sh`](./scripts/test-diagnose-regression.sh) (including secret canary leakage assertions) and [`scripts/test-rotate-key-regression.sh`](./scripts/test-rotate-key-regression.sh)
+
+### Changed
+
+- Upgraded `update_env_file_value` in [`lib/site-common.sh`](./lib/site-common.sh) to atomic `fsync` + `os.replace` writes preserving file permissions and ownership
+- Cleaned legacy container-era variables (`MATRIX_APP_IMAGE`, `MATRIX_APP_BASE_IMAGE`) from [`linode-test-matrix.sh`](./linode-test-matrix.sh) and added `ubuntu26-postgres-redis`
+- Synchronized all 9 language READMEs (`README.md`, `README.zh-CN.md`, `README.zh-TW.md`, `README.ja.md`, `README.ko.md`, `README.de.md`, `README.es.md`, `README.fr.md`, `README.pt.md`), `lib/i18n.sh` usage help, [`docker/README.md`](./docker/README.md), and [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)
+- Updated `.gitignore` to ignore local `mitm_mcp_traffic.db` and added AI project documentation under `docs4ai/`
+
+### Validation Summary
+
+- All 10 offline regression test suites + `bash -n` + `py_compile` + `shellcheck -S error` pass
+- Real PVE **Ubuntu 26.04.1 LTS** (`x86_64`, kernel `7.0.0-38-generic`, mainland China network with `EMDASH_MIRROR_PRESET=cn`) passed full 7-step E2E via `scripts/remote-e2e-verify.sh --destructive --verify-reboot`: fresh install (Node 24 + PGDG `resolute-pgdg` PostgreSQL 18 + Valkey + `sandbox-workerd`), `doctor --deep --json`, `diagnose --json` (0 secret leak), two-stage `rotate-encryption-key`, non-destructive `upgrade app`, encrypted full `backup` + `restore --with-site --with-secrets`, `reset-db-password`, and post-reboot autostart (`healthy=True`, `ok=15, warn=0, fail=0, skipped=1`)
+- Native **ARM64 (`aarch64`)** local Docker build (`compose.yml` + `compose.build.yml`) and `docker/backup.sh` (plain + encrypted SQLite `sqlite3.backup()` verification) passed live smoke tests
+
 ## 1.6.0-hi.1 - 2026-11-24
 
 EmDash `1.6.x` compatibility, lifecycle reliability, and multi-service Docker Compose release for the `HiEmdash` line.

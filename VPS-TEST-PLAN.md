@@ -7,10 +7,26 @@ The goal is to verify the current host-based installer and operator workflow on 
 ## Goals
 
 - verify the real `install-emdash.sh` native install path
-- verify `emdashctl` high-risk operational commands
-- verify Debian 13, Ubuntu 24.04, EL9, and EL10
-- verify `SQLite`, `PostgreSQL`, `Redis`, `Caddy + HTTPS`, `S3 storage`, and `S3 backup`
+- verify `emdashctl` high-risk operational commands (`doctor --deep`, `diagnose`, `rotate-encryption-key`, `upgrade app`, `backup`/`restore`, `reset-db-password`)
+- verify Debian 13, Ubuntu 24.04, Ubuntu 26.04 LTS, EL9, and EL10
+- verify `SQLite`, `PostgreSQL 18`, `Valkey/Redis`, `Caddy + HTTPS`, `S3 storage`, and `S3 backup`
 - verify that recently fixed native-only regressions stay closed
+
+## Generic Remote Host E2E Script
+
+For any SSH-reachable test VM (PVE, Hetzner, DigitalOcean, self-hosted KVM, etc.), use [`scripts/remote-e2e-verify.sh`](./scripts/remote-e2e-verify.sh):
+
+```bash
+# Safe read-only verification (default): status, doctor --deep, diagnose, upgrade --dry-run, template diff
+bash scripts/remote-e2e-verify.sh --host root@<vm-ip>
+
+# Full destructive lifecycle verification + reboot autostart check (use only on disposable test VMs)
+bash scripts/remote-e2e-verify.sh --host root@<vm-ip> --destructive --verify-reboot --db postgres --session redis
+```
+
+Safety boundaries:
+- Read-only by default; mutating operations require `--destructive`, and reboot testing requires `--verify-reboot`.
+- Never uses `StrictHostKeyChecking=no`, never enables `set -x`, and transfers ephemeral test passwords via a `0600` remote env file instead of CLI arguments.
 
 ## Principles
 

@@ -58,19 +58,20 @@ sudo bash install.sh --lang=zh-CN --activate
 
 ## 支持平台
 
-| 系统 | 版本 | 说明 |
-| --- | --- | --- |
-| Debian | 13 | 原生安装 |
-| Ubuntu | 24.04 | 原生安装 |
-| EL-like | 9, 10 | 原生安装 |
+| 系统 | 版本 | 架构 | 说明 |
+| --- | --- | --- | --- |
+| Debian | 13 (`trixie`) | `x86_64`, `aarch64` | 原生安装 |
+| Ubuntu | 24.04 LTS (`noble`), 26.04 LTS (`resolute`) | `x86_64`, `aarch64` | 原生安装 |
+| EL-like | 9, 10 | `x86_64`, `aarch64` | 原生安装 |
 
 补充：
 
 - Node.js 24 来自 `NodeSource`，Corepack 自动尊重项目 `packageManager` 字段（如 `pnpm@11.9.0`）
-- PostgreSQL 18 全平台统一来自 `PGDG`
-- Session 缓存全平台统一使用 `Valkey`（Debian/Ubuntu 为 `valkey-server`，EL9/10 为 `valkey`）
-- 完整适配 EmDash `1.6.x`：`EMDASH_ENCRYPTION_KEY` 生成与指纹校验、`@emdash-cms/sandbox-workerd` 插件沙箱、显式 `emdash migrate` 迁移门禁
+- PostgreSQL 18 全平台统一来自 `PGDG`（EL 系列按 `uname -m` 自动选择 `x86_64` / `aarch64` 仓库）
+- Session 缓存全平台统一使用 `Valkey`，安装后自动探测实际 systemd unit（`valkey-server` 或 `valkey`）
+- 完整适配 EmDash `1.6.x`：`EMDASH_ENCRYPTION_KEY` 生成与两阶段安全轮转、`@emdash-cms/sandbox-workerd` 插件沙箱、显式 `emdash migrate` 迁移门禁
 - 大陆网络可设置 `EMDASH_MIRROR_PRESET=cn` 加速 npm/Corepack 下载（不改写宿主机全局 APT/DNF 源）
+- 实测边界说明：Debian 13 / Ubuntu 24.04 / Ubuntu 26.04 / EL9 / EL10 均已在 `x86_64` 真机（PVE/Linode）验证；`ARM64` 多架构容器镜像与 `workerd` 运行时由 GitHub Actions `ubuntu-24.04-arm` 原生 Runner 验证。
 
 ## 主要功能
 
@@ -121,16 +122,21 @@ sudo bash install.sh --lang=zh-CN --non-interactive --activate
 ```bash
 emdashctl --lang=zh-CN status
 emdashctl --lang=zh-CN doctor --deep --json
+emdashctl --lang=zh-CN diagnose --json --out /tmp/emdash-diag.json
 emdashctl --lang=zh-CN smoke
 emdashctl --lang=zh-CN logs app
 emdashctl --lang=zh-CN backup [--full] [--encrypt]
 emdashctl --lang=zh-CN restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
 emdashctl --lang=zh-CN upgrade app [--dry-run] [--target <version|latest>]
 emdashctl --lang=zh-CN template diff [--stat]
+emdashctl --lang=zh-CN rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
 emdashctl --lang=zh-CN reset-db-password
 ```
 
-说明：`upgrade app` 仅无损升级 `emdash` / `@emdash-cms/*` 依赖并在构建后执行显式数据库迁移门禁，**不再覆盖用户自定义的页面、样式与 `astro.config.mjs`**；如需对照官方模板更新，使用只读命令 `emdashctl template diff`。
+说明：
+- `upgrade app` 仅无损升级 `emdash` / `@emdash-cms/*` 依赖并在构建后执行显式数据库迁移门禁，**不再覆盖用户自定义的页面、样式与 `astro.config.mjs`**；如需对照官方模板更新，使用只读命令 `emdashctl template diff`。
+- `diagnose --json` 一键收集全面脱敏的 AI 诊断包（自动屏蔽密码、密钥、Cookie、Bearer、JWT、URL 敏感参数及客户端 IP，支持 `--out` 安全 `0600` 原子输出）。
+- `rotate-encryption-key` 支持 EmDash `1.6.x` 两阶段安全密钥轮转：阶段 1 前置新密钥保留旧密钥解密；阶段 2 裁剪前自动扫描数据库密文 `kid` 引用并要求显式 `--confirm-prune-kid <kid>` 防止密文误删。
 
 ## 运维示例
 
@@ -168,23 +174,21 @@ emdashctl --lang=zh-CN upgrade app
 
 ## 已知限制
 
-- `main` 不再提供 Docker/Podman 部署
-- 只支持 Debian 13、Ubuntu 24.04、EL9、EL10
+- 原生安装支持 Debian 13、Ubuntu 24.04 / 26.04、EL9、EL10（多服务容器共存场景见 [`docker/`](./docker/README.md)）
 - 模板、插件和构建期配置变更后仍然需要 `pnpm build`
 - `upgrade` 目前只支持 `app` 和 `caddy-config`
 - 用户自己的脚本、用户 crontab、旧 raw URL 不会自动迁移
 
 ## 原生实测范围
 
-- Debian 13
-- Ubuntu 24.04
-- EL9
-- EL10
-- SQLite / PostgreSQL / Redis
-- Caddy + HTTPS
-- S3 storage / S3 backup
-- `backup` / `restore` / `upgrade app` / `reset-db-password`
+- Debian 13 (`x86_64`)
+- Ubuntu 24.04 (`x86_64`) & Ubuntu 26.04 LTS (`x86_64`)
+- EL9 / EL10 (`x86_64`, SELinux enforcing)
+- ARM64 (`linux/arm64` 多架构容器镜像与 `workerd` 由 GitHub Actions `ubuntu-24.04-arm` 原生验证)
+- SQLite / PostgreSQL 18 / Valkey
+- Caddy + HTTPS / S3 storage / S3 backup
+- `doctor --deep` / `diagnose` / `rotate-encryption-key` / `backup` / `restore` / `upgrade app` / `reset-db-password` / `reboot` 自启
 
-详细矩阵见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
+详细矩阵与通用远端验收脚本 [`scripts/remote-e2e-verify.sh`](./scripts/remote-e2e-verify.sh) 见 [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md)。
 
 更多兼容性说明见 [`COMPATIBILITY.md`](./COMPATIBILITY.md)。

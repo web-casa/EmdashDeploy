@@ -2,7 +2,7 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | **Español** | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md)
 
-Instalador nativo para VPS y conjunto de herramientas operativas para EmDash con Node.js, systemd, Caddy HTTPS opcional, copia de seguridad, restauración y comprobaciones de salud.
+Instalador nativo para VPS y conjunto de herramientas operativas para EmDash `1.6.x` con Node.js 24, systemd, Caddy HTTPS opcional, copias de seguridad, diagnóstico para IA y rotación segura de claves.
 
 ## Inicio rápido
 
@@ -26,34 +26,37 @@ curl -fsSL https://raw.githubusercontent.com/web-casa/EmdashDeploy/main/bootstra
 
 ## Resumen
 
-`main` instala EmDash directamente en el host VPS. La implementación anterior basada en contenedores permanece archivada en la rama `docker`.
+`main` instala EmDash de forma nativa en el host VPS. Para servidores que comparten varios servicios o varias instancias de EmDash, también incluye el kit ligero Docker Compose en [`docker/`](./docker/README.md) (imágenes multiarquitectura GHCR `amd64`/`arm64`, sin ocupar los puertos 80/443 por defecto). El antiguo instalador en contenedores permanece archivado en la rama `docker`.
 
-Compatibilidad:
+Compatibilidad (`x86_64` / `aarch64`):
 
-- Debian 13
-- Ubuntu 24.04
+- Debian 13 (`trixie`)
+- Ubuntu 24.04 LTS (`noble`) / 26.04 LTS (`resolute`)
 - EL9 / EL10
-- SQLite / PostgreSQL 18
-- file session / Redis
-- local / almacenamiento compatible con S3
-- Caddy + HTTPS
+- SQLite / PostgreSQL 18 (PGDG)
+- file session / Valkey
+- almacenamiento local / compatible con S3, Caddy + HTTPS
+- EmDash `1.6.x`: `EMDASH_ENCRYPTION_KEY` (rotación en 2 fases), sandbox de plugins `@emdash-cms/sandbox-workerd`, puerta de migraciones `emdash migrate`, `EMDASH_MIRROR_PRESET=cn`
 
 ## Comandos principales
 
 ```bash
-emdashctl --lang=es status
-emdashctl --lang=es doctor
-emdashctl --lang=es smoke
-emdashctl --lang=es backup
-emdashctl --lang=es restore /path/to/backup.tar.gz
-emdashctl --lang=es upgrade app
+emdashctl --lang=es status [--json]
+emdashctl --lang=es doctor --deep --json
+emdashctl --lang=es diagnose --json --out /tmp/emdash-diag.json
+emdashctl --lang=es smoke [--json]
+emdashctl --lang=es backup [--full] [--encrypt]
+emdashctl --lang=es restore /path/to/backup.tar.gz [--with-site] [--with-secrets]
+emdashctl --lang=es upgrade app [--dry-run] [--target <version|latest>]
+emdashctl --lang=es template diff [--stat]
+emdashctl --lang=es rotate-encryption-key [--status | --dry-run | --prune-old --confirm-prune-kid <kid>]
 emdashctl --lang=es reset-db-password
 ```
 
-## Límites conocidos
+## Alcance verificado y límites
 
-- `main` ya no ofrece despliegue con Docker/Podman
-- los cambios de plantilla, plugins y configuración de build siguen requiriendo `pnpm build`
-- `upgrade` solo admite `app` y `caddy-config`
+- Debian 13 / Ubuntu 24.04 / Ubuntu 26.04 / EL9 / EL10 están verificados en máquinas virtuales reales `x86_64`; las imágenes de contenedor `ARM64` y `workerd` se validan de forma nativa en GitHub Actions `ubuntu-24.04-arm`.
+- Los cambios de plantilla, plugins y configuración de build siguen requiriendo `pnpm build`.
+- `upgrade` solo admite `app` y `caddy-config`.
 
-Más detalles en [README.md](./README.md), [`COMPATIBILITY.md`](./COMPATIBILITY.md) y [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
+Más detalles en [README.md](./README.md), [`docker/README.md`](./docker/README.md), [`COMPATIBILITY.md`](./COMPATIBILITY.md) y [`VPS-TEST-PLAN.md`](./VPS-TEST-PLAN.md).
