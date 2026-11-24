@@ -22,12 +22,11 @@ Usage:
 Examples:
   bash linode-test-matrix.sh
   bash linode-test-matrix.sh --list
-  bash linode-test-matrix.sh --scenario debian13-caddy-app,centos9-builder
-  LINODE_TEST_INSTALL_APP_IMAGE=ghcr.io/web-casa/emdash-app:0.2.0-hi.1 bash linode-test-matrix.sh
+  bash linode-test-matrix.sh --scenario debian13-caddy-https,ubuntu26-postgres-redis
 
 Notes:
   - Reads linode_token from .env through linode-test.sh
-  - Runs a predefined VPS scenario matrix
+  - Runs a predefined native VPS scenario matrix
   - Writes per-scenario JSON result/failure logs plus a summary JSON and Markdown report
 EOF
 }
@@ -51,8 +50,8 @@ timestamp() {
 
 list_scenarios() {
 	cat <<'EOF'
-debian13-caddy-app
-centos9-builder
+debian13-caddy-https
+centos9-sqlite-file
 debian13-postgres-file
 centos9-postgres-redis
 debian13-s3-backup
@@ -60,13 +59,14 @@ alma10-postgres-redis
 centos10-sqlite-file
 rocky9-postgres-redis
 ubuntu24-postgres-redis
+ubuntu26-postgres-redis
 EOF
 }
 
 scenario_exists() {
 	case "$1" in
-	debian13-caddy-app | centos9-builder | debian13-postgres-file | centos9-postgres-redis | debian13-s3-backup \
-	| alma10-postgres-redis | centos10-sqlite-file | rocky9-postgres-redis | ubuntu24-postgres-redis)
+	debian13-caddy-https | centos9-sqlite-file | debian13-postgres-file | centos9-postgres-redis | debian13-s3-backup \
+	| alma10-postgres-redis | centos10-sqlite-file | rocky9-postgres-redis | ubuntu24-postgres-redis | ubuntu26-postgres-redis)
 		return 0
 		;;
 	esac
@@ -75,29 +75,27 @@ scenario_exists() {
 
 setup_scenario() {
 	local scenario="$1"
-unset MATRIX_IMAGE MATRIX_DB MATRIX_SESSION MATRIX_STORAGE MATRIX_USE_CADDY MATRIX_ENABLE_HTTPS
-unset MATRIX_DOMAIN_PROVIDER MATRIX_APP_IMAGE MATRIX_APP_BASE_IMAGE MATRIX_PG_PASSWORD MATRIX_REDIS_PASSWORD
+	unset MATRIX_IMAGE MATRIX_DB MATRIX_SESSION MATRIX_STORAGE MATRIX_USE_CADDY MATRIX_ENABLE_HTTPS
+	unset MATRIX_DOMAIN_PROVIDER MATRIX_PG_PASSWORD MATRIX_REDIS_PASSWORD
 	unset MATRIX_RUN_BACKUP MATRIX_BACKUP_TARGET MATRIX_BACKUP_S3_ENDPOINT MATRIX_BACKUP_S3_REGION MATRIX_BACKUP_S3_BUCKET MATRIX_BACKUP_S3_ACCESS_KEY_ID MATRIX_BACKUP_S3_SECRET_ACCESS_KEY MATRIX_BACKUP_S3_PREFIX
 
 	case "${scenario}" in
-		debian13-caddy-app)
+	debian13-caddy-https)
 		MATRIX_IMAGE="linode/debian13"
 		MATRIX_DB="sqlite"
 		MATRIX_SESSION="file"
 		MATRIX_STORAGE="local"
 		MATRIX_USE_CADDY="1"
 		MATRIX_ENABLE_HTTPS="1"
-			MATRIX_DOMAIN_PROVIDER="sslip.io"
-			MATRIX_APP_IMAGE="${LINODE_TEST_INSTALL_APP_IMAGE:-ghcr.io/web-casa/emdash-app:0.2.0-hi.1}"
-			;;
-	centos9-builder)
+		MATRIX_DOMAIN_PROVIDER="sslip.io"
+		;;
+	centos9-sqlite-file)
 		MATRIX_IMAGE="linode/centos-stream9"
 		MATRIX_DB="sqlite"
 		MATRIX_SESSION="file"
 		MATRIX_STORAGE="local"
 		MATRIX_USE_CADDY="0"
 		MATRIX_ENABLE_HTTPS="0"
-		MATRIX_APP_BASE_IMAGE="${LINODE_TEST_INSTALL_APP_BASE_IMAGE:-ghcr.io/web-casa/emdash-builder:0.2.0-hi.1}"
 		;;
 	debian13-postgres-file)
 		MATRIX_IMAGE="linode/debian13"
@@ -164,6 +162,16 @@ unset MATRIX_DOMAIN_PROVIDER MATRIX_APP_IMAGE MATRIX_APP_BASE_IMAGE MATRIX_PG_PA
 		;;
 	ubuntu24-postgres-redis)
 		MATRIX_IMAGE="linode/ubuntu24.04"
+		MATRIX_DB="postgres"
+		MATRIX_SESSION="redis"
+		MATRIX_STORAGE="local"
+		MATRIX_USE_CADDY="0"
+		MATRIX_ENABLE_HTTPS="0"
+		MATRIX_PG_PASSWORD="${LINODE_TEST_INSTALL_PG_PASSWORD:-Pg-Test-123_Complex@Value}"
+		MATRIX_REDIS_PASSWORD="${LINODE_TEST_INSTALL_REDIS_PASSWORD:-Redis-Test-123:@Value}"
+		;;
+	ubuntu26-postgres-redis)
+		MATRIX_IMAGE="linode/ubuntu26.04"
 		MATRIX_DB="postgres"
 		MATRIX_SESSION="redis"
 		MATRIX_STORAGE="local"
@@ -258,8 +266,6 @@ run_scenario() {
 		LINODE_TEST_INSTALL_USE_CADDY="${MATRIX_USE_CADDY}" \
 		LINODE_TEST_INSTALL_ENABLE_HTTPS="${MATRIX_ENABLE_HTTPS}" \
 		LINODE_TEST_DOMAIN_PROVIDER="${MATRIX_DOMAIN_PROVIDER:-}" \
-		LINODE_TEST_INSTALL_APP_IMAGE="${MATRIX_APP_IMAGE:-}" \
-		LINODE_TEST_INSTALL_APP_BASE_IMAGE="${MATRIX_APP_BASE_IMAGE:-}" \
 		LINODE_TEST_INSTALL_PG_PASSWORD="${MATRIX_PG_PASSWORD:-}" \
 		LINODE_TEST_INSTALL_REDIS_PASSWORD="${MATRIX_REDIS_PASSWORD:-}" \
 		LINODE_TEST_RUN_BACKUP="${MATRIX_RUN_BACKUP:-0}" \
@@ -288,8 +294,6 @@ run_scenario() {
 		--arg use_caddy "${MATRIX_USE_CADDY}" \
 		--arg enable_https "${MATRIX_ENABLE_HTTPS}" \
 		--arg backup_target "${MATRIX_BACKUP_TARGET:-}" \
-		--arg app_image "${MATRIX_APP_IMAGE:-}" \
-		--arg app_base_image "${MATRIX_APP_BASE_IMAGE:-}" \
 		--arg started_at "${started_at}" \
 		--arg finished_at "${finished_at}" \
 		--arg result_file "${result_file}" \
@@ -304,8 +308,6 @@ run_scenario() {
 			use_caddy: ($use_caddy == "1"),
 			enable_https: ($enable_https == "1"),
 			backup_target: $backup_target,
-			app_image: $app_image,
-			app_base_image: $app_base_image,
 			started_at: $started_at,
 			finished_at: $finished_at,
 			exit_code: $exit_code,

@@ -1,6 +1,10 @@
-# EmdashDeploy 1.6.0-hi.1 — Multi-service / Multi-instance Docker Compose Stack
+# EmdashDeploy 1.6.0-hi.2 — Multi-service / Multi-instance Docker Compose Stack
 #
 # Designed to coexist cleanly with other services on the same host:
+#   - Uses prebuilt multi-arch GHCR images by default (never mixes image + build)
+#   - For local builds or mainland China mirrors, layer compose.build.yml:
+#       docker compose -f compose.yml -f compose.build.yml up -d --build
+#   - For custom EmDash site repositories, layer compose.custom-site.yml
 #   - Does NOT bind host 80/443 by default (only binds ${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000})
 #   - Supports multiple isolated EmDash instances on one server via COMPOSE_PROJECT_NAME + APP_PORT
 #   - Optional profiles: --profile postgres --profile valkey --profile caddy
@@ -8,21 +12,7 @@
 
 services:
   emdash:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        EMDASH_TEMPLATE: ${EMDASH_TEMPLATE:-blog}
-        EMDASH_TEMPLATES_REPO: ${EMDASH_TEMPLATES_REPO:-https://github.com/emdash-cms/templates.git}
-        EMDASH_TEMPLATES_REF: ${EMDASH_TEMPLATES_REF:-main}
-        DB_DRIVER: ${DB_DRIVER:-sqlite}
-        SESSION_DRIVER: ${SESSION_DRIVER:-file}
-        STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
-        ENABLE_PLUGIN_SANDBOX: ${ENABLE_PLUGIN_SANDBOX:-1}
-        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-}
-        COREPACK_NPM_REGISTRY: ${COREPACK_NPM_REGISTRY:-}
-        APP_NODE_MAX_OLD_SPACE_SIZE: ${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}
-    image: ${EMDASH_IMAGE:-emdash-deploy:1.6.0-hi.1-${EMDASH_TEMPLATE:-blog}-${DB_DRIVER:-sqlite}-${SESSION_DRIVER:-file}-${STORAGE_DRIVER:-local}}
+    image: ${EMDASH_IMAGE:-ghcr.io/web-casa/emdash-deploy:1.6.0-hi.2-blog-sqlite}
     restart: unless-stopped
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000}:3000"

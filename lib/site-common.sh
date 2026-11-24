@@ -145,6 +145,8 @@ update_env_file_value() {
 	KEY="${key}" VALUE="${value}" TARGET_FILE="${file}" python3 <<'PY'
 from pathlib import Path
 import os
+import stat
+import tempfile
 
 def quote(value: str) -> str:
     value = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`").replace("\n", "\\n")
@@ -155,7 +157,9 @@ key = os.environ["KEY"]
 value = os.environ["VALUE"]
 lines = []
 updated = False
+orig_stat = None
 if path.exists():
+    orig_stat = path.stat()
     for raw in path.read_text().splitlines():
         if raw.startswith(f"{key}="):
             lines.append(f"{key}={quote(value)}")
@@ -164,7 +168,92 @@ if path.exists():
             lines.append(raw)
 if not updated:
     lines.append(f"{key}={quote(value)}")
-path.write_text("\n".join(lines) + "\n")
+content = "\n".join(lines) + "\n"
+
+path.parent.mkdir(parents=True, exist_ok=True)
+fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.tmp.", dir=str(path.parent))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+        fh.flush()
+        os.fsync(fh.fileno())
+    if orig_stat is not None:
+        os.chmod(tmp_name, stat.S_IMODE(orig_stat.st_mode))
+        try:
+            os.chown(tmp_name, orig_stat.st_uid, orig_stat.st_gid)
+        except PermissionError:
+            pass
+    else:
+        os.chmod(tmp_name, 0o640)
+    os.replace(tmp_name, path)
+except Exception:
+    try:
+        os.unlink(tmp_name)
+    except OSError:
+        pass
+    raise
+PY
+}
+
+update_install_yaml_encryption_kid() {
+	local kid="$1"
+	local file="${2:-${INSTALL_YAML:-/etc/emdash/install.yml}}"
+	[[ -f "${file}" ]] || return 0
+	KID="${kid}" TARGET_FILE="${file}" python3 <<'PY'
+from pathlib import Path
+import os
+import stat
+import tempfile
+
+path = Path(os.environ["TARGET_FILE"])
+kid = os.environ["KID"]
+orig_stat = path.stat()
+lines = path.read_text().splitlines()
+
+out = []
+in_secrets = False
+updated = False
+for line in lines:
+    stripped = line.strip()
+    if not line.startswith(" ") and stripped.endswith(":"):
+        if in_secrets and not updated:
+            out.append(f"  encryption_key_kid: {kid}")
+            updated = True
+        in_secrets = (stripped == "secrets:")
+        out.append(line)
+        continue
+    if in_secrets and stripped.startswith("encryption_key_kid:"):
+        out.append(f"  encryption_key_kid: {kid}")
+        updated = True
+        continue
+    out.append(line)
+
+if in_secrets and not updated:
+    out.append(f"  encryption_key_kid: {kid}")
+    updated = True
+elif not updated:
+    out.append("secrets:")
+    out.append(f"  encryption_key_kid: {kid}")
+
+content = "\n".join(out) + "\n"
+fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.tmp.", dir=str(path.parent))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(tmp_name, stat.S_IMODE(orig_stat.st_mode))
+    try:
+        os.chown(tmp_name, orig_stat.st_uid, orig_stat.st_gid)
+    except PermissionError:
+        pass
+    os.replace(tmp_name, path)
+except Exception:
+    try:
+        os.unlink(tmp_name)
+    except OSError:
+        pass
+    raise
 PY
 }
 

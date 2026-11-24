@@ -1,0 +1,25 @@
+# Local build overlay for EmdashDeploy Docker Compose.
+# Keeps local builds decoupled from prebuilt GHCR image tags so `up --build`
+# never overwrites a remote GHCR tag in your local Docker daemon.
+#
+# Usage:
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+#   docker compose -f compose.yml -f compose.build.yml --profile postgres --profile valkey up -d --build
+
+services:
+  emdash:
+    image: ${EMDASH_LOCAL_IMAGE:-emdash-deploy:local-${EMDASH_TEMPLATE:-blog}-${DB_DRIVER:-sqlite}-${SESSION_DRIVER:-file}-${STORAGE_DRIVER:-local}}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EMDASH_TEMPLATE: ${EMDASH_TEMPLATE:-blog}
+        EMDASH_TEMPLATES_REPO: ${EMDASH_TEMPLATES_REPO:-https://github.com/emdash-cms/templates.git}
+        EMDASH_TEMPLATES_REF: ${EMDASH_TEMPLATES_REF:-main}
+        DB_DRIVER: ${DB_DRIVER:-sqlite}
+        SESSION_DRIVER: ${SESSION_DRIVER:-file}
+        STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+        ENABLE_PLUGIN_SANDBOX: ${ENABLE_PLUGIN_SANDBOX:-1}
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-}
+        COREPACK_NPM_REGISTRY: ${COREPACK_NPM_REGISTRY:-}
+        APP_NODE_MAX_OLD_SPACE_SIZE: ${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}

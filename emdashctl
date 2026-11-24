@@ -57,6 +57,7 @@ emdashctl
 $(ct usage_title)
   emdashctl [--lang <code>] status [--json]
   emdashctl [--lang <code>] doctor [--deep] [--json]
+  emdashctl [--lang <code>] diagnose [--json] [--lines <N>] [--out <file>] [--no-ip-redact]
   emdashctl [--lang <code>] smoke [--json]
   emdashctl [--lang <code>] logs [app|postgres|redis|caddy] [-f]
   emdashctl [--lang <code>] restart [app|postgres|redis|all|caddy]
@@ -65,6 +66,7 @@ $(ct usage_title)
   emdashctl [--lang <code>] upgrade app [--target <version|latest>] [--dry-run] [--skip-backup] [--yes]
   emdashctl [--lang <code>] upgrade caddy-config
   emdashctl [--lang <code>] template diff [--stat]
+  emdashctl [--lang <code>] rotate-encryption-key [--status [--json] | --dry-run [--yes] | --prune-old [--confirm-prune-kid <kid>] [--force-prune] [--dry-run]]
   emdashctl [--lang <code>] reset-db-password
 EOF
 }
@@ -152,6 +154,10 @@ acquire_op_lock() {
 	fi
 }
 
+release_op_lock() {
+	exec 9>&- 2>/dev/null || true
+}
+
 bool_active() {
 	systemctl is-active --quiet "$1" 2>/dev/null
 }
@@ -229,6 +235,7 @@ PY
 }
 
 redact_sensitive_text() {
+	EMDASH_REDACT_IPS="${EMDASH_REDACT_IPS:-1}" \
 	PG_DB_PASSWORD="${PG_DB_PASSWORD:-}" \
 	REDIS_PASSWORD="${REDIS_PASSWORD:-}" \
 	EMDASH_ENCRYPTION_KEY="${EMDASH_ENCRYPTION_KEY:-}" \
@@ -239,9 +246,48 @@ redact_sensitive_text() {
 	BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}" \
 	python3 -c '
 import os, re, sys
+
 text = sys.stdin.read()
+redact_ips = os.environ.get("EMDASH_REDACT_IPS", "1") == "1"
+
+# EmDash encryption key specs
 text = re.sub(r"emdash_enc_v1_[A-Za-z0-9_-]{43}", "emdash_enc_v1_[REDACTED]", text)
-text = re.sub(r"(postgres|postgresql|redis|rediss)://([^:@/\s]*):([^@/\s]+)@", r"\1://\2:[REDACTED]@", text)
+# Database / Redis URLs with credentials
+text = re.sub(r"(postgres|postgresql|redis|rediss)://([^:@/\s\"\x27]*):([^@/\s\"\x27]+)@", r"\1://\2:[REDACTED]@", text)
+# JWT tokens (header.payload.signature)
+text = re.sub(r"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b", "[REDACTED_JWT]", text)
+# HTTP Authorization headers (plain, JSON-serialized, and escaped JSON-in-JSON; idempotent)
+text = re.sub(r"(?i)(\b(?:bearer|basic)\s+)(?!\[REDACTED)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED]", text)
+text = re.sub(r"(?i)(authorization\s*[:=]\s*\\?[\"'\'']?(?:bearer|basic|token)\s+)(?!\[REDACTED)[^\s\"'\'',;\]\}\\]+", r"\1[REDACTED]", text)
+text = re.sub(r"(?i)(\\?\"authorization\\?\"\s*:\s*\[?\s*\\?\")((?:bearer|basic|token)\s+)(?!\[REDACTED)[^\"\\]+(\\?\")", r"\1\2[REDACTED]\3", text)
+# Cookie / Set-Cookie headers (plain, JSON-serialized, and escaped JSON-in-JSON; idempotent)
+text = re.sub(
+    r"(?i)((\\?)\"(?:set-cookie|cookie)\2\"\s*:\s*)\[(?!\s*\\?\"\[REDACTED)[^\]]*\]",
+    lambda m: f"{m.group(1)}[{m.group(2)}\"[REDACTED_COOKIE]{m.group(2)}\"]",
+    text,
+)
+text = re.sub(r"(?i)((\\?)\"(?:set-cookie|cookie)\2\"\s*:\s*)(\2\")(?!\[REDACTED)[^\"\\]*\3", r"\1\3[REDACTED_COOKIE]\3", text)
+text = re.sub(r"(?im)^(\s*(?:set-cookie|cookie)\s*:\s*)(?!\[REDACTED).+$", r"\1[REDACTED_COOKIE]", text)
+text = re.sub(r"(?i)\b((?:set-cookie|cookie)\s*:\s*)(?!\[REDACTED)[^\r\n\"}\]]+", r"\1[REDACTED_COOKIE]", text)
+# Sensitive URL query params (idempotent)
+text = re.sub(
+    r"(?i)([?&](?:token|access_token|refresh_token|api_key|apikey|key|secret|password|passwd|pwd|code|signature|sig|auth)=)(?!\[REDACTED)([^&#\s\"'\''\)\]\\]+)",
+    r"\1[REDACTED]",
+    text,
+)
+
+if redact_ips:
+    text = re.sub(r"(?i)((\\?)\"(?:remote_ip|client_ip|remote_addr)\2\"\s*:\s*)(\2\")(?!\[REDACTED)[^\"\\]+\3", r"\1\3[REDACTED_IP]\3", text)
+    text = re.sub(
+        r"(?i)((\\?)\"(?:x-forwarded-for|x-real-ip|cf-connecting-ip)\2\"\s*:\s*)\[(?!\s*\\?\"\[REDACTED)[^\]]*\]",
+        lambda m: f"{m.group(1)}[{m.group(2)}\"[REDACTED_IP]{m.group(2)}\"]",
+        text,
+    )
+    text = re.sub(r"(?i)((\\?)\"(?:x-forwarded-for|x-real-ip|cf-connecting-ip)\2\"\s*:\s*)(\2\")(?!\[REDACTED)[^\"\\]+\3", r"\1\3[REDACTED_IP]\3", text)
+    text = re.sub(r"(?i)\b((?:x-forwarded-for|x-real-ip|cf-connecting-ip)\s*:\s*)(?!\[REDACTED)[^\r\n\"}\]]+", r"\1[REDACTED_IP]", text)
+
+# Exact runtime secret values (including comma-separated encryption keys)
+secrets_to_mask = []
 for env_name in (
     "PG_DB_PASSWORD",
     "REDIS_PASSWORD",
@@ -254,7 +300,16 @@ for env_name in (
 ):
     secret = os.environ.get(env_name, "")
     if secret and len(secret) >= 4:
-        text = text.replace(secret, "[REDACTED]")
+        secrets_to_mask.append(secret)
+        if env_name == "EMDASH_ENCRYPTION_KEY" and "," in secret:
+            for part in secret.split(","):
+                part = part.strip()
+                if len(part) >= 4:
+                    secrets_to_mask.append(part)
+
+for secret in sorted(set(secrets_to_mask), key=len, reverse=True):
+    text = text.replace(secret, "[REDACTED]")
+
 sys.stdout.write(text)
 '
 }
@@ -634,6 +689,84 @@ PY
 	fi
 
 	if [[ "${deep}" == "1" ]]; then
+		# Directory ownership & env file permissions check
+		local perm_result="" perm_status="" perm_detail="" perm_rem=""
+		perm_result="$(
+			APP_ENV_FILE="${APP_ENV_FILE}" \
+			SITE_DIR="${SITE_DIR}" \
+			UPLOADS_DIR="${UPLOADS_DIR}" \
+			SESSIONS_DIR="${SESSIONS_DIR}" \
+			SQLITE_DIR="${SQLITE_DIR}" \
+			DB_DRIVER="${DB_DRIVER}" \
+			SESSION_DRIVER="${SESSION_DRIVER}" \
+			APP_RUN_USER="${APP_RUN_USER}" \
+			APP_RUN_GROUP="${APP_RUN_GROUP}" \
+			python3 - <<'PY'
+import grp, json, os, pwd, stat
+from pathlib import Path
+
+issues = []
+remediations = []
+expected_user = os.environ["APP_RUN_USER"]
+expected_group = os.environ["APP_RUN_GROUP"]
+
+try:
+    expected_uid = pwd.getpwnam(expected_user).pw_uid
+except KeyError:
+    expected_uid = None
+try:
+    expected_gid = grp.getgrnam(expected_group).gr_gid
+except KeyError:
+    expected_gid = None
+
+dirs = [os.environ["SITE_DIR"], os.environ["UPLOADS_DIR"]]
+if os.environ.get("SESSION_DRIVER") == "file":
+    dirs.append(os.environ["SESSIONS_DIR"])
+if os.environ.get("DB_DRIVER") == "sqlite":
+    dirs.append(os.environ["SQLITE_DIR"])
+
+for d in dirs:
+    p = Path(d)
+    if not p.exists():
+        continue
+    st = p.stat()
+    if expected_uid is not None and st.st_uid != expected_uid:
+        issues.append(f"{d} owner uid={st.st_uid} (expected {expected_user})")
+        remediations.append(f"chown -R {expected_user}:{expected_group} '{d}'")
+    elif expected_gid is not None and st.st_gid != expected_gid:
+        issues.append(f"{d} group gid={st.st_gid} (expected {expected_group})")
+        remediations.append(f"chown -R {expected_user}:{expected_group} '{d}'")
+
+env_path = Path(os.environ["APP_ENV_FILE"])
+if env_path.is_file():
+    st = env_path.stat()
+    mode = stat.S_IMODE(st.st_mode)
+    if mode & 0o027:
+        issues.append(f"{env_path} mode {oct(mode)} is too permissive (must not allow group-write or world access)")
+        remediations.append(f"chmod 0640 '{env_path}'")
+    if (mode & 0o040) and expected_gid is not None and st.st_gid not in (0, expected_gid):
+        issues.append(f"{env_path} group gid={st.st_gid} allows unexpected group read")
+        remediations.append(f"chown root:{expected_group} '{env_path}'")
+
+if issues:
+    print(json.dumps({
+        "status": "fail",
+        "detail": "; ".join(issues),
+        "remediation": " && ".join(dict.fromkeys(remediations)),
+    }))
+else:
+    print(json.dumps({
+        "status": "ok",
+        "detail": f"directory ownership ({expected_user}:{expected_group}) and env permissions ok",
+        "remediation": "",
+    }))
+PY
+		)"
+		perm_status="$(printf '%s' "${perm_result}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' 2>/dev/null || echo warn)"
+		perm_detail="$(printf '%s' "${perm_result}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["detail"])' 2>/dev/null || echo "unable to inspect permissions")"
+		perm_rem="$(printf '%s' "${perm_result}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["remediation"])' 2>/dev/null || true)"
+		add_check "permissions" "${perm_status}" "${perm_detail}" "${perm_rem}"
+
 		# Disk space check
 		local avail_mb
 		avail_mb="$(df -Pm "${ROOT_DIR}" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
@@ -786,6 +919,80 @@ PY
 				add_check "s3 storage" "fail" "s3 check failed: ${s3_check_out}" "Verify python3-boto3 and S3 credentials"
 			fi
 		fi
+
+		# Upstream `emdash doctor --json` aggregation (SQLite only, bounded by timeout 15)
+		if [[ "${DB_DRIVER}" == "sqlite" && -f "${SQLITE_PATH}" && -d "${SITE_DIR}/node_modules" ]]; then
+			if run_as_app_user "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 timeout 15 pnpm exec emdash doctor --help >/dev/null 2>&1" >/dev/null 2>&1; then
+				local upstream_doc_out="" upstream_doc_rc=0 upstream_parsed=""
+				set +e
+				upstream_doc_out="$(run_as_app_user "set -a; [[ -f '${APP_ENV_FILE}' ]] && . '${APP_ENV_FILE}'; set +a; cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 timeout 15 pnpm exec emdash doctor --database '${SQLITE_PATH}' --json" 2>&1)"
+				upstream_doc_rc=$?
+				set -e
+				if (( upstream_doc_rc == 124 )); then
+					add_check "upstream:emdash doctor" "warn" "emdash doctor timed out after 15s" "Run pnpm exec emdash doctor --database '${SQLITE_PATH}' manually"
+				else
+					upstream_parsed="$(
+						UPSTREAM_RAW="${upstream_doc_out}" python3 - <<'PY' 2>/dev/null || true
+import json, os
+
+raw = os.environ.get("UPSTREAM_RAW", "").strip()
+data = None
+try:
+    data = json.loads(raw)
+except Exception:
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        try:
+            data = json.loads(raw[start:end + 1])
+        except Exception:
+            data = None
+
+if not isinstance(data, list):
+    raise SystemExit(1)
+
+wanted = {"collections", "datetime storage", "users"}
+status_map = {"pass": "ok", "ok": "ok", "warn": "warn", "fail": "fail"}
+out = []
+for item in data:
+    if not isinstance(item, dict):
+        continue
+    name = str(item.get("name", "")).strip()
+    if name not in wanted:
+        continue
+    st = status_map.get(str(item.get("status", "warn")).lower(), "warn")
+    msg = str(item.get("message", "")).strip()
+    out.append({"name": f"upstream:{name}", "status": st, "detail": msg})
+
+print(json.dumps(out, ensure_ascii=False))
+PY
+					)"
+					if [[ -n "${upstream_parsed}" ]]; then
+						while IFS=$'\t' read -r up_name up_status up_detail; do
+							[[ -n "${up_name}" ]] || continue
+							local up_rem=""
+							if [[ "${up_status}" != "ok" ]]; then
+								up_rem="Inspect via pnpm exec emdash doctor --database '${SQLITE_PATH}'"
+							fi
+							add_check "${up_name}" "${up_status}" "${up_detail}" "${up_rem}"
+						done < <(
+							printf '%s' "${upstream_parsed}" | python3 -c '
+import json, sys
+for item in json.load(sys.stdin):
+    name = item["name"].replace("\t", " ").replace("\n", " ")
+    status = item["status"].replace("\t", " ").replace("\n", " ")
+    detail = item["detail"].replace("\t", " ").replace("\n", " ")
+    print(f"{name}\t{status}\t{detail}")
+'
+						)
+					else
+						add_check "upstream:emdash doctor" "warn" "emdash doctor returned unparseable output (exit=${upstream_doc_rc})" "Run pnpm exec emdash doctor --database '${SQLITE_PATH}' manually"
+					fi
+				fi
+			else
+				add_check "upstream:emdash doctor" "skipped" "emdash doctor CLI not available or timed out" ""
+			fi
+		fi
 	fi
 
 	local report_json=""
@@ -835,6 +1042,410 @@ for c in data["checks"]:
     if c["status"] in ("fail", "warn") and c.get("remediation"):
         rem = c["remediation"]
         print(f"       -> {rem}")
+'
+}
+
+collect_service_state_json() {
+	local unit="$1"
+	if ! command -v systemctl >/dev/null 2>&1; then
+		UNIT="${unit}" python3 -c 'import json,os; print(json.dumps({"unit": os.environ["UNIT"], "available": False}))'
+		return 0
+	fi
+	local show_out=""
+	show_out="$(systemctl show "${unit}" -p ActiveState -p SubState -p NRestarts -p ExecMainStatus -p MainPID --value 2>/dev/null || true)"
+	UNIT="${unit}" SHOW_OUT="${show_out}" python3 - <<'PY'
+import json, os
+lines = os.environ.get("SHOW_OUT", "").splitlines()
+if len(lines) < 5:
+    print(json.dumps({"unit": os.environ["UNIT"], "available": False}))
+else:
+    def to_int(v):
+        try:
+            return int(v)
+        except Exception:
+            return 0
+    print(json.dumps({
+        "unit": os.environ["UNIT"],
+        "available": True,
+        "active_state": lines[0],
+        "sub_state": lines[1],
+        "restarts": to_int(lines[2]),
+        "exec_main_status": to_int(lines[3]),
+        "main_pid": to_int(lines[4]),
+    }))
+PY
+}
+
+collect_service_logs_json() {
+	local unit="$1"
+	local max_lines="${2:-80}"
+	local max_bytes="${3:-32768}"
+	local redact_ips="${4:-1}"
+
+	if ! command -v journalctl >/dev/null 2>&1; then
+		UNIT="${unit}" python3 -c 'import json,os; print(json.dumps({"unit": os.environ["UNIT"], "available": False, "entries": [], "entry_count": 0, "bytes": 0, "truncated": False}))'
+		return 0
+	fi
+
+	local raw_file=""
+	raw_file="$(mktemp)"
+	DIAG_LOG_TMP="${raw_file}"
+	trap 'rm -f "${DIAG_LOG_TMP:-}"' RETURN
+
+	if ! journalctl -u "${unit}" -n "${max_lines}" -o json --no-pager >"${raw_file}" 2>/dev/null; then
+		rm -f "${raw_file}"
+		DIAG_LOG_TMP=""
+		trap - RETURN
+		UNIT="${unit}" python3 -c 'import json,os; print(json.dumps({"unit": os.environ["UNIT"], "available": False, "entries": [], "entry_count": 0, "bytes": 0, "truncated": False}))'
+		return 0
+	fi
+
+	local parsed_json=""
+	parsed_json="$(
+		UNIT="${unit}" MAX_BYTES="${max_bytes}" RAW_FILE="${raw_file}" python3 - <<'PY'
+import datetime, json, os
+from pathlib import Path
+
+unit = os.environ["UNIT"]
+max_bytes = int(os.environ["MAX_BYTES"])
+max_entry_bytes = 4096
+raw_lines = Path(os.environ["RAW_FILE"]).read_text(errors="replace").splitlines()
+
+entries = []
+total_bytes = 0
+truncated = False
+
+for line in raw_lines:
+    line = line.strip()
+    if not line:
+        continue
+    ts_iso = ""
+    priority = ""
+    msg = ""
+    try:
+        obj = json.loads(line)
+        rt = obj.get("__REALTIME_TIMESTAMP")
+        if rt is not None:
+            try:
+                dt = datetime.datetime.fromtimestamp(int(rt) / 1_000_000, tz=datetime.timezone.utc)
+                ts_iso = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                ts_iso = str(rt)
+        priority = str(obj.get("PRIORITY", ""))
+        raw_msg = obj.get("MESSAGE", "")
+        if isinstance(raw_msg, list):
+            msg = bytes(int(b) & 0xFF for b in raw_msg).decode("utf-8", errors="replace")
+        else:
+            msg = str(raw_msg)
+    except Exception:
+        msg = line
+
+    msg_bytes = msg.encode("utf-8", errors="replace")
+    if len(msg_bytes) > max_entry_bytes:
+        msg = msg_bytes[:max_entry_bytes].decode("utf-8", errors="ignore") + "...[TRUNCATED]"
+        truncated = True
+
+    entry = {"timestamp": ts_iso, "priority": priority, "message": msg}
+    entry_size = len(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+    if total_bytes + entry_size > max_bytes:
+        truncated = True
+        break
+    entries.append(entry)
+    total_bytes += entry_size
+
+print(json.dumps({
+    "unit": unit,
+    "available": True,
+    "entry_count": len(entries),
+    "bytes": total_bytes,
+    "truncated": truncated,
+    "entries": entries,
+}, ensure_ascii=False))
+PY
+	)"
+
+	rm -f "${raw_file}"
+	DIAG_LOG_TMP=""
+	trap - RETURN
+
+	EMDASH_REDACT_IPS="${redact_ips}" redact_sensitive_text <<<"${parsed_json}"
+}
+
+diagnose_command() {
+	local as_json="0"
+	local lines="80"
+	local out_file=""
+	local redact_ips="1"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--json) as_json="1" ;;
+		--no-ip-redact) redact_ips="0" ;;
+		--lines=*) lines="${1#--lines=}" ;;
+		--lines)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --lines"
+			lines="$1"
+			;;
+		--out=*) out_file="${1#--out=}" ;;
+		--out)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --out"
+			out_file="$1"
+			;;
+		*) fail "Unknown diagnose option: $1" ;;
+		esac
+		shift
+	done
+
+	if ! [[ "${lines}" =~ ^[0-9]+$ ]] || (( lines < 1 || lines > 500 )); then
+		fail "--lines must be an integer between 1 and 500 (got: ${lines})"
+	fi
+
+	if [[ -n "${out_file}" ]]; then
+		if [[ -L "${out_file}" ]]; then
+			fail "Refusing to write diagnostic bundle to symlink: ${out_file}"
+		fi
+		if [[ -d "${out_file}" ]]; then
+			fail "Refusing to write diagnostic bundle to directory: ${out_file}"
+		fi
+	fi
+
+	local doctor_json="" migrations_json="" key_kids=""
+	doctor_json="$(EMDASH_REDACT_IPS="${redact_ips}" doctor_command 1 1)"
+	migrations_json="$(probe_emdash_migrations)"
+	if [[ -n "${EMDASH_ENCRYPTION_KEY:-}" ]] && declare -F emdash_encryption_key_fingerprint >/dev/null 2>&1; then
+		key_kids="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
+	fi
+
+	local diag_tmp=""
+	diag_tmp="$(mktemp -d)"
+	DIAGNOSE_TMP_DIR="${diag_tmp}"
+	trap 'rm -rf "${DIAGNOSE_TMP_DIR:-}"' RETURN
+
+	printf '%s\n' "${doctor_json}" >"${diag_tmp}/doctor.json"
+	printf '%s\n' "${migrations_json}" >"${diag_tmp}/migrations.json"
+
+	local -a svc_roles=("app")
+	[[ "${DB_DRIVER}" == "postgres" ]] && svc_roles+=("postgres")
+	[[ "${SESSION_DRIVER}" == "redis" ]] && svc_roles+=("redis")
+	[[ "${USE_CADDY}" == "1" ]] && svc_roles+=("caddy")
+
+	mkdir -p "${diag_tmp}/services" "${diag_tmp}/logs"
+	local role="" unit=""
+	for role in "${svc_roles[@]}"; do
+		unit="$(service_name_for "${role}" 2>/dev/null || true)"
+		[[ -n "${unit}" ]] || continue
+		collect_service_state_json "${unit}" >"${diag_tmp}/services/${role}.json"
+		collect_service_logs_json "${unit}" "${lines}" 32768 "${redact_ips}" >"${diag_tmp}/logs/${role}.json"
+	done
+
+	local avail_mb="" disk_use=""
+	avail_mb="$(df -Pm "${ROOT_DIR}" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
+	disk_use="$(df -Pm "${ROOT_DIR}" 2>/dev/null | awk 'NR==2 {print $5}' || echo unknown)"
+
+	local raw_bundle=""
+	raw_bundle="$(
+		DIAG_DIR="${diag_tmp}" \
+		SITE_DIR="${SITE_DIR}" \
+		ROOT_DIR="${ROOT_DIR}" \
+		APP_PORT="${APP_PORT}" \
+		APP_PUBLIC_URL="${APP_PUBLIC_URL:-}" \
+		PROJECT_NAME="${PROJECT_NAME:-}" \
+		TEMPLATE="${TEMPLATE:-}" \
+		DB_DRIVER="${DB_DRIVER}" \
+		SESSION_DRIVER="${SESSION_DRIVER}" \
+		STORAGE_DRIVER="${STORAGE_DRIVER}" \
+		USE_CADDY="${USE_CADDY}" \
+		ENABLE_HTTPS="${ENABLE_HTTPS}" \
+		ENABLE_PLUGIN_SANDBOX="${ENABLE_PLUGIN_SANDBOX:-1}" \
+		BACKUP_ENABLED="${BACKUP_ENABLED}" \
+		BACKUP_TARGET_TYPE="${BACKUP_TARGET_TYPE}" \
+		MIRROR_PRESET="${MIRROR_PRESET:-}" \
+		LIB_SCHEMA_VERSION="${LIB_SCHEMA_VERSION:-${EMDASH_LIB_SCHEMA_VERSION:-1}}" \
+		KEY_KIDS="${key_kids}" \
+		DISK_AVAIL_MB="${avail_mb}" \
+		DISK_USE_PCT="${disk_use}" \
+		REDACT_IPS="${redact_ips}" \
+		python3 - <<'PY'
+import datetime, json, os, platform, socket
+from pathlib import Path
+
+diag_dir = Path(os.environ["DIAG_DIR"])
+
+os_pretty = platform.platform()
+os_release = Path("/etc/os-release")
+if os_release.is_file():
+    for line in os_release.read_text(errors="replace").splitlines():
+        if line.startswith("PRETTY_NAME="):
+            os_pretty = line.split("=", 1)[1].strip().strip('"')
+            break
+
+meminfo = {}
+mem_path = Path("/proc/meminfo")
+if mem_path.is_file():
+    for line in mem_path.read_text(errors="replace").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            parts = v.strip().split()
+            if parts and parts[0].isdigit():
+                meminfo[k] = int(parts[0]) // 1024
+
+pkg_info = {"present": False}
+pkg_path = Path(os.environ["SITE_DIR"]) / "package.json"
+if pkg_path.is_file():
+    try:
+        pkg = json.loads(pkg_path.read_text())
+        deps = {}
+        for sec in ("dependencies", "devDependencies"):
+            for k, v in (pkg.get(sec) or {}).items():
+                if k in ("emdash", "astro", "workerd", "pg", "ioredis") or k.startswith("@astrojs/") or k.startswith("@emdash-cms/"):
+                    deps[k] = v
+        pkg_info = {
+            "present": True,
+            "packageManager": pkg.get("packageManager", ""),
+            "lockfile_exists": (Path(os.environ["SITE_DIR"]) / "pnpm-lock.yaml").is_file(),
+            "packages": dict(sorted(deps.items())),
+        }
+    except Exception:
+        pkg_info = {"present": True, "error": "unparseable package.json"}
+
+doctor_data = json.loads((diag_dir / "doctor.json").read_text())
+migrations_data = json.loads((diag_dir / "migrations.json").read_text())
+
+services = {}
+for p in sorted((diag_dir / "services").glob("*.json")):
+    services[p.stem] = json.loads(p.read_text())
+
+recent_logs = {}
+for p in sorted((diag_dir / "logs").glob("*.json")):
+    recent_logs[p.stem] = json.loads(p.read_text())
+
+next_steps = []
+for c in doctor_data.get("checks", []):
+    if c.get("status") in ("fail", "warn") and c.get("remediation"):
+        step = f"[{c['status'].upper()} {c['name']}] {c['remediation']}"
+        if step not in next_steps:
+            next_steps.append(step)
+if migrations_data.get("pending_count", 0) > 0:
+    step = "Apply pending migrations via emdashctl upgrade app or pnpm exec emdash migrate"
+    if step not in next_steps:
+        next_steps.append(step)
+
+bundle = {
+    "schema_version": 1,
+    "redaction": {
+        "secrets_redacted": True,
+        "ips_redacted": os.environ.get("REDACT_IPS", "1") == "1",
+    },
+    "meta": {
+        "collected_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "hostname": socket.gethostname(),
+        "os": os_pretty,
+        "kernel": platform.release(),
+        "arch": platform.machine(),
+        "lib_schema_version": os.environ["LIB_SCHEMA_VERSION"],
+        "memory_mb": {
+            "total": meminfo.get("MemTotal", 0),
+            "available": meminfo.get("MemAvailable", 0),
+            "swap_total": meminfo.get("SwapTotal", 0),
+            "swap_free": meminfo.get("SwapFree", 0),
+        },
+        "disk": {
+            "root_dir": os.environ["ROOT_DIR"],
+            "available_mb": int(os.environ["DISK_AVAIL_MB"]) if os.environ["DISK_AVAIL_MB"].isdigit() else 0,
+            "use_percent": os.environ["DISK_USE_PCT"],
+        },
+    },
+    "config_summary": {
+        "project_name": os.environ["PROJECT_NAME"],
+        "template": os.environ["TEMPLATE"],
+        "app_public_url": os.environ["APP_PUBLIC_URL"],
+        "app_port": os.environ["APP_PORT"],
+        "db_driver": os.environ["DB_DRIVER"],
+        "session_driver": os.environ["SESSION_DRIVER"],
+        "storage_driver": os.environ["STORAGE_DRIVER"],
+        "use_caddy": os.environ["USE_CADDY"] == "1",
+        "enable_https": os.environ["ENABLE_HTTPS"] == "1",
+        "enable_plugin_sandbox": os.environ["ENABLE_PLUGIN_SANDBOX"] == "1",
+        "backup_enabled": os.environ["BACKUP_ENABLED"] == "1",
+        "backup_target_type": os.environ["BACKUP_TARGET_TYPE"],
+        "mirror_preset": os.environ["MIRROR_PRESET"],
+        "encryption_key_kids": [k for k in os.environ["KEY_KIDS"].split(",") if k],
+    },
+    "site_packages": pkg_info,
+    "doctor": doctor_data,
+    "migrations": migrations_data,
+    "services": services,
+    "recent_logs": recent_logs,
+    "suggested_next_steps": next_steps,
+}
+print(json.dumps(bundle, ensure_ascii=False, indent=2))
+PY
+	)"
+
+	rm -rf "${diag_tmp}"
+	DIAGNOSE_TMP_DIR=""
+	trap - RETURN
+
+	# Second-pass full-bundle redaction (belt-and-suspenders) while preserving valid JSON
+	local safe_bundle=""
+	safe_bundle="$(EMDASH_REDACT_IPS="${redact_ips}" redact_sensitive_text <<<"${raw_bundle}")"
+
+	if [[ -n "${out_file}" ]]; then
+		local out_dir="" out_tmp=""
+		out_dir="$(dirname "${out_file}")"
+		mkdir -p "${out_dir}"
+		[[ ! -L "${out_file}" ]] || fail "Refusing to write diagnostic bundle to symlink: ${out_file}"
+		umask 0077
+		out_tmp="$(mktemp "${out_dir}/.$(basename "${out_file}").tmp.XXXXXX")"
+		printf '%s\n' "${safe_bundle}" >"${out_tmp}"
+		chmod 0600 "${out_tmp}"
+		[[ ! -L "${out_file}" ]] || { rm -f "${out_tmp}"; fail "Refusing to write diagnostic bundle to symlink: ${out_file}"; }
+		mv -f "${out_tmp}" "${out_file}"
+		log "Diagnostic bundle written safely (0600): ${out_file}"
+		return 0
+	fi
+
+	if [[ "${as_json}" == "1" ]]; then
+		printf '%s\n' "${safe_bundle}"
+		return 0
+	fi
+
+	printf '%s\n' "${safe_bundle}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+m = d["meta"]
+c = d["config_summary"]
+doc = d["doctor"]
+s = doc["summary"]
+collected_at = m["collected_at"]
+hostname = m["hostname"]
+os_name = m["os"]
+arch = m["arch"]
+tmpl = c["template"]
+dbd = c["db_driver"]
+sessd = c["session_driver"]
+stord = c["storage_driver"]
+sbox = c["enable_plugin_sandbox"]
+kids = c["encryption_key_kids"]
+healthy = doc["healthy"]
+ok_n, warn_n, fail_n, skip_n = s["ok"], s["warn"], s["fail"], s["skipped"]
+print(f"EmDash Diagnostic Summary ({collected_at})")
+print(f"  Host: {hostname} | OS: {os_name} ({arch})")
+print(f"  Stack: template={tmpl} db={dbd} session={sessd} storage={stord} sandbox={sbox}")
+print(f"  Encryption key kids: {kids}")
+print(f"  Doctor: healthy={healthy} (ok={ok_n} warn={warn_n} fail={fail_n} skipped={skip_n})")
+for role, svc in d["services"].items():
+    unit = svc.get("unit", "")
+    st = svc.get("active_state", "unavailable")
+    sub = svc.get("sub_state", "")
+    rst = svc.get("restarts", 0)
+    print(f"  Service[{role}]: {unit} state={st}/{sub} restarts={rst}")
+if d["suggested_next_steps"]:
+    print("  Suggested next steps:")
+    for step in d["suggested_next_steps"]:
+        print(f"    - {step}")
 '
 }
 
@@ -1508,6 +2119,449 @@ template_diff_command() {
 	fi
 }
 
+scan_db_encrypted_kid_refs() {
+	if [[ "${DB_DRIVER}" == "sqlite" ]]; then
+		if [[ ! -f "${SQLITE_PATH}" ]]; then
+			printf '{"supported":true,"checked":true,"counts":{},"tables":{}}\n'
+			return 0
+		fi
+		SQLITE_PATH="${SQLITE_PATH}" python3 - <<'PY'
+import json, os, sqlite3
+
+db_path = os.environ["SQLITE_PATH"]
+counts = {}
+tables = {}
+
+def walk(val, table_name):
+    if isinstance(val, dict):
+        if val.get("$emdash") == "encrypted" and isinstance(val.get("kid"), str) and val.get("kid"):
+            kid = val["kid"]
+            counts[kid] = counts.get(kid, 0) + 1
+            tset = tables.setdefault(kid, [])
+            if table_name not in tset:
+                tset.append(table_name)
+        for v in val.values():
+            walk(v, table_name)
+    elif isinstance(val, list):
+        for item in val:
+            walk(item, table_name)
+    elif isinstance(val, str):
+        if '"$emdash"' in val and '"encrypted"' in val:
+            try:
+                parsed = json.loads(val)
+                walk(parsed, table_name)
+            except Exception:
+                pass
+
+try:
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    all_tables = [r[0] for r in cur.fetchall()]
+    preferred = ["_emdash_options", "_emdash_plugins", "_emdash_plugin_storage"]
+    scan_tables = [t for t in all_tables if t in preferred or "emdash" in t.lower()]
+    for tbl in scan_tables:
+        q_tbl = '"' + tbl.replace('"', '""') + '"'
+        try:
+            for row in cur.execute(f"SELECT * FROM {q_tbl}"):
+                for col in row:
+                    if isinstance(col, str) and '"$emdash"' in col:
+                        walk(col, tbl)
+        except Exception:
+            continue
+    conn.close()
+    print(json.dumps({"supported": True, "checked": True, "counts": counts, "tables": tables}))
+except Exception as exc:
+    print(json.dumps({"supported": True, "checked": False, "error": str(exc), "counts": {}, "tables": {}}))
+PY
+		return 0
+	fi
+
+	# PostgreSQL scan via psql + Python JSON walker
+	if ! command -v psql >/dev/null 2>&1; then
+		printf '{"supported":true,"checked":false,"error":"psql not found","counts":{},"tables":{}}\n'
+		return 0
+	fi
+	local pg_tables=""
+	if ! pg_tables="$(PGPASSWORD="${PG_DB_PASSWORD:-}" psql -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" -U "${PG_DB_USER:-emdash}" -d "${PG_DB_NAME:-emdash}" -tAc "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND (tablename IN ('_emdash_options','_emdash_plugins','_emdash_plugin_storage') OR tablename ILIKE '%emdash%');" 2>/dev/null)"; then
+		printf '{"supported":true,"checked":false,"error":"postgresql query failed","counts":{},"tables":{}}\n'
+		return 0
+	fi
+	local scan_tmp=""
+	scan_tmp="$(mktemp)"
+	PG_SCAN_TMP="${scan_tmp}"
+	trap 'rm -f "${PG_SCAN_TMP:-}"' RETURN
+	local tbl=""
+	while IFS= read -r tbl; do
+		[[ -n "${tbl}" ]] || continue
+		[[ "${tbl}" =~ ^[A-Za-z0-9_]+$ ]] || continue
+		PGPASSWORD="${PG_DB_PASSWORD:-}" psql -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" -U "${PG_DB_USER:-emdash}" -d "${PG_DB_NAME:-emdash}" \
+			-tAc "SELECT '${tbl}' || E'\t' || row_to_json(t)::text FROM \"${tbl}\" t WHERE row_to_json(t)::text LIKE '%\"\$emdash\"%';" >>"${scan_tmp}" 2>/dev/null || true
+	done <<<"${pg_tables}"
+
+	SCAN_FILE="${scan_tmp}" python3 - <<'PY'
+import json, os
+from pathlib import Path
+
+counts = {}
+tables = {}
+
+def walk(val, table_name):
+    if isinstance(val, dict):
+        if val.get("$emdash") == "encrypted" and isinstance(val.get("kid"), str) and val.get("kid"):
+            kid = val["kid"]
+            counts[kid] = counts.get(kid, 0) + 1
+            tset = tables.setdefault(kid, [])
+            if table_name not in tset:
+                tset.append(table_name)
+        for v in val.values():
+            walk(v, table_name)
+    elif isinstance(val, list):
+        for item in val:
+            walk(item, table_name)
+    elif isinstance(val, str):
+        if '"$emdash"' in val and '"encrypted"' in val:
+            try:
+                parsed = json.loads(val)
+                walk(parsed, table_name)
+            except Exception:
+                pass
+
+for line in Path(os.environ["SCAN_FILE"]).read_text(errors="replace").splitlines():
+    if "\t" not in line:
+        continue
+    tbl, payload = line.split("\t", 1)
+    try:
+        obj = json.loads(payload)
+        walk(obj, tbl)
+    except Exception:
+        pass
+
+print(json.dumps({"supported": True, "checked": True, "counts": counts, "tables": tables}))
+PY
+	rm -f "${scan_tmp}"
+	PG_SCAN_TMP=""
+	trap - RETURN
+}
+
+generate_rotated_encryption_key() {
+	local candidate=""
+	if [[ -d "${SITE_DIR}/node_modules" ]]; then
+		candidate="$(run_as_app_user "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 timeout 15 pnpm exec emdash secrets generate" 2>/dev/null | tr -d '\r\n' || true)"
+	fi
+	if [[ -n "${candidate}" ]] && validate_emdash_encryption_key "${candidate}"; then
+		printf '%s\n' "${candidate}"
+		return 0
+	fi
+	generate_emdash_encryption_key_spec
+}
+
+rotate_encryption_key_command() {
+	local mode="rotate"
+	local as_json="0"
+	local dry_run="0"
+	local assume_yes="0"
+	local confirm_prune_kid=""
+	local force_prune="0"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--status) mode="status" ;;
+		--prune-old) mode="prune" ;;
+		--json) as_json="1" ;;
+		--dry-run) dry_run="1" ;;
+		--yes | -y) assume_yes="1" ;;
+		--force-prune) force_prune="1" ;;
+		--confirm-prune-kid=*) confirm_prune_kid="${1#--confirm-prune-kid=}" ;;
+		--confirm-prune-kid)
+			shift
+			[[ $# -gt 0 ]] || fail "Missing value for --confirm-prune-kid"
+			confirm_prune_kid="$1"
+			;;
+		*) fail "Unknown rotate-encryption-key option: $1" ;;
+		esac
+		shift
+	done
+
+	local current_raw="${EMDASH_ENCRYPTION_KEY:-}"
+	if [[ -z "${current_raw}" ]]; then
+		fail "EMDASH_ENCRYPTION_KEY is not configured in ${APP_ENV_FILE}."
+	fi
+	if ! validate_emdash_encryption_key "${current_raw}"; then
+		fail "Current EMDASH_ENCRYPTION_KEY format is invalid."
+	fi
+
+	local current_kids_csv=""
+	current_kids_csv="$(emdash_encryption_key_fingerprint "${current_raw}")"
+
+	local key_meta=""
+	key_meta="$(
+		RAW_KEYS="${current_raw}" KIDS_CSV="${current_kids_csv}" python3 - <<'PY'
+import json, os
+parts = [p.strip() for p in os.environ["RAW_KEYS"].split(",") if p.strip()]
+kids = [k.strip() for k in os.environ["KIDS_CSV"].split(",") if k.strip()]
+print(json.dumps({
+    "key_count": len(parts),
+    "primary_key": parts[0],
+    "primary_kid": kids[0],
+    "legacy_kids": kids[1:],
+    "all_kids": kids,
+}))
+PY
+	)"
+
+	local key_count primary_key primary_kid legacy_kids_csv
+	key_count="$(printf '%s' "${key_meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key_count"])')"
+	primary_key="$(printf '%s' "${key_meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["primary_key"])')"
+	primary_kid="$(printf '%s' "${key_meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["primary_kid"])')"
+	legacy_kids_csv="$(printf '%s' "${key_meta}" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["legacy_kids"]))')"
+
+	if [[ "${mode}" == "status" ]]; then
+		local scan_json=""
+		scan_json="$(scan_db_encrypted_kid_refs)"
+		local status_out=""
+		status_out="$(
+			KEY_META="${key_meta}" SCAN_JSON="${scan_json}" python3 - <<'PY'
+import json, os
+meta = json.loads(os.environ["KEY_META"])
+scan = json.loads(os.environ["SCAN_JSON"])
+print(json.dumps({
+    "key_count": meta["key_count"],
+    "primary_kid": meta["primary_kid"],
+    "legacy_kids": meta["legacy_kids"],
+    "db_scan": scan,
+}, ensure_ascii=False, indent=2))
+PY
+		)"
+		if [[ "${as_json}" == "1" ]]; then
+			printf '%s\n' "${status_out}"
+			return 0
+		fi
+		printf '%s\n' "${status_out}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+kc = d["key_count"]
+pk = d["primary_kid"]
+lk = d["legacy_kids"]
+scan = d["db_scan"]
+counts = scan.get("counts") or {}
+print(f"Encryption keys configured: {kc}")
+print(f"  Primary encryption kid: {pk} (DB encrypted refs: {counts.get(pk, 0)})")
+if lk:
+    print("  Legacy decryption kids:")
+    for kid in lk:
+        cnt = counts.get(kid, 0)
+        tbls = (scan.get("tables") or {}).get(kid, [])
+        tbl_info = f" in {tbls}" if tbls else ""
+        print(f"    - {kid} (DB encrypted refs: {cnt}{tbl_info})")
+else:
+    print("  Legacy decryption kids: none")
+if not scan.get("checked"):
+    err = scan.get("error", "unknown")
+    print(f"  [WARN] Database scan incomplete: {err}")
+'
+		return 0
+	fi
+
+	local health_tries="${EMDASHCTL_HEALTH_TRIES:-30}"
+	local setup_tries="${EMDASHCTL_SETUP_TRIES:-15}"
+
+	if [[ "${mode}" == "rotate" ]]; then
+		local new_key="" new_kid="" next_raw="" next_kids_csv=""
+		new_key="$(generate_rotated_encryption_key)"
+		new_kid="$(emdash_encryption_key_fingerprint "${new_key}")"
+		next_raw="${new_key},${current_raw}"
+		next_kids_csv="${new_kid},${current_kids_csv}"
+
+		if [[ "${dry_run}" == "1" ]]; then
+			log "Dry-run: Stage 1 encryption key rotation plan:"
+			log "  Current primary kid: ${primary_kid} (total keys: ${key_count})"
+			log "  New primary kid:     ${new_kid}"
+			log "  Resulting key kids:  ${next_kids_csv} (old keys preserved for decryption)"
+			log "Dry-run complete. No files or services were modified."
+			return 0
+		fi
+
+		if [[ "${assume_yes}" != "1" && -t 0 ]]; then
+			local ans=""
+			read -r -p "Prepend new encryption key (kid=${new_kid}) before existing kid=${primary_kid} and restart ${APP_SYSTEMD_SERVICE}? [y/N]: " ans
+			[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] || fail "Key rotation aborted by user."
+		fi
+
+		acquire_op_lock
+		umask 0077
+		local snap_dir=""
+		snap_dir="$(mktemp -d)"
+		chmod 0700 "${snap_dir}"
+		ROTATE_SNAP_DIR="${snap_dir}"
+		trap 'rm -rf "${ROTATE_SNAP_DIR:-}"' RETURN
+
+		cp -a "${APP_ENV_FILE}" "${snap_dir}/emdash.env"
+		[[ -f "${INSTALL_YAML}" ]] && cp -a "${INSTALL_YAML}" "${snap_dir}/install.yml"
+
+		rollback_rotate_files() {
+			if [[ -f "${snap_dir}/emdash.env" ]]; then
+				cp -a "${snap_dir}/emdash.env" "${APP_ENV_FILE}"
+			fi
+			if [[ -f "${snap_dir}/install.yml" ]]; then
+				cp -a "${snap_dir}/install.yml" "${INSTALL_YAML}"
+			fi
+			systemctl restart "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+		}
+
+		if ! update_env_value "EMDASH_ENCRYPTION_KEY" "${next_raw}" "${APP_ENV_FILE}"; then
+			rollback_rotate_files
+			rm -rf "${snap_dir}"
+			ROTATE_SNAP_DIR=""
+			trap - RETURN
+			fail "Failed to update ${APP_ENV_FILE}; rolled back."
+		fi
+		if declare -F update_install_yaml_encryption_kid >/dev/null 2>&1; then
+			update_install_yaml_encryption_kid "${next_kids_csv}" "${INSTALL_YAML}" || true
+		fi
+
+		if ! { systemctl restart "${APP_SYSTEMD_SERVICE}" && wait_http_ok "$(local_health_url)" "${health_tries}" && wait_http_ok "$(local_setup_url)" "${setup_tries}"; }; then
+			warn "Health check failed after Stage 1 key rotation; rolling back emdash.env and install.yml."
+			rollback_rotate_files
+			rm -rf "${snap_dir}"
+			ROTATE_SNAP_DIR=""
+			trap - RETURN
+			fail "Stage 1 encryption key rotation failed health verification; previous configuration restored."
+		fi
+
+		rm -rf "${snap_dir}"
+		ROTATE_SNAP_DIR=""
+		trap - RETURN
+		release_op_lock
+
+		log "Stage 1 encryption key rotation complete: primary kid ${primary_kid} -> ${new_kid}"
+		log "Active encryption kids: ${next_kids_csv}"
+		log "Next steps:"
+		log "  1. Back up the updated ${APP_ENV_FILE} immediately."
+		log "  2. Re-save encrypted plugin settings in EmDash admin so they re-encrypt under kid=${new_kid}."
+		log "  3. Verify zero legacy DB references with: emdashctl rotate-encryption-key --status"
+		log "  4. Prune legacy key(s) once ready: emdashctl rotate-encryption-key --prune-old --confirm-prune-kid ${current_kids_csv}"
+		return 0
+	fi
+
+	# Stage 2: --prune-old
+	if (( key_count < 2 )); then
+		fail "Only 1 encryption key is configured (kid=${primary_kid}); nothing to prune."
+	fi
+
+	local scan_json="" scan_checked="" legacy_refs="0" legacy_detail=""
+	scan_json="$(scan_db_encrypted_kid_refs)"
+	scan_checked="$(printf '%s' "${scan_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("checked", False))')"
+	legacy_refs="$(
+		SCAN_JSON="${scan_json}" LEGACY_KIDS="${legacy_kids_csv}" python3 - <<'PY'
+import json, os
+scan = json.loads(os.environ["SCAN_JSON"])
+counts = scan.get("counts") or {}
+kids = [k for k in os.environ["LEGACY_KIDS"].split(",") if k]
+print(sum(int(counts.get(k, 0)) for k in kids))
+PY
+	)"
+	legacy_detail="$(
+		SCAN_JSON="${scan_json}" LEGACY_KIDS="${legacy_kids_csv}" python3 - <<'PY'
+import json, os
+scan = json.loads(os.environ["SCAN_JSON"])
+counts = scan.get("counts") or {}
+tables = scan.get("tables") or {}
+parts = []
+for k in [x for x in os.environ["LEGACY_KIDS"].split(",") if x]:
+    c = int(counts.get(k, 0))
+    t = tables.get(k, [])
+    parts.append(f"{k}:{c}" + (f"({','.join(t)})" if t else ""))
+print(", ".join(parts))
+PY
+	)"
+
+	if [[ "${dry_run}" == "1" ]]; then
+		log "Dry-run: Stage 2 encryption key prune plan:"
+		log "  Keep primary kid:   ${primary_kid}"
+		log "  Prune legacy kids:  ${legacy_kids_csv}"
+		log "  DB scan checked:    ${scan_checked} | legacy refs: ${legacy_refs} (${legacy_detail})"
+		log "Dry-run complete. No files or services were modified."
+		return 0
+	fi
+
+	if [[ "${scan_checked}" != "True" && "${force_prune}" != "1" ]]; then
+		fail "Database encrypted-envelope scan could not complete; refusing to prune legacy key(s) (${legacy_kids_csv}). Pass --force-prune only if you are certain no values use the legacy key(s)."
+	fi
+
+	if (( legacy_refs > 0 )) && [[ "${force_prune}" != "1" ]]; then
+		fail "Refusing to prune legacy encryption key(s): found ${legacy_refs} database value(s) still encrypted under legacy kid(s) [${legacy_detail}]. Re-save those plugin settings in EmDash admin first, or pass --force-prune if intentional."
+	fi
+
+	# Strong kid-bound confirmation (plain --yes is NEVER sufficient for destructive key pruning)
+	if [[ -n "${confirm_prune_kid}" ]]; then
+		if [[ "${confirm_prune_kid}" != "${legacy_kids_csv}" ]]; then
+			fail "--confirm-prune-kid value '${confirm_prune_kid}' does not match legacy kid(s) to prune '${legacy_kids_csv}'."
+		fi
+	else
+		if [[ -t 0 ]]; then
+			warn "Pruning legacy key(s) [${legacy_kids_csv}] is irreversible for any ciphertext still encrypted with them."
+			warn "If historical backups depend on this key, create a fresh backup first."
+			local typed_kid=""
+			read -r -p "Type the exact legacy kid(s) '${legacy_kids_csv}' to confirm pruning: " typed_kid
+			[[ "${typed_kid}" == "${legacy_kids_csv}" ]] || fail "Confirmation kid mismatch; prune aborted."
+		else
+			fail "Non-interactive --prune-old requires explicit --confirm-prune-kid '${legacy_kids_csv}' (--yes alone is not accepted)."
+		fi
+	fi
+
+	acquire_op_lock
+	umask 0077
+	local snap_dir=""
+	snap_dir="$(mktemp -d)"
+	chmod 0700 "${snap_dir}"
+	ROTATE_SNAP_DIR="${snap_dir}"
+	trap 'rm -rf "${ROTATE_SNAP_DIR:-}"' RETURN
+
+	cp -a "${APP_ENV_FILE}" "${snap_dir}/emdash.env"
+	[[ -f "${INSTALL_YAML}" ]] && cp -a "${INSTALL_YAML}" "${snap_dir}/install.yml"
+
+	rollback_prune_files() {
+		if [[ -f "${snap_dir}/emdash.env" ]]; then
+			cp -a "${snap_dir}/emdash.env" "${APP_ENV_FILE}"
+		fi
+		if [[ -f "${snap_dir}/install.yml" ]]; then
+			cp -a "${snap_dir}/install.yml" "${INSTALL_YAML}"
+		fi
+		systemctl start "${APP_SYSTEMD_SERVICE}" >/dev/null 2>&1 || true
+	}
+
+	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+
+	if ! update_env_value "EMDASH_ENCRYPTION_KEY" "${primary_key}" "${APP_ENV_FILE}"; then
+		rollback_prune_files
+		rm -rf "${snap_dir}"
+		ROTATE_SNAP_DIR=""
+		trap - RETURN
+		fail "Failed to update ${APP_ENV_FILE} during prune; rolled back."
+	fi
+	if declare -F update_install_yaml_encryption_kid >/dev/null 2>&1; then
+		update_install_yaml_encryption_kid "${primary_kid}" "${INSTALL_YAML}" || true
+	fi
+
+	if ! { systemctl start "${APP_SYSTEMD_SERVICE}" && wait_http_ok "$(local_health_url)" "${health_tries}" && wait_http_ok "$(local_setup_url)" "${setup_tries}"; }; then
+		warn "Health check failed after Stage 2 key prune; rolling back emdash.env and install.yml."
+		systemctl stop "${APP_SYSTEMD_SERVICE}" || true
+		rollback_prune_files
+		rm -rf "${snap_dir}"
+		ROTATE_SNAP_DIR=""
+		trap - RETURN
+		fail "Stage 2 encryption key prune failed health verification; previous keys restored."
+	fi
+
+	rm -rf "${snap_dir}"
+	ROTATE_SNAP_DIR=""
+	trap - RETURN
+	release_op_lock
+
+	log "Stage 2 encryption key prune complete: removed legacy kid(s) [${legacy_kids_csv}], kept primary kid [${primary_kid}]."
+}
+
 reset_db_password_command() {
 	[[ "${DB_DRIVER}" == "postgres" ]] || fail "$(ct reset_only_postgres)"
 	acquire_op_lock
@@ -1596,6 +2650,9 @@ main() {
 		done
 		doctor_command "${json_flag}" "${deep_flag}"
 		;;
+	diagnose)
+		diagnose_command "$@"
+		;;
 	smoke)
 		[[ "${1:-}" == "--json" ]] && json_flag="1"
 		smoke_command "${json_flag}"
@@ -1622,6 +2679,9 @@ main() {
 		[[ "${1:-}" == "diff" ]] || fail "Supported template subcommand: diff"
 		shift
 		template_diff_command "$@"
+		;;
+	rotate-encryption-key)
+		rotate_encryption_key_command "$@"
 		;;
 	reset-db-password)
 		reset_db_password_command

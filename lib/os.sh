@@ -29,7 +29,11 @@ detect_os_family() {
 			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="noble"
 			REDIS_SERVICE="valkey-server"
 			;;
-		*) fail "仅支持 Ubuntu 24.04，当前为 ${OS_LABEL}" ;;
+		26)
+			[[ -n "${OS_CODENAME}" ]] || OS_CODENAME="resolute"
+			REDIS_SERVICE="valkey-server"
+			;;
+		*) fail "仅支持 Ubuntu 24.04 / 26.04，当前为 ${OS_LABEL}" ;;
 		esac
 		;;
 	rocky | almalinux | rhel | ol | centos | centos_stream)
@@ -148,8 +152,12 @@ install_postgres_server() {
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		if ! dpkg -s "postgresql-${PG_VERSION}" >/dev/null 2>&1; then
 			log "安装 PostgreSQL ${PG_VERSION} (PGDG)"
+			local pgdg_release_url="https://apt.postgresql.org/pub/repos/apt/dists/${OS_CODENAME}-pgdg/Release"
+			if ! curl -fsI --max-time 15 "${pgdg_release_url}" >/dev/null 2>&1; then
+				fail "PGDG 仓库暂未发布或无法访问 ${OS_CODENAME}-pgdg (${pgdg_release_url})，请检查网络或改用 SQLite。"
+			fi
 			install -d -m 0755 /etc/apt/keyrings
-			curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+			curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /etc/apt/keyrings/postgresql.gpg
 			cat >/etc/apt/sources.list.d/pgdg.list <<EOF
 deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main
 EOF
@@ -158,9 +166,15 @@ EOF
 		fi
 		POSTGRES_SERVICE="postgresql"
 	else
+		local host_arch=""
+		host_arch="$(uname -m)"
+		case "${host_arch}" in
+		x86_64 | aarch64) ;;
+		*) fail "不支持的 CPU 架构: ${host_arch}（仅支持 x86_64 / aarch64）" ;;
+		esac
 		dnf -qy module disable postgresql || true
 		rpm -q pgdg-redhat-repo >/dev/null 2>&1 \
-			|| dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+			|| dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR}-${host_arch}/pgdg-redhat-repo-latest.noarch.rpm"
 		# Replace AppStream packages with PGDG for consistent paths/units
 		if rpm -q "postgresql${PG_VERSION}-server" >/dev/null 2>&1 \
 			&& ! rpm -q --qf '%{RELEASE}\n' "postgresql${PG_VERSION}-server" | grep -qi pgdg; then
@@ -235,15 +249,37 @@ PY
 	fi
 }
 
+detect_valkey_service() {
+	local candidate=""
+	for candidate in valkey-server valkey redis-server redis; do
+		if systemctl list-unit-files "${candidate}.service" 2>/dev/null | awk '{print $1}' | grep -qx "${candidate}.service"; then
+			printf '%s\n' "${candidate}"
+			return 0
+		fi
+		if systemctl cat "${candidate}.service" >/dev/null 2>&1; then
+			printf '%s\n' "${candidate}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 install_redis_server() {
 	[[ "${SESSION_DRIVER}" == "redis" ]] || return 0
 
 	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
 		dpkg -s valkey >/dev/null 2>&1 || apt-get install -y valkey
-		REDIS_SERVICE="valkey-server"
 	else
 		rpm -q valkey >/dev/null 2>&1 || dnf -y install valkey
-		REDIS_SERVICE="valkey"
+	fi
+
+	REDIS_SERVICE="$(detect_valkey_service || true)"
+	if [[ -z "${REDIS_SERVICE}" ]]; then
+		if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "ubuntu" ]]; then
+			REDIS_SERVICE="valkey-server"
+		else
+			REDIS_SERVICE="valkey"
+		fi
 	fi
 
 	configure_redis_local

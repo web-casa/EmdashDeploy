@@ -1,0 +1,21 @@
+# Custom EmDash site overlay (safe immutable build — never bind-mounts host /app/site).
+#
+# Preserves your custom packageManager, pnpm-lock.yaml, astro.config.*, pages,
+# components, and plugins verbatim inside an isolated non-root container image.
+#
+# Usage:
+#   CUSTOM_SITE_DIR=/path/to/your-emdash-site \
+#     docker compose -f compose.yml -f compose.custom-site.yml up -d --build
+
+services:
+  emdash:
+    image: ${EMDASH_CUSTOM_IMAGE:-emdash-deploy:custom-site}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.custom
+      additional_contexts:
+        custom_site: ${CUSTOM_SITE_DIR:-./custom-site}
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-}
+        COREPACK_NPM_REGISTRY: ${COREPACK_NPM_REGISTRY:-}
+        APP_NODE_MAX_OLD_SPACE_SIZE: ${APP_NODE_MAX_OLD_SPACE_SIZE:-1536}

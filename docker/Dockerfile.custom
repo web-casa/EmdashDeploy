@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1.7
+# Build an isolated production image from a user-owned (or AI-Coding-customized)
+# EmDash site directory without mutating user source files or bind-mounting /app/site.
+#
+# Usage (recommended via compose.custom-site.yml):
+#   CUSTOM_SITE_DIR=/path/to/your-emdash-site \
+#     docker compose -f compose.yml -f compose.custom-site.yml up -d --build
+
+FROM node:24-bookworm-slim
+
+ARG NPM_CONFIG_REGISTRY=
+ARG COREPACK_NPM_REGISTRY=
+ARG APP_NODE_MAX_OLD_SPACE_SIZE=1536
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000 \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    NODE_OPTIONS="--max-old-space-size=${APP_NODE_MAX_OLD_SPACE_SIZE}" \
+    SQLITE_PATH=/data/sqlite/data.db \
+    UPLOADS_DIR=/data/uploads \
+    SESSIONS_DIR=/data/sessions \
+    EMDASH_AUTO_MIGRATE=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gosu \
+        g++ \
+        make \
+        python3 \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 10001 emdash || true \
+    && useradd -m -u 10001 -g 10001 -s /bin/bash emdash || true
+
+SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
+
+WORKDIR /opt/emdash
+COPY lib/site-common.sh /opt/emdash/lib/
+
+# Copy user site from BuildKit additional context `custom_site` (never modifies host dir)
+RUN mkdir -p /app/site /data/sqlite /data/uploads /data/sessions
+COPY --from=custom_site . /app/site/
+
+# Strip any accidentally copied host build/runtime artifacts before clean install + build
+RUN rm -rf /app/site/node_modules /app/site/dist /app/site/.astro /app/site/.git \
+    && test -f /app/site/package.json || { echo "ERROR: CUSTOM_SITE_DIR must contain package.json" >&2; exit 1; } \
+    && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then export NPM_CONFIG_REGISTRY; fi \
+    && if [[ -n "${COREPACK_NPM_REGISTRY}" ]]; then export COREPACK_NPM_REGISTRY; fi \
+    && source /opt/emdash/lib/site-common.sh \
+    && ensure_site_pnpm /app/site \
+    && cd /app/site \
+    && if [[ -f pnpm-lock.yaml ]]; then pnpm install --frozen-lockfile; else pnpm install --no-frozen-lockfile; fi \
+    && pnpm build \
+    && chown -R 10001:10001 /app /data
+
+COPY docker/entrypoint.sh /usr/local/bin/emdash-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/emdash-entrypoint.sh
+
+WORKDIR /app/site
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:${PORT:-3000}/_emdash/api/setup/status >/dev/null || curl -fsS http://127.0.0.1:${PORT:-3000}/healthz >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/emdash-entrypoint.sh"]
+CMD ["start"]

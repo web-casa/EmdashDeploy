@@ -1,0 +1,244 @@
+name: Publish Docker Images (Multi-Arch GHCR)
+
+on:
+  push:
+    tags:
+      - '*-hi.*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Explicit image tag prefix (defaults to git ref name or sha)"
+        required: false
+        default: ""
+      publish_latest:
+        description: "Also update :latest and :latest-<profile> tags"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/emdash-deploy
+
+jobs:
+  resolve-tags:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      is_release: ${{ steps.meta.outputs.is_release }}
+      image_lower: ${{ steps.meta.outputs.image_lower }}
+    steps:
+      - name: Compute release tag and lowercase image name
+        id: meta
+        run: |
+          IMAGE_LOWER="$(printf '%s' "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_lower=${IMAGE_LOWER}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.image_tag }}"
+            [[ -n "${TAG}" ]] || TAG="sha-${GITHUB_SHA::7}"
+            IS_RELEASE="${{ inputs.publish_latest }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+            if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+              IS_RELEASE="false"
+            else
+              IS_RELEASE="true"
+            fi
+          else
+            TAG="${GITHUB_REF_NAME}"
+            if [[ "${TAG}" == *-* && "${TAG}" != *-hi.* ]]; then
+              IS_RELEASE="false"
+            else
+              IS_RELEASE="true"
+            fi
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "is_release=${IS_RELEASE}" >> "$GITHUB_OUTPUT"
+
+  build-native:
+    needs: resolve-tags
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: blog-sqlite
+            arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            db_driver: sqlite
+            session_driver: file
+          - profile: blog-sqlite
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            db_driver: sqlite
+            session_driver: file
+          - profile: blog-pg-valkey
+            arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            db_driver: postgres
+            session_driver: redis
+          - profile: blog-pg-valkey
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            db_driver: postgres
+            session_driver: redis
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push native ${{ matrix.platform }} image by digest (${{ matrix.profile }})
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          outputs: type=image,name=${{ needs.resolve-tags.outputs.image_lower }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            EMDASH_TEMPLATE=blog
+            DB_DRIVER=${{ matrix.db_driver }}
+            SESSION_DRIVER=${{ matrix.session_driver }}
+            STORAGE_DRIVER=local
+            ENABLE_PLUGIN_SANDBOX=1
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.resolve-tags.outputs.tag }}
+            org.opencontainers.image.description=EmdashDeploy prebuilt EmDash 1.6+ (${{ matrix.profile }})
+
+      - name: Export image digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.profile }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-manifests:
+    needs: [resolve-tags, build-native]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [blog-sqlite, blog-pg-valkey]
+    steps:
+      - name: Download architecture digests for ${{ matrix.profile }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.profile }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest list (${{ matrix.profile }})
+        run: |
+          set -Eeuo pipefail
+          IMAGE="${{ needs.resolve-tags.outputs.image_lower }}"
+          TAG="${{ needs.resolve-tags.outputs.tag }}"
+          PROFILE="${{ matrix.profile }}"
+          IS_RELEASE="${{ needs.resolve-tags.outputs.is_release }}"
+
+          TAGS=(-t "${IMAGE}:${TAG}-${PROFILE}")
+          if [[ "${PROFILE}" == "blog-sqlite" ]]; then
+            TAGS+=(-t "${IMAGE}:${TAG}")
+          fi
+          if [[ "${IS_RELEASE}" == "true" ]]; then
+            TAGS+=(-t "${IMAGE}:latest-${PROFILE}")
+            if [[ "${PROFILE}" == "blog-sqlite" ]]; then
+              TAGS+=(-t "${IMAGE}:latest")
+            fi
+          fi
+
+          SOURCES=()
+          for f in /tmp/digests/*; do
+            SOURCES+=("${IMAGE}@sha256:$(basename "${f}")")
+          done
+          [[ ${#SOURCES[@]} -eq 2 ]] || { echo "Expected 2 arch digests, got ${#SOURCES[@]}" >&2; exit 1; }
+
+          docker buildx imagetools create "${TAGS[@]}" "${SOURCES[@]}"
+          docker buildx imagetools inspect "${IMAGE}:${TAG}-${PROFILE}"
+
+  smoke-test-native:
+    needs: [resolve-tags, merge-manifests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Native ${{ matrix.arch }} doctor (workerd) and /healthz smoke test
+        run: |
+          set -Eeuo pipefail
+          IMAGE="${{ needs.resolve-tags.outputs.image_lower }}:${{ needs.resolve-tags.outputs.tag }}-blog-sqlite"
+          docker pull "${IMAGE}"
+
+          echo "=== Verifying doctor + workerd import on native ${{ matrix.arch }} ==="
+          docker run --rm "${IMAGE}" doctor
+
+          echo "=== Verifying runtime /healthz + /_emdash/api/setup/status on native ${{ matrix.arch }} ==="
+          ENC_KEY="$(docker run --rm "${IMAGE}" secrets-generate | tr -d '\r\n')"
+          CID="$(docker run -d -p 127.0.0.1:13000:3000 \
+            -e EMDASH_SITE_URL=http://127.0.0.1:13000 \
+            -e EMDASH_ENCRYPTION_KEY="${ENC_KEY}" \
+            "${IMAGE}")"
+          trap 'docker logs "${CID}" || true; docker rm -f "${CID}" >/dev/null 2>&1 || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:13000/healthz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:13000/healthz
+          curl -fsS http://127.0.0.1:13000/_emdash/api/setup/status
