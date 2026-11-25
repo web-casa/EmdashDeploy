@@ -21,10 +21,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run Gitleaks secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Gitleaks CLI secret scan (OSS)
+        run: |
+          set -Eeuo pipefail
+          GITLEAKS_VER="8.24.2"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -C /tmp -xzf /tmp/gitleaks.tar.gz gitleaks
+          /tmp/gitleaks detect --source . --redact --verbose --no-banner
 
   iac-and-workflow-audit:
     runs-on: ubuntu-24.04

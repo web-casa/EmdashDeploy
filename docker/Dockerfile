@@ -18,6 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOST=0.0.0.0 \
     PORT=3000 \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    COREPACK_HOME=/opt/emdash/corepack \
     NODE_OPTIONS="--max-old-space-size=${APP_NODE_MAX_OLD_SPACE_SIZE}" \
     DB_DRIVER="${DB_DRIVER}" \
     SESSION_DRIVER="${SESSION_DRIVER}" \
@@ -75,12 +76,13 @@ RUN case " ${EMDASH_TEMPLATE} " in \
     && if [[ -n "${NPM_CONFIG_REGISTRY}" ]]; then REG_ARG+=(--registry="${NPM_CONFIG_REGISTRY}"); fi \
     && pnpm install --no-frozen-lockfile "${REG_ARG[@]}" \
     && pnpm build \
-    && chown -R 10001:10001 /app /data
+    && chown -R 10001:10001 /app /data /opt/emdash
 
 COPY docker/entrypoint.sh /usr/local/bin/emdash-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/emdash-entrypoint.sh
 
 WORKDIR /app/site
+USER emdash
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \

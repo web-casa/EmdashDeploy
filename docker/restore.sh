@@ -185,7 +185,7 @@ if not res or res[0] != "ok":
 PY
 	log "Restoring SQLite database into emdash volume..."
 	docker compose "${compose_args[@]}" run --rm -T --no-deps --entrypoint sh emdash -ec \
-		"mkdir -p /data/sqlite && rm -f /data/sqlite/data.db-wal /data/sqlite/data.db-shm && cat > /data/sqlite/data.db.tmp && mv -f /data/sqlite/data.db.tmp /data/sqlite/data.db && chown ${PUID}:${PGID} /data/sqlite /data/sqlite/data.db && chmod 0640 /data/sqlite/data.db" \
+		"mkdir -p /data/sqlite && rm -f /data/sqlite/data.db-wal /data/sqlite/data.db-shm && cat > /data/sqlite/data.db.tmp && mv -f /data/sqlite/data.db.tmp /data/sqlite/data.db && (chown ${PUID}:${PGID} /data/sqlite /data/sqlite/data.db 2>/dev/null || true) && chmod 0640 /data/sqlite/data.db" \
 		<"${EXTRACT_DIR}/data/sqlite/data.db"
 elif [[ "${DB_DRIVER}" == "postgres" ]]; then
 	[[ -f "${EXTRACT_DIR}/data/postgres.dump" ]] || fail "data/postgres.dump not found in archive"
@@ -223,7 +223,7 @@ if [[ "${STORAGE_DRIVER}" == "local" && -d "${EXTRACT_DIR}/data/uploads" ]]; the
 	log "Restoring /data/uploads into emdash volume..."
 	tar -C "${EXTRACT_DIR}/data/uploads" -cf - . \
 		| docker compose "${compose_args[@]}" run --rm -T --no-deps --entrypoint sh emdash -ec \
-			"mkdir -p /data/uploads && find /data/uploads -mindepth 1 -delete && tar -C /data/uploads -xf - && chown -R ${PUID}:${PGID} /data/uploads"
+			"mkdir -p /data/uploads && find /data/uploads -mindepth 1 -delete && tar -C /data/uploads -xf - && (chown -R ${PUID}:${PGID} /data/uploads 2>/dev/null || true)"
 fi
 
 log "Starting emdash container and verifying health..."
