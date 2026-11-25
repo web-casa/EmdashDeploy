@@ -184,21 +184,29 @@ test_s3_storage() {
 
 	log "执行对象存储上传测试"
 
-	python3 - "${S3_ENDPOINT}" "${S3_REGION}" "${S3_BUCKET}" "${S3_ACCESS_KEY_ID}" "${S3_SECRET_ACCESS_KEY}" "${test_key}" "${tmp_file}" <<'PY'
-import sys
+	S3_TEST_ENDPOINT="${S3_ENDPOINT}" \
+	S3_TEST_REGION="${S3_REGION}" \
+	S3_TEST_BUCKET="${S3_BUCKET}" \
+	S3_TEST_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}" \
+	S3_TEST_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
+	S3_TEST_KEY="${test_key}" \
+	S3_TEST_BODY_PATH="${tmp_file}" \
+	python3 <<'PY'
+import os
 import boto3
 from botocore.config import Config
 
-endpoint, region, bucket, access, secret, key, body_path = sys.argv[1:]
+bucket = os.environ["S3_TEST_BUCKET"]
+key = os.environ["S3_TEST_KEY"]
 client = boto3.client(
     "s3",
-    endpoint_url=endpoint,
-    aws_access_key_id=access,
-    aws_secret_access_key=secret,
-    region_name=region,
+    endpoint_url=os.environ["S3_TEST_ENDPOINT"],
+    aws_access_key_id=os.environ["S3_TEST_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["S3_TEST_SECRET_ACCESS_KEY"],
+    region_name=os.environ["S3_TEST_REGION"],
     config=Config(signature_version="s3v4"),
 )
-with open(body_path, "rb") as fh:
+with open(os.environ["S3_TEST_BODY_PATH"], "rb") as fh:
     client.put_object(Bucket=bucket, Key=key, Body=fh)
 client.delete_object(Bucket=bucket, Key=key)
 PY

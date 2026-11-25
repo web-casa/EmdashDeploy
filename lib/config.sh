@@ -434,8 +434,18 @@ validate_config() {
 	if [[ "${USE_CADDY}" == "1" && -z "${DOMAIN}" ]]; then
 		fail "$(ti caddy_requires_domain)"
 	fi
+	if [[ -n "${DOMAIN}" ]]; then
+		if [[ "${DOMAIN}" == *".."* ]] || ! [[ "${DOMAIN}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]]; then
+			fail "Invalid DOMAIN format: ${DOMAIN} (only letters, digits, hyphens, and dots are allowed)"
+		fi
+	fi
 	if [[ "${USE_CADDY}" == "1" && "${ENABLE_HTTPS}" == "1" && -z "${ADMIN_EMAIL}" ]]; then
 		fail "$(ti https_requires_email)"
+	fi
+	if [[ -n "${ADMIN_EMAIL}" ]]; then
+		if ! [[ "${ADMIN_EMAIL}" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+			fail "Invalid ADMIN_EMAIL format: ${ADMIN_EMAIL}"
+		fi
 	fi
 
 	if [[ "${STORAGE_DRIVER}" == "s3" ]]; then

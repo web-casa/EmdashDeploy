@@ -6,6 +6,7 @@ IFS=$'\n\t'
 REPO_OWNER="${EMDASH_BOOTSTRAP_OWNER:-web-casa}"
 REPO_NAME="${EMDASH_BOOTSTRAP_REPO:-EmdashDeploy}"
 REPO_REF="${EMDASH_BOOTSTRAP_REF:-main}"
+EXPECTED_SHA256="${EMDASH_BOOTSTRAP_SHA256:-}"
 INSTALL_LANG="${EMDASH_INSTALL_LANG:-en}"
 KEEP_BOOTSTRAP_DIR="${EMDASH_BOOTSTRAP_KEEP:-0}"
 BOOTSTRAP_TMP_DIR=""
@@ -118,6 +119,17 @@ main() {
 				}
 				REPO_REF="${raw_args[${idx}]}"
 				;;
+			--sha256=*)
+				EXPECTED_SHA256="${arg#--sha256=}"
+				;;
+			--sha256)
+				idx=$((idx + 1))
+				[[ "${idx}" -lt "${#raw_args[@]}" ]] || {
+					printf '[ERROR] Missing value for --sha256\n' >&2
+					exit 1
+				}
+				EXPECTED_SHA256="${raw_args[${idx}]}"
+				;;
 			*)
 				args+=("${arg}")
 				;;
@@ -137,6 +149,21 @@ main() {
 	archive="${BOOTSTRAP_TMP_DIR}/emdashdeploy.tar.gz"
 
 	curl -fsSL "$(archive_url)" -o "${archive}"
+	if [[ -n "${EXPECTED_SHA256}" ]]; then
+		local actual_sha256=""
+		if command -v sha256sum >/dev/null 2>&1; then
+			actual_sha256="$(sha256sum "${archive}" | awk '{print $1}')"
+		elif command -v shasum >/dev/null 2>&1; then
+			actual_sha256="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+		else
+			printf '[ERROR] --sha256 requested but neither sha256sum nor shasum is installed\n' >&2
+			exit 1
+		fi
+		if [[ "${actual_sha256,,}" != "${EXPECTED_SHA256,,}" ]]; then
+			printf '[ERROR] Archive SHA-256 mismatch: expected %s, got %s\n' "${EXPECTED_SHA256}" "${actual_sha256}" >&2
+			exit 1
+		fi
+	fi
 	tar -xzf "${archive}" -C "${BOOTSTRAP_TMP_DIR}"
 	repo_dir="$(find "${BOOTSTRAP_TMP_DIR}" -maxdepth 1 -type d -name "${REPO_NAME}-*" | head -n 1)"
 	[[ -n "${repo_dir}" && -d "${repo_dir}" ]] || {

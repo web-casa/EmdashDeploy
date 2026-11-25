@@ -412,6 +412,13 @@ PY
 ${site_header} {
 	encode zstd gzip
 
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+	}
+
 	log {
 		output stdout
 		format json
@@ -457,6 +464,20 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+ReadWritePaths=${ROOT_DIR}
 
 [Install]
 WantedBy=multi-user.target
@@ -635,10 +656,7 @@ ensure_site_encryption_key_after_build() {
 		render_install_yaml
 	fi
 
-	verified_kid="$(runuser -u "${APP_RUN_USER}" -- bash -lc "cd '${SITE_DIR}' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec emdash secrets fingerprint '${EMDASH_ENCRYPTION_KEY%%,*}'" 2>/dev/null | grep -oE '^[0-9a-f]{8}$' | head -n1 || true)"
-	if [[ -z "${verified_kid}" ]]; then
-		verified_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
-	fi
+	verified_kid="$(emdash_encryption_key_fingerprint "${EMDASH_ENCRYPTION_KEY}" 2>/dev/null || true)"
 	if [[ -n "${verified_kid}" ]]; then
 		log "EMDASH_ENCRYPTION_KEY 已就绪（kid=${verified_kid}），请务必妥善备份 ${APP_ENV_FILE}，密钥丢失将导致已加密插件配置无法恢复。"
 	fi

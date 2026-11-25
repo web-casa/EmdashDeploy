@@ -510,16 +510,13 @@ PY
 postgres_alter_password() {
 	local role="$1"
 	local password="$2"
-	local alter_sql
-	alter_sql="$(python3 - "${role}" "${password}" <<'PY'
-import sys
+	PG_ROLE_VALUE="${role}" PG_PASS_VALUE="${password}" python3 <<'PY' | runuser -u postgres -- psql postgres -v ON_ERROR_STOP=1 >/dev/null
+import os
 
-user = sys.argv[1].replace('"', '""')
-password = sys.argv[2].replace("'", "''")
+user = os.environ["PG_ROLE_VALUE"].replace('"', '""')
+password = os.environ["PG_PASS_VALUE"].replace("'", "''")
 print(f'ALTER ROLE "{user}" WITH PASSWORD \'{password}\';')
 PY
-)"
-	runuser -u postgres -- psql postgres -c "${alter_sql}" >/dev/null
 }
 
 ensure_template_source_checkout() {
@@ -969,23 +966,45 @@ PY
 				s3_ep="${BACKUP_S3_ENDPOINT:-}"; s3_reg="${BACKUP_S3_REGION:-auto}"; s3_bkt="${BACKUP_S3_BUCKET:-}"; s3_ak="${BACKUP_S3_ACCESS_KEY_ID:-}"; s3_sk="${BACKUP_S3_SECRET_ACCESS_KEY:-}"
 			fi
 			local s3_check_out=""
-			if s3_check_out="$(python3 - "${s3_ep}" "${s3_reg}" "${s3_bkt}" "${s3_ak}" "${s3_sk}" <<'PY' 2>&1
-import sys
+			if s3_check_out="$(S3_EP="${s3_ep}" S3_REG="${s3_reg}" S3_BKT="${s3_bkt}" S3_AK="${s3_ak}" S3_SK="${s3_sk}" python3 <<'PY' 2>&1
+import os, sys
 try:
     import boto3
     from botocore.config import Config
 except ImportError:
     print("boto3 missing")
     sys.exit(2)
-ep, reg, bkt, ak, sk = sys.argv[1:]
-client = boto3.client("s3", endpoint_url=ep, region_name=reg, aws_access_key_id=ak, aws_secret_access_key=sk, config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=5))
-client.head_bucket(Bucket=bkt)
+client = boto3.client(
+    "s3",
+    endpoint_url=os.environ["S3_EP"],
+    region_name=os.environ["S3_REG"],
+    aws_access_key_id=os.environ["S3_AK"],
+    aws_secret_access_key=os.environ["S3_SK"],
+    config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=5),
+)
+client.head_bucket(Bucket=os.environ["S3_BKT"])
 print("head_bucket ok")
 PY
 )"; then
 				add_check "s3 storage" "ok" "bucket ${s3_bkt} reachable" ""
 			else
 				add_check "s3 storage" "fail" "s3 check failed: ${s3_check_out}" "Verify python3-boto3 and S3 credentials"
+			fi
+		fi
+
+		# Local DB/cache network binding exposure check
+		if [[ "${DB_DRIVER}" == "postgres" || "${SESSION_DRIVER}" == "redis" ]] && command -v ss >/dev/null 2>&1; then
+			local exposed_ports=""
+			if [[ "${DB_DRIVER}" == "postgres" ]] && ss -Hlnpt 2>/dev/null | grep -Eq '(0\.0\.0\.0|\*|\[::\]):5432\b'; then
+				exposed_ports="${exposed_ports:+${exposed_ports}, }postgres:5432"
+			fi
+			if [[ "${SESSION_DRIVER}" == "redis" ]] && ss -Hlnpt 2>/dev/null | grep -Eq '(0\.0\.0\.0|\*|\[::\]):6379\b'; then
+				exposed_ports="${exposed_ports:+${exposed_ports}, }valkey/redis:6379"
+			fi
+			if [[ -n "${exposed_ports}" ]]; then
+				add_check "service bind exposure" "warn" "non-loopback listener detected on ${exposed_ports}" "Bind PostgreSQL/Valkey to 127.0.0.1 and verify firewall rules"
+			else
+				add_check "service bind exposure" "ok" "local DB/cache services bound to loopback only" ""
 			fi
 		fi
 
@@ -1882,22 +1901,28 @@ PY
 		if [[ "${encrypt_mode}" != "1" ]]; then
 			warn "Uploading unencrypted backup containing emdash.env to S3. Set BACKUP_ENCRYPTION_PASSPHRASE to encrypt backups."
 		fi
-		python3 - "${BACKUP_S3_ENDPOINT}" "${BACKUP_S3_REGION}" "${BACKUP_S3_BUCKET}" "${BACKUP_S3_ACCESS_KEY_ID}" "${BACKUP_S3_SECRET_ACCESS_KEY}" "${BACKUP_S3_PREFIX%/}/$(basename "${archive}")" "${archive}" <<'PY'
-import sys
+		BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT}" \
+		BACKUP_S3_REGION="${BACKUP_S3_REGION:-auto}" \
+		BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET}" \
+		BACKUP_S3_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY_ID:-}" \
+		BACKUP_S3_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+		BACKUP_S3_OBJECT_KEY="${BACKUP_S3_PREFIX%/}/$(basename "${archive}")" \
+		BACKUP_ARCHIVE_PATH="${archive}" \
+		python3 <<'PY'
+import os
 import boto3
 from botocore.config import Config
 
-endpoint, region, bucket, access, secret, key, archive_path = sys.argv[1:]
 client = boto3.client(
     "s3",
-    endpoint_url=endpoint,
-    aws_access_key_id=access,
-    aws_secret_access_key=secret,
-    region_name=region,
+    endpoint_url=os.environ["BACKUP_S3_ENDPOINT"],
+    aws_access_key_id=os.environ["BACKUP_S3_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["BACKUP_S3_SECRET_ACCESS_KEY"],
+    region_name=os.environ["BACKUP_S3_REGION"],
     config=Config(signature_version="s3v4"),
 )
-with open(archive_path, "rb") as fh:
-    client.upload_fileobj(fh, bucket, key)
+with open(os.environ["BACKUP_ARCHIVE_PATH"], "rb") as fh:
+    client.upload_fileobj(fh, os.environ["BACKUP_S3_BUCKET"], os.environ["BACKUP_S3_OBJECT_KEY"])
 PY
 		prune_s3_backups || warn "Failed to prune old S3 backups (new backup upload succeeded)."
 	fi
@@ -1986,6 +2011,7 @@ restore_command() {
 	BACKUP_TMP_DIR="${tmpdir}"
 	trap 'rm -rf "${RESTORE_S3_TMP_DIR:-}" "${BACKUP_TMP_DIR:-}"' RETURN
 
+	local tar_input="${archive}"
 	if [[ "${archive}" == *.enc ]]; then
 		[[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]] || fail "Encrypted backup requires BACKUP_ENCRYPTION_PASSPHRASE."
 		decrypted_tar="${tmpdir}/decrypted.tar.gz"
@@ -1993,27 +2019,82 @@ restore_command() {
 			-pass env:BACKUP_ENCRYPTION_PASSPHRASE \
 			-in "${archive}" -out "${decrypted_tar}" \
 			|| fail "Failed to decrypt backup archive."
-		tar -C "${tmpdir}" -xzf "${decrypted_tar}"
-		rm -f "${decrypted_tar}"
-	else
-		tar -C "${tmpdir}" -xzf "${archive}"
+		tar_input="${decrypted_tar}"
 	fi
 
-	# Validate manifest driver compatibility when present
-	if [[ -f "${tmpdir}/meta/manifest.json" ]]; then
-		manifest_db_driver="$(python3 - "${tmpdir}/meta/manifest.json" <<'PY' 2>/dev/null || true
-import json, sys
-print(json.load(open(sys.argv[1])).get("db_driver", ""))
+	# Safe extraction: validate all members against path traversal, devices, hardlinks,
+	# and unsafe symlinks before extracting (strictly forbidding symlinks in meta/ and data/).
+	TAR_INPUT="${tar_input}" EXTRACT_DIR="${tmpdir}" WITH_SITE="${with_site}" python3 <<'PY'
+import os, tarfile
+from pathlib import Path
+
+dest = Path(os.environ["EXTRACT_DIR"]).resolve()
+with_site = os.environ["WITH_SITE"] == "1"
+site_root = (dest / "site").resolve()
+
+with tarfile.open(os.environ["TAR_INPUT"], "r:gz") as tf:
+    members = []
+    for m in tf.getmembers():
+        norm = m.name.lstrip("./")
+        if not norm:
+            continue
+        in_site = norm == "site" or norm.startswith("site/")
+        in_meta_or_data = norm == "meta" or norm.startswith("meta/") or norm == "data" or norm.startswith("data/")
+        if not in_meta_or_data and not (with_site and in_site):
+            continue
+        if m.isdev() or m.islnk():
+            raise SystemExit(f"Refusing unsafe tar member (device/hardlink): {m.name}")
+        target = (dest / norm).resolve()
+        if target != dest and dest not in target.parents:
+            raise SystemExit(f"Refusing path traversal tar member: {m.name}")
+        if m.issym():
+            if not (with_site and in_site):
+                raise SystemExit(f"Refusing symlink in backup archive: {m.name}")
+            if os.path.isabs(m.linkname):
+                raise SystemExit(f"Refusing absolute symlink in site/: {m.name} -> {m.linkname}")
+            link_target = (target.parent / m.linkname).resolve()
+            if link_target != site_root and site_root not in link_target.parents:
+                raise SystemExit(f"Refusing escaping symlink in site/: {m.name} -> {m.linkname}")
+        members.append(m)
+    if hasattr(tarfile, "data_filter"):
+        tf.extractall(dest, members=members, filter="tar" if with_site else "data")
+    else:
+        tf.extractall(dest, members=members)
 PY
-)"
-		if [[ -n "${manifest_db_driver}" && "${manifest_db_driver}" != "${DB_DRIVER}" ]]; then
-			fail "Backup DB driver (${manifest_db_driver}) does not match host DB driver (${DB_DRIVER})."
-		fi
-	fi
+	local extract_rc=$?
+	(( extract_rc == 0 )) || fail "Backup archive rejected during safe extraction."
+	[[ -n "${decrypted_tar:-}" ]] && rm -f "${decrypted_tar}"
 
-	if [[ "${DB_DRIVER}" == "postgres" ]]; then
-		chmod 0755 "${tmpdir}" "${tmpdir}/data" 2>/dev/null || true
-		chmod 0644 "${tmpdir}/data/postgres.dump" "${tmpdir}/data/postgres.sql" 2>/dev/null || true
+	# Validate manifest driver compatibility and SHA-256 checksums when present
+	if [[ -f "${tmpdir}/meta/manifest.json" ]]; then
+		EXTRACT_DIR="${tmpdir}" EXPECTED_DB="${DB_DRIVER}" WITH_SITE="${with_site}" python3 <<'PY' || fail "Backup manifest or SHA-256 verification failed."
+import hashlib, json, os
+from pathlib import Path
+
+root = Path(os.environ["EXTRACT_DIR"])
+with_site = os.environ["WITH_SITE"] == "1"
+manifest = json.loads((root / "meta" / "manifest.json").read_text())
+m_db = manifest.get("db_driver", "")
+if m_db and m_db != os.environ["EXPECTED_DB"]:
+    raise SystemExit(f"Backup DB driver ({m_db}) does not match host DB driver ({os.environ['EXPECTED_DB']}).")
+for rel, expected_sha in (manifest.get("files") or {}).items():
+    norm = rel.lstrip("./")
+    in_meta_or_data = norm.startswith("meta/") or norm.startswith("data/")
+    in_site = norm.startswith("site/")
+    if not in_meta_or_data and not (with_site and in_site):
+        continue
+    p = root / norm
+    if p.is_symlink():
+        continue
+    if not p.is_file():
+        raise SystemExit(f"Manifest listed file missing from archive: {rel}")
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    if h.hexdigest() != expected_sha:
+        raise SystemExit(f"SHA-256 checksum mismatch for {rel}")
+PY
 	fi
 
 	systemctl stop "${APP_SYSTEMD_SERVICE}" || true
@@ -2030,17 +2111,17 @@ PY
 		if [[ -f "${tmpdir}/data/postgres.dump" ]]; then
 			pg_restore --list "${tmpdir}/data/postgres.dump" >/dev/null || fail "Invalid PostgreSQL custom dump archive"
 			runuser -u postgres -- createdb -O "${PG_DB_USER}" "${tmp_db}"
-			runuser -u postgres -- pg_restore --no-owner --role="${PG_DB_USER}" -d "${tmp_db}" "${tmpdir}/data/postgres.dump"
+			runuser -u postgres -- pg_restore --no-owner --role="${PG_DB_USER}" -d "${tmp_db}" <"${tmpdir}/data/postgres.dump"
 		elif [[ -f "${tmpdir}/data/postgres.sql" ]]; then
 			runuser -u postgres -- createdb -O "${PG_DB_USER}" "${tmp_db}"
-			runuser -u postgres -- psql -d "${tmp_db}" -f "${tmpdir}/data/postgres.sql" >/dev/null
+			runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "${tmp_db}" <"${tmpdir}/data/postgres.sql" >/dev/null
 		else
 			fail "PostgreSQL dump not found in archive"
 		fi
-		runuser -u postgres -- psql postgres <<EOF
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${PG_DB_NAME}', '${tmp_db}');
-ALTER DATABASE ${PG_DB_NAME} RENAME TO ${old_db};
-ALTER DATABASE ${tmp_db} RENAME TO ${PG_DB_NAME};
+		runuser -u postgres -- psql postgres -v ON_ERROR_STOP=1 <<EOF
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${PG_DB_NAME}', '${tmp_db}') AND pid <> pg_backend_pid();
+ALTER DATABASE "${PG_DB_NAME}" RENAME TO "${old_db}";
+ALTER DATABASE "${tmp_db}" RENAME TO "${PG_DB_NAME}";
 EOF
 	fi
 

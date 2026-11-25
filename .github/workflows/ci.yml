@@ -46,7 +46,8 @@ jobs:
             scripts/test-docker-compose-regression.sh \
             scripts/test-multi-instance-regression.sh \
             scripts/test-s3-backup-restore-regression.sh \
-            scripts/test-migrate-db-regression.sh; do
+            scripts/test-migrate-db-regression.sh \
+            scripts/test-security-regression.sh; do
             echo "=== Running $t ==="
             bash "$t"
           done

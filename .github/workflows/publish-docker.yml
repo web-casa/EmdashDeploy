@@ -38,17 +38,23 @@ jobs:
     steps:
       - name: Compute release tag and lowercase image name
         id: meta
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INPUT_PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           IMAGE_LOWER="$(printf '%s' "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
           echo "image_lower=${IMAGE_LOWER}" >> "$GITHUB_OUTPUT"
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ inputs.image_tag }}"
+          if [[ "${GH_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${INPUT_IMAGE_TAG}"
             [[ -n "${TAG}" ]] || TAG="sha-${GITHUB_SHA::7}"
-            IS_RELEASE="${{ inputs.publish_latest }}"
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG="${{ github.event.release.tag_name }}"
-            if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+            IS_RELEASE="${INPUT_PUBLISH_LATEST}"
+          elif [[ "${GH_EVENT_NAME}" == "release" ]]; then
+            TAG="${RELEASE_TAG_NAME}"
+            if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
               IS_RELEASE="false"
             else
               IS_RELEASE="true"
