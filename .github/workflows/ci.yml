@@ -160,7 +160,7 @@ jobs:
           BACKUP_ENCRYPTION_PASSPHRASE="ci-backup-secret" \
             bash docker/backup.sh --compose-file docker/compose.yml --compose-file docker/compose.custom-site.yml --env-file "${WORK_DIR}/.env" --out-dir "${WORK_DIR}/backups" --encrypt
 
-          BACKUP_FILE="$(ls -1t "${WORK_DIR}/backups"/*-backup-*.tar.gz.enc | head -n 1)"
+          BACKUP_FILE="$(find "${WORK_DIR}/backups" -maxdepth 1 -type f -name '*-backup-*.tar.gz.enc' | sort | tail -n 1)"
           test -f "${BACKUP_FILE}"
 
           # Mutate DB and remove upload file, then restore with docker/restore.sh

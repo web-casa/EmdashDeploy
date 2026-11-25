@@ -1,0 +1,5 @@
+# Verified synthetic test canary fixtures (intentional fake secrets used to test redaction/migration)
+2b0af88868fcf3c0f9472cf7e078438c65cf2ba7:scripts/remote-e2e-verify.sh:curl-auth-header:250
+7ab712461a4962bb2e1f862560e8af3c38a0a796:scripts/test-migrate-db-regression.sh:generic-api-key:188
+7ab712461a4962bb2e1f862560e8af3c38a0a796:scripts/test-migrate-db-regression.sh:generic-api-key:200
+9cde18d362eaf949be644f3572cd395a76df010d:scripts/test-diagnose-regression.sh:jwt:45
