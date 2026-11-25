@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0-hi.6 - 2026-11-25
+
+Security hardening release: safe archive extraction and SHA-256 verification on native restores, zero CLI-argument secret exposure, `systemd` sandboxing, non-root Docker images (`USER emdash`) with `no-new-privileges` / `cap_drop: ALL`, Caddy security headers, and automated CI security auditing (`Gitleaks` + `Trivy` + `actionlint`).
+
+### Security & Hardening
+
+- **Safe archive extraction & private restore permissions ([`emdashctl`](./emdashctl))**:
+  - Replaced raw `tar -xzf` in `emdashctl restore` with strict member-level Python validation (rejecting path traversal, device nodes, hardlinks, any symlinks inside `meta/` or `data/`, and any escaping symlinks inside `site/` under `--with-site`) plus `meta/manifest.json` SHA-256 checksum verification before mutating host state.
+  - Eliminated world-readable `chmod 0755` / `chmod 0644` on PostgreSQL dump files during restore by streaming dumps via `stdin` to `pg_restore`/`psql`, keeping `0700`/`0600` permissions throughout.
+- **Zero CLI-argument secret exposure**:
+  - Migrated PostgreSQL password updates (`postgres_alter_password`), S3 health checks, S3 backup uploads, installer S3 storage preflight ([`lib/network.sh`](./lib/network.sh)), and encryption key fingerprinting ([`lib/render.sh`](./lib/render.sh)) to environment variables / `stdin` pipes so passwords, S3 secret keys, and `EMDASH_ENCRYPTION_KEY` never appear in `/proc/<pid>/cmdline` or `ps`.
+- **Caddyfile injection protection & default security headers**:
+  - Added strict hostname/email validation for `DOMAIN` and `ADMIN_EMAIL` in [`lib/config.sh`](./lib/config.sh) to block newline/brace injection.
+  - Added baseline response security headers (`-Server`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`) in [`lib/render.sh`](./lib/render.sh) and [`docker/Caddyfile.example`](./docker/Caddyfile.example).
+- **`systemd` service sandboxing ([`lib/render.sh`](./lib/render.sh))**:
+  - Enabled `UMask=0027`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=full`, `ProtectHome=yes`, `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectKernelLogs=yes`, `ProtectControlGroups=yes`, `LockPersonality=yes`, `RestrictSUIDSGID=yes`, `RestrictRealtime=yes`, `SystemCallArchitectures=native`, and `ReadWritePaths=${ROOT_DIR}` on `emdash-app*.service` (reduced Ubuntu 24.04 `systemd-analyze security` exposure from `9.2 UNSAFE` to `6.9 MEDIUM` while preserving `@emdash-cms/sandbox-workerd` compatibility).
+- **Non-root Docker images & container least privilege**:
+  - Switched [`docker/Dockerfile`](./docker/Dockerfile) and [`docker/Dockerfile.custom`](./docker/Dockerfile.custom) to default non-root `USER emdash` (`10001:10001`) with shared `COREPACK_HOME=/opt/emdash/corepack`, passing Trivy `DS-0002` with zero HIGH/CRITICAL findings.
+  - Added `security_opt: [no-new-privileges:true]` and `cap_drop: [ALL]` with minimal `cap_add` across all services in [`docker/compose.yml`](./docker/compose.yml), and made [`docker/restore.sh`](./docker/restore.sh) seamlessly compatible with non-root containers.
+- **Supply-chain & continuous security auditing**:
+  - Added optional `--sha256 <hash>` (`EMDASH_BOOTSTRAP_SHA256`) archive integrity verification to [`bootstrap.sh`](./bootstrap.sh).
+  - Eliminated inline expression interpolation in [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml) (`env:` indirection).
+  - Added `service bind exposure` loopback listener check to `emdashctl doctor --deep`.
+  - Added [`scripts/test-security-regression.sh`](./scripts/test-security-regression.sh) (integrated into [`ci.yml`](./.github/workflows/ci.yml)) and [`.github/workflows/security.yml`](./.github/workflows/security.yml) (`Gitleaks` OSS CLI + `Trivy` IaC/config + `actionlint`, running on push/PR and weekly schedule).
+- **Documentation**: Added 8 real-environment walkthrough screenshots (`docs/images/`) to [`README.md`](./README.md) and [`README.zh-CN.md`](./README.zh-CN.md).
+
 ## 1.6.0-hi.5 - 2026-11-25
 
 Hardening hotfix discovered during full P0/P1 real-environment E2E verification (Docker Compose PG 18 + Valkey + custom no-`/healthz` site, bidirectional Native ↔ Docker migration, real S3-compatible VersityGW storage/backup/prune/restore, and Rocky Linux 9.9 Python 3.9 + SELinux Enforcing 3-instance chaos testing).

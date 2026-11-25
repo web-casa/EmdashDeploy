@@ -38,8 +38,8 @@ grep -Fq 'up -d valkey' "${SCRIPT_DIR}/docker/restore.sh" || {
 	printf '[ERROR] docker/restore.sh must start valkey when SESSION_DRIVER=redis\n' >&2
 	exit 1
 }
-grep -Fq '1.6.0-hi.5-' "${SCRIPT_DIR}/scripts/migrate-runtime.sh" || {
-	printf '[ERROR] scripts/migrate-runtime.sh must default to 1.6.0-hi.5 image tags\n' >&2
+grep -Fq '1.6.0-hi.6-' "${SCRIPT_DIR}/scripts/migrate-runtime.sh" || {
+	printf '[ERROR] scripts/migrate-runtime.sh must default to 1.6.0-hi.6 image tags\n' >&2
 	exit 1
 }
 

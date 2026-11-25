@@ -101,7 +101,7 @@ PostgreSQL 18 + Valkey 8 profiles、大陆本地加速构建（`compose.build.ym
 
 ---
 
-## 核心特性（`1.6.0-hi.5`）
+## 核心特性（`1.6.0-hi.6`）
 
 - **完整适配 EmDash `1.6.x` 安全与运行时规范**：
   - 自动调用上游 `emdash secrets generate` 生成并校验 `EMDASH_ENCRYPTION_KEY`，支持**两阶段零丢失密钥轮转**（`emdashctl rotate-encryption-key`），阶段 2 裁剪旧密钥前自动扫描 SQLite / PostgreSQL 中的密文 `kid` 引用并要求 `--confirm-prune-kid <kid>`。
@@ -215,7 +215,7 @@ PostgreSQL 18 + Valkey 8 profiles、大陆本地加速构建（`compose.build.ym
 
 ## 版本规范与兼容性
 
-本项目采用 **`HiEmdash`** 版本线：`<emdash-version>-hi.<revision>`（例如 `1.6.0-hi.1` → `1.6.0-hi.5`）；当上游 EmDash 升级主版本时，`-hi.<revision>` 重置为 `1`。
+本项目采用 **`HiEmdash`** 版本线：`<emdash-version>-hi.<revision>`（例如 `1.6.0-hi.1` → `1.6.0-hi.6`）；当上游 EmDash 升级主版本时，`-hi.<revision>` 重置为 `1`。
 
 - 全 9 语种统一入口：`bootstrap.sh --lang=<code>`、`install.sh --lang=<code>`、`emdashctl --lang=<code>`。
 - 旧版多语种后缀别名脚本已退役，迁移细节见 [`COMPATIBILITY.md`](./COMPATIBILITY.md)。
